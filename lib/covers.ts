@@ -2,16 +2,8 @@
 
 import { accountEpoch, accountScope, scopedKey } from "./account-scope";
 
-/**
- * Painted covers in the browser: kept in their own IndexedDB store, fetched
- * from the account when they were painted on another device, and painted on
- * request when the reader has turned painted covers on (off by default; each
- * one is a call to an image model).
- */
+/** Existing painted covers remain cached and readable; new generation is unavailable. */
 
-import { readApiKey } from "./ask";
-import { isTopic } from "./library";
-import { useStore, type LibraryItem } from "./store";
 
 const DB = "gloss-covers";
 const STORE = "covers";
@@ -70,52 +62,3 @@ export const forgetCover = (id: string) => {
   const key = scopedKey(id);
   return tx("readwrite", (s) => s.delete(key));
 };
-
-/** Paint one text's cover. "rest" means the free allowance is spent, so the queue should stop. */
-export async function paint(item: LibraryItem): Promise<"ok" | "rest" | "error"> {
-  const epoch = accountEpoch(),
-    key = scopedKey(item.id);
-  if (!item.scene || !isTopic(item.topic)) return "error";
-  try {
-    const res = await fetch("/api/covers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id, scene: item.scene, topic: item.topic, apiKey: readApiKey() || undefined }),
-    });
-    if (res.status === 429 || res.status === 401) return "rest";
-    if (!res.ok) return "error";
-    const blob = await res.blob();
-    if (accountEpoch() !== epoch) return "error";
-    await tx("readwrite", (s) => s.put(blob, key));
-    if (accountEpoch() !== epoch) return "error";
-    urls.delete(key);
-    useStore.getState().shelve(item.id, { cover: "painted" });
-    return "ok";
-  } catch {
-    return "error";
-  }
-}
-
-let painting = false;
-
-/** Paint every sorted text that has no cover yet, until the allowance runs out. */
-export async function paintAll(items: LibraryItem[]): Promise<void> {
-  if (painting) return;
-  painting = true;
-  try {
-    // Two at a time: a picture can take from a few seconds to most of a minute.
-    const taken = new Set<string>();
-    let rest = false;
-    const worker = async () => {
-      for (;;) {
-        const next = useStore.getState().library.find((x) => !x.cover && x.scene && !taken.has(x.id) && items.some((i) => i.id === x.id));
-        if (!next || rest) return;
-        taken.add(next.id);
-        if ((await paint(next)) === "rest") rest = true;
-      }
-    };
-    await Promise.all([worker(), worker()]);
-  } finally {
-    painting = false;
-  }
-}

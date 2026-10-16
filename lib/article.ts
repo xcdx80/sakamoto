@@ -70,7 +70,7 @@ export type Article = {
   image?: string;
   /** Where it came from: the bundled shelf, a link, pasted text, or a file. */
   origin?: "sample" | "url" | "paste" | "file";
-  /** PDF pages that looked hard (columns, tables, maths) and wait to be read again by a vision model (lib/upgrade.ts). */
+  /** Historical pending layout work; retained for saved data compatibility, never automatically dispatched. */
   upgrade?: number[];
   addedAt?: number;
 };

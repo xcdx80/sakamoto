@@ -13,16 +13,6 @@ function readerHeaders() {
   return { "Content-Type": "application/json", "X-Sakamoto-Owner": accountScope() ?? "anonymous", "Idempotency-Key": crypto.randomUUID() };
 }
 
-const KEY_STORAGE = "together:api-key";
-
-export function readApiKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 const controllers = new Map<string, AbortController>();
 
 export function stopGloss(id: string) {
@@ -232,18 +222,9 @@ async function failure(res: Response): Promise<{ error: string; needKey: boolean
   }
 }
 
-/** Open the key menu in the top bar, from anywhere. */
+/** Open Processing budget; retain the existing event for saved clients. */
 export function openKeyMenu() {
   window.dispatchEvent(new Event("gloss:key"));
-}
-
-export async function validateKey(key: string): Promise<boolean> {
-  try {
-    const res = await fetch("/api/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
-    return ((await res.json()) as { ok?: boolean }).ok === true;
-  } catch {
-    return false;
-  }
 }
 
 /**

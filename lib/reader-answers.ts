@@ -1,5 +1,5 @@
 /** Reader application module: authentication is handled by the caller; paid attempts are durable. */
-import type { ChatMessage } from "./together";
+import type { ChatMessage } from "./models";
 import type { StreamEvent } from "./models";
 import {
   lunaRequest,

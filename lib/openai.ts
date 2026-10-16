@@ -1,5 +1,5 @@
 /** Validated OpenAI transport. Billing orchestration stays above this adapter. */
-import type { ChatMessage } from "./together";
+import type { ChatMessage } from "./models";
 import type { StreamEvent, Usage } from "./models";
 import { PaidWorkError, PaidBoundExceeded, usageMicros } from "./paid-work";
 export const LUNA_MODEL = "gpt-6-luna";

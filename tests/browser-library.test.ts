@@ -149,3 +149,16 @@ test("library answer transport binds the intended account and discards an answer
   release(Response.json({status:"answered",claims:[],citations:[],gaps:[],notice:"private a",retrieval:{}}));
   await assert.rejects(pending,/Account changed/);
 });
+
+test("retired speech and historical key-needed errors render unavailable or budget navigation without a provider key prompt",async()=>{
+  const {createElement}=await import("react");const {renderToStaticMarkup}=await import("react-dom/server");
+  const {ListenButton}=await import("../components/reader/Listen");const {ImportBar}=await import("../components/landing/ImportBar");
+  let calls=0;globalThis.fetch=async()=>{calls++;throw new Error("No retired provider");};
+  const listen=renderToStaticMarkup(createElement(ListenButton,{from:()=>"u1-0"}));
+  assert.match(listen,/disabled/);assert.match(listen,/Reading aloud unavailable/);
+  const error=renderToStaticMarkup(createElement(ImportBar,{url:"",setUrl(){},busy:null,error:"Saved legacy error",errorNeedsKey:true,onSubmit(){},onSave(){},onPickFile(){},onPasteText(){}}));
+  assert.doesNotMatch(error,/Together|API key/);assert.match(error,/Processing budget/);
+  let opened=0;const onOpen=()=>{opened++;};window.addEventListener("gloss:key",onOpen);
+  try{(await import("../lib/ask")).openKeyMenu();assert.equal(opened,1);}finally{window.removeEventListener("gloss:key",onOpen);}
+  assert.equal(calls,0);
+});

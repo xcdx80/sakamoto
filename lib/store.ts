@@ -18,7 +18,7 @@ export type Turn = {
   usage?: Usage;
   model?: string;
   modelKey?: ModelKey;
-  /** The reader needs their own key to continue: free answers are spent, or there is no shared key. */
+  /** Historical error flag retained for stored-result compatibility. */
   needKey?: boolean;
   /** Looking things up on the web before the answer starts. */
   searching?: boolean;
@@ -427,7 +427,7 @@ export const useStore = create<State>((set, get) => ({
     set((st) => ({ library: st.library.filter((x) => x.id !== id) }));
   },
 
-  // Part of a text read again (a page swapped in by lib/upgrade.ts) where no mark is anchored:
+  // Part of a text read again (an existing saved page replacement) where no mark is anchored:
   // the marks stay. The rev bump makes sync send the text again.
   updateText: async (a, words) => {
     const epoch = accountEpoch();
