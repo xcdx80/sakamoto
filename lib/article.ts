@@ -51,6 +51,8 @@ export type Block = {
 };
 
 export type Article = {
+  /** Durable text-layer provenance; binary bytes are never stored. */
+  pdfSource?: {extractor: "liteparse-text-2.15.1" | "reader-supplied-text"; sha256?: string; status: "complete" | "partial" | "manual"; totalPages?: number; parsedPages?: number[]; missingPages?: number[]; reason?: string};
   post?: import("./bookmarks").PostSource;
   sourceRevision?: number;
   recoveredFrom?: {itemId:string;sourceRevision:number};

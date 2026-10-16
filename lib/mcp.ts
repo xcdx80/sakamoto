@@ -8,6 +8,7 @@
  * (your-site/mcp/gls_...) for clients that only take a URL.
  */
 
+import { supplyLinkedText } from "./linked-text";
 import { processLibrary, processingStatus } from "./processing";
 import { hashToken, looksLikeToken } from "./agent";
 import { importBookmarks, restoreBookmarks, xPostIdentity } from "./bookmarks";
@@ -54,8 +55,9 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  {name:"supply_link_text",title:"Supply extracted text for a failed linked source",description:"Deliberately recover a retained unsupported linked PDF using its processing job ID. Saves reader-supplied text and discovery links without claiming verified PDF pages. Existing saved text is never replaced.",inputSchema:{type:"object",properties:{jobId:{type:"string",pattern:"^[0-9]+$"},text:{type:"string",minLength:1,maxLength:1000000},title:{type:"string",maxLength:500}},required:["jobId","text"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
-  { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
+  { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"},sourceId:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
   {
     name: "save_bookmarks", title: "Save full bookmarked X posts",
     description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
@@ -212,6 +214,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "supply_link_text") { const result = await supplyLinkedText(userId,args); return ok(result ? toolResult("Saved reader-supplied linked text.",result) : toolError("This source is unavailable, changed or not awaiting text recovery.")); }
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
         if (name === "processing_status") return ok(toolResult("Received material processing status.", await processingStatus(userId, args)));
         if (name === "restore_bookmarks") { const result = await restoreBookmarks(userId, args); return ok(toolResult("Explicit bookmark restore receipts.", result)); }

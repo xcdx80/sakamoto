@@ -339,7 +339,7 @@ test("deleting a source during extraction cancels publication without losing unr
   assert.equal((await a.call("search_library", {})).results.length, 0);
   configureProcessing({});
 });
-test("authenticated HTTP extracts readable HTML through safe redirects, keeps PDF pending, and never crawls body links", async () => {
+test("authenticated HTTP extracts readable HTML through safe redirects, marks malformed PDF unsupported, and never crawls body links", async () => {
   const { configureArticleFetch } = await import("../lib/fetch-article");
   const { GET, POST } = await import("../app/api/processing/route");
   const a = await account();
@@ -381,7 +381,7 @@ test("authenticated HTTP extracts readable HTML through safe redirects, keeps PD
   const status = await (await GET(a.request("/api/processing"))).json();
   assert.equal(
     status.jobs.find((j: any) => j.target.endsWith("/paper")).state,
-    "pdf_pending",
+    "terminal",
   );
   const complete = status.jobs.find((j: any) => j.state === "complete");
   assert.ok(complete.resultItemId);
