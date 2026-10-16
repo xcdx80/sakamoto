@@ -39,3 +39,9 @@ An answer to a reader's question grounded in material saved in their library.
 
 **Citation**:
 A reference from an answer to the saved material supporting a claim, with enough information to locate the supporting passage or post.
+
+**Saved passage**:
+A portion of a saved source, with its original location and source revision, that can support a library answer or be opened from search.
+
+**Evidence search**:
+Finding supporting saved passages by meaning or exact wording within the reader's eligible library.

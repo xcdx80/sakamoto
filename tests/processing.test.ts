@@ -92,7 +92,7 @@ test("accepted direct links are durably pending and owner-scoped before any proc
     })
   ).results[0];
   const status = await a.call("processing_status");
-  assert.equal(status.jobs.length, 1);
+  assert.equal(status.jobs.filter((j: any) => j.kind === "link").length, 1);
   assert.equal(status.jobs[0].sourceId, receipt.itemId);
   assert.equal(status.jobs[0].sourceRevision, 1);
   assert.equal(status.jobs[0].state, "pending");
@@ -514,7 +514,7 @@ test("a source refresh schedules its new revision and fences the previous extrac
   await old;
   const jobs = (await a.call("processing_status")).jobs;
   assert.deepEqual(
-    jobs.map((j: any) => [j.sourceRevision, j.state]),
+    jobs.filter((j: any) => j.kind === "link").map((j: any) => [j.sourceRevision, j.state]),
     [
       [1, "cancelled"],
       [2, "pending"],
@@ -546,12 +546,12 @@ test("a bounded operation checkpoints completed links and the next request resum
   const first = await a.call("process_library", { limit: 1 });
   assert.equal(first.processed, 1);
   assert.deepEqual(
-    first.jobs.map((j: any) => j.state),
+    first.jobs.filter((j: any) => j.kind === "link").map((j: any) => j.state),
     ["complete", "pending"],
   );
   const next = await a.call("process_library", { limit: 1 });
   assert.deepEqual(
-    next.jobs.map((j: any) => j.state),
+    next.jobs.filter((j: any) => j.kind === "link").map((j: any) => j.state),
     ["complete", "complete"],
   );
   assert.equal((await a.call("search_library", {})).results.length, 3);

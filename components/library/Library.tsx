@@ -17,6 +17,7 @@ import { AddButton, AddPanel, type AddTab } from "./AddPanel";
 import { Arrivals, type Wave } from "./Arrivals";
 import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
 import { Processing } from "./Processing";
+import { EvidenceSearch } from "./EvidenceSearch";
 import { Starter } from "./Starter";
 
 // Preserve existing device history while the product is renamed.
@@ -255,6 +256,8 @@ export function Library() {
             {TAGS.map((t) => <Chip key={t.key} on={status === t.key} onClick={() => setStatus(status === t.key ? null : t.key)}>{t.label}</Chip>)}
           </div>
         </section>
+
+        {account && q.trim() && <EvidenceSearch owner={account} options={{query:q,...(contentType?{contentType}:{}),...(only?{topic:only}:{}),...(tag?{tags:[tag]}:{})}} />}
 
         <div className="content-results">
           <p role="status" aria-live="polite">{hydrated ? <><b>{visible.length}</b> {filtered ? `of ${books.length} ` : ""}{visible.length === 1 ? "item" : "items"}{only ? ` in ${TOPIC[only].name}` : ""}</> : "Loading your library…"}</p>

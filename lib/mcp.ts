@@ -9,6 +9,7 @@
  */
 
 import { processLibrary, processingStatus } from "./processing";
+import { searchEvidence,searchOptions,scheduleSearchRebuild } from "./retrieval";
 import { hashToken, looksLikeToken } from "./agent";
 import { importBookmarks, restoreBookmarks, xPostIdentity } from "./bookmarks";
 import { normalizeUrl } from "./links";
@@ -56,6 +57,13 @@ const POST_SCHEMA = {
 const TOOLS = [
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
   { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
+  {name:"reindex_library",title:"Schedule a resumable search rebuild",description:"Schedule existing active saved sources for the current embedding contract, at most 25 per page. Pass next as after until it is null. Does not dispatch paid work; process_library resumes the same durable jobs and reuses compatible vectors.",inputSchema:{type:"object",properties:{after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
+  {
+    name: "search_saved_passages", title: "Search saved source evidence",
+    description: "Find passages by meaning or exact wording, with current source revision, original URL and exact block/page/post addresses. Uses a guarded paid query embedding when available; lexical search remains available while semantic work is paused. Legacy search_library continues to search metadata.",
+    inputSchema: {type:"object",properties:{query:{type:"string",maxLength:1000},contentType:{type:"string",enum:["article","document","post"]},topic:{type:"string",enum:TOPICS.map(t=>t.key)},tags:{type:"array",items:{type:"string"},maxItems:20},semantic:{type:"boolean",default:true},limit:{type:"integer",minimum:1,maximum:50}},required:["query"],additionalProperties:false},
+    annotations:{readOnlyHint:true,openWorldHint:false},
+  },
   {
     name: "save_bookmarks", title: "Save full bookmarked X posts",
     description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
@@ -218,6 +226,8 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
         if (name === "save_bookmarks") { const result = await importBookmarks(userId, args, label); return ok(toolResult("Bookmark batch accepted; classification and indexing are pending.", result)); }
         if (name === "save_articles") return ok(await saveArticles(userId, args, label));
         if (name === "save_text") return ok(await saveText(userId, args, label));
+        if (name === "reindex_library") return ok(toolResult("Search rebuild scheduling.",await scheduleSearchRebuild(userId,args)));
+        if (name === "search_saved_passages") { const result=await searchEvidence(userId,searchOptions(args)); return ok(toolResult("Saved source evidence.",result)); }
         if (name === "search_library") return ok(await searchLibrary(userId, args));
         if (name === "list_topics") return ok(await listTopics(userId));
         return err(-32602, `Unknown tool: ${name}`);

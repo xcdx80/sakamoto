@@ -14,9 +14,9 @@ Object.defineProperty(globalThis, "window", { value: new EventTarget() });
 Object.defineProperty(globalThis, "document", { value: Object.assign(new EventTarget(), { visibilityState: "visible" }) });
 before(setupPostgres);
 after(() => pool.end());
-const waitFor = async (check: () => boolean) => {
+const waitFor = async (check: () => boolean | Promise<boolean>) => {
   for (let i = 0; i < 100; i++) {
-    if (check()) return;
+    if (await check()) return;
     await new Promise((r) => setTimeout(r, 10));
   }
   assert.fail("sync did not converge");
@@ -115,7 +115,7 @@ test("an offline source edit survives a metadata-only remote update and is uploa
   sync = startSync(owner);
   try {
     await waitFor(() => useStore.getState().library[0]?.favorite === true);
-    await new Promise((r) => setTimeout(r, 30));
+    await waitFor(async () => ((await articleDoc(owner, "offline")) as any)?.blocks[0].runs[0].text === "My offline source correction");
     assert.equal(useStore.getState().library[0].words, 4);
     assert.equal((await loadDoc("offline"))?.blocks[0].runs?.[0].text, "My offline source correction");
     assert.equal(((await articleDoc(owner, "offline")) as any).blocks[0].runs[0].text, "My offline source correction");

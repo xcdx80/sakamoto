@@ -161,6 +161,12 @@ function ReaderInner({ article }: { article: Article }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!articleEl) return;
+    const block = new URLSearchParams(window.location.search).get("passage");
+    if (block && article.blocks.some((b) => b.id === block)) jumpToBlock(block);
+  }, [articleEl, article, jumpToBlock]);
+
   const api = useMemo<ReaderApi>(
     () => ({
       ix,
