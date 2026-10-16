@@ -38,6 +38,8 @@ export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, 
                 {b.dek && <p className="content-card-dek">{b.dek}</p>}
               </div>
               <div className="content-card-reading">
+                {b.processing?.classification === "pending" && <span>Classification pending</span>}
+                {b.processing?.indexing === "pending" && <span>Indexing pending</span>}
                 <span>{fmtMinutes(b.minutes)} read</span>
                 {b.pct >= 1 ? <span className="content-read-state"><Check size={12} aria-hidden /> Read</span> : b.pct > 0 ? <span className="content-read-state">{Math.round(b.pct * 100)}% read</span> : b.sample ? <span>Sample</span> : null}
                 {b.highlights > 0 && <span>{b.highlights} {b.highlights === 1 ? "highlight" : "highlights"}</span>}

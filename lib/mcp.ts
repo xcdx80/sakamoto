@@ -9,6 +9,7 @@
  */
 
 import { hashToken, looksLikeToken } from "./agent";
+import { importBookmarks, restoreBookmarks, xPostIdentity } from "./bookmarks";
 import { normalizeUrl } from "./links";
 import { SITE_URL } from "./brand";
 import { blockText, contentTypeOf, isContentType, textToArticle, wordCount, type Article } from "./article";
@@ -28,11 +29,42 @@ const MAX_TEXT = 400_000;
 const PER_DAY = 1000;
 const SITE = SITE_URL;
 
-const INSTRUCTIONS = `Sakamoto is a reader. This server is the reader's own library in Sakamoto: save articles to it, and look through what is there.
-When saving from social posts or bookmarks, send the URL of the article, essay or paper itself (the link inside the post), not the post. Sakamoto reads each page in, sorts it onto a topic, and it appears on the reader's shelves the next time they open Sakamoto.
-Sakamoto can't fetch posts on X and other social sites, videos, or pages behind a login. When the post itself is the piece (an X Article, a long post, a thread) or the reader wants a video's transcript, read it yourself and send the full text with save_text.`;
+const INSTRUCTIONS = `Sakamoto is the reader's private library. Save full X bookmarked posts with save_bookmarks: one post ID, original URL, full text and author per source. Preserve individual parent/quote identities in optional contextPosts. Completeness is an agent-reported claim, never independent X verification. Intake makes no paid model call; classification and indexing may remain pending. Use bounded batches of at most 25 posts and 2 MB, keep every receipt and resume with the next batch. Up to 60 MCP requests/minute; after a rate-limit response, wait a minute and replay the unacknowledged batch. A receipt confirms only that delivery, never the complete bookmark history. Removed posts stay removed until restore_bookmarks is explicitly requested by the reader. Absence or unbookmarking never removes a Sakamoto item.
+Use save_articles for directly linked web articles. Legacy save_text remains available for text, transcripts and sources you read yourself.`;
+
+const POST_SCHEMA = {
+  type: "object",
+  properties: {
+    postId: { type: "string", pattern: "^[1-9][0-9]{0,23}$", description: "Stable numeric X post ID, unaffected by author handle changes." },
+    url: { type: "string", maxLength: 4096, description: "Original X/twitter post URL matching postId." },
+    text: { type: "string", minLength: 1, maxLength: MAX_TEXT, description: "Exact full source text, not a summary." },
+    title: { type: "string", maxLength: 500 },
+    author: { type: "object", properties: { name: { type: "string", maxLength: 200 }, handle: { type: "string", pattern: "^[A-Za-z0-9_]{1,15}$" }, id: { type: "string", pattern: "^[1-9][0-9]{0,23}$" } }, required: ["name", "handle"], additionalProperties: false },
+    publishedAt: { type: "string", format: "date-time" },
+    observedAt: { type: "string", format: "date-time", description: "When the agent observed this source, with timezone." },
+    replyToPostId: { type: "string", pattern: "^[1-9][0-9]{0,23}$" },
+    quotedPostId: { type: "string", pattern: "^[1-9][0-9]{0,23}$" },
+    conversationId: { type: "string", pattern: "^[1-9][0-9]{0,23}$" },
+    links: { type: "array", items: { type: "string", maxLength: 4096 }, maxItems: 50, description: "Only URLs directly linked from this source." },
+    completeness: { type: "object", properties: { status: { type: "string", enum: ["complete", "partial", "unknown"] }, reason: { type: "string", maxLength: 2000 } }, required: ["status"], additionalProperties: false },
+  },
+  required: ["postId", "url", "text", "author", "observedAt"],
+  additionalProperties: false,
+};
 
 const TOOLS = [
+  {
+    name: "save_bookmarks", title: "Save full bookmarked X posts",
+    description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
+    inputSchema: { type: "object", properties: { posts: { type: "array", minItems: 1, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." } } } } }, required: ["posts"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "restore_bookmarks", title: "Deliberately restore removed posts",
+    description: "Only on the reader's explicit request, restore retained removed X posts by post ID. Restores saved text and metadata with annotations; never fetches or replaces a source.",
+    inputSchema: { type: "object", properties: { postIds: { type: "array", minItems: 1, maxItems: 25, items: { type: "string", pattern: "^[1-9][0-9]{0,23}$" } } }, required: ["postIds"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
   {
     name: "save_articles",
     title: "Save articles to the library",
@@ -112,14 +144,27 @@ export function notAllowed() {
 export async function handle(req: Request, pathToken?: string): Promise<Response> {
   let body: unknown;
   try {
-    body = await req.json();
+    const reader = req.body?.getReader();
+    if (!reader) throw new Error("Missing body");
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        bytes += next.value.byteLength;
+        if (bytes > 2_100_000) { await reader.cancel(); return fail(null, -32600, "MCP body exceeds 2.1 MB. Send smaller resumable batches.", 413); }
+        chunks.push(next.value);
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } finally { reader.releaseLock(); }
   } catch {
     return fail(null, -32700, "Parse error: the body must be JSON-RPC.", 400);
   }
   // Clients on the 2025-03-26 protocol may send a batch: an array of messages, answered with an array.
   const batch = Array.isArray(body);
   const msgs = (batch ? body : [body]) as Rpc[];
-  if (!msgs.length || msgs.some((m) => typeof m !== "object" || !m)) return fail(null, -32600, "Send a JSON-RPC message, or an array of them.", 400);
+  if (!msgs.length || msgs.length > 25 || msgs.some((m) => typeof m !== "object" || !m)) return fail(null, -32600, "Send a JSON-RPC message, or an array of them.", 400);
   const first = msgs[0];
   console.info("mcp:", msgs.map((m) => m.method).join(", "), first.method === "initialize" ? JSON.stringify({ v: first.params?.protocolVersion, client: first.params?.clientInfo }) : "");
 
@@ -164,6 +209,8 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "restore_bookmarks") { const result = await restoreBookmarks(userId, args); return ok(toolResult("Explicit bookmark restore receipts.", result)); }
+        if (name === "save_bookmarks") { const result = await importBookmarks(userId, args, label); return ok(toolResult("Bookmark batch accepted; classification and indexing are pending.", result)); }
         if (name === "save_articles") return ok(await saveArticles(userId, args, label));
         if (name === "save_text") return ok(await saveText(userId, args, label));
         if (name === "search_library") return ok(await searchLibrary(userId, args));
@@ -202,7 +249,7 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
 
   const one = async ({ url, key }: { url: string; key: string }): Promise<Saved> => {
     const kind = notAnArticle(url);
-    if (kind === "social") return { url, status: "failed", reason: "This is a social post, not an article. Send the link the post points to, or, if the post is the piece, read it and send its text with save_text." };
+    if (kind === "social") return { url, status: "failed", reason: "This is a social post, not an article. Send the link the post points to, or, if the post is the piece, read it and send the full post with save_bookmarks (or legacy save_text)." };
     if (kind === "video") return { url, status: "failed", reason: "This is a video, not an article. Sakamoto reads text: send its transcript with save_text." };
     const known = have.get(key);
     if (known) return { url, status: "already_saved", title: String(known.data.title ?? ""), topic: TOPIC[isTopic(known.data.topic) ? known.data.topic : "unsorted"].name };
@@ -279,6 +326,16 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
     }
   }
 
+  const identity = url ? xPostIdentity(url) : null;
+  if (identity) {
+    const published = str(args.published);
+    const result = await importBookmarks(userId, { posts: [{ postId: identity.postId, url, text: args.text, title: str(args.title), author: { name: str(args.author) ?? identity.handle, handle: identity.handle }, observedAt: new Date().toISOString(), ...(published && Number.isFinite(Date.parse(published)) ? { publishedAt: new Date(published).toISOString() } : {}), completeness: { status: "unknown", reason: "Legacy save_text did not report completeness." } }] }, via);
+    const r = result.results[0];
+    if (r.status === "rejected") return toolError(r.reason ?? "Unable to save this text.");
+    return toolResult(r.status === "removed" ? "This post was removed in Sakamoto. Restore it deliberately with restore_bookmarks." : r.status === "duplicate" ? "Already in the library." : "Saved to the library; classification and indexing are pending.", {
+      status: r.status === "duplicate" ? "already_saved" : r.status === "removed" ? "removed" : "saved", title: r.title ?? str(args.title) ?? text.trim().slice(0, 100), topic: "Unsorted", words: r.words ?? text.split(/\s+/).filter(Boolean).length, itemId: r.itemId, receiptId: r.receiptId, readInSakamoto: `${SITE}/read/${r.itemId}`, readInGloss: `${SITE}/read/${r.itemId}`,
+    });
+  }
   const shelf = await shelfOf(userId);
   if (url) {
     const known = shelf.find((r) => typeof r.data.sourceUrl === "string" && normalizeUrl(r.data.sourceUrl) === normalizeUrl(url));
@@ -342,6 +399,9 @@ function describe(r: ShelfRow) {
   const d = r.data;
   const topic = isTopic(d.topic) ? d.topic : "unsorted";
   return {
+    itemId: r.id,
+    processing: d.processing,
+    postId: d.postId,
     title: String(d.title ?? ""),
     author: typeof d.author === "string" ? d.author : undefined,
     url: typeof d.sourceUrl === "string" ? d.sourceUrl : undefined,

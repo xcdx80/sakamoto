@@ -127,3 +127,27 @@ test("explicitly empty manual tags stay empty through later automatic classifica
   assert.deepEqual(store.useStore.getState().library[0].tags, []);
   assert.equal(store.useStore.getState().library[0].topic, "science");
 });
+
+test("accepted posts remain readable in grid/list filters while pending processing does not start legacy paid sorting", async () => {
+  const { backfill } = await import("../lib/shelving");
+  const { toLibraryBooks, filterBooks } = await import("../lib/library");
+  const { ContentCards } = await import("../components/library/ContentCards");
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  store.useStore.getState().activateAccount("pending-bookmark");
+  const item = { id: "accepted-post", title: "A saved post", author: "Writer", words: 10, origin: "paste" as const, contentType: "post" as const, addedAt: 1, processing: { classification: "pending" as const, indexing: "pending" as const } };
+  store.useStore.getState().applyRemote({ articles: [{ id: item.id, articleId: item.id, data: item, deleted: false, revision: 1 }] });
+  let providerCalls = 0;
+  globalThis.fetch = async () => { providerCalls++; return Response.json({ topic: "science", tags: [] }); };
+  await backfill(store.useStore.getState().library);
+  assert.equal(providerCalls, 0);
+  const state = store.useStore.getState();
+  const books = filterBooks(toLibraryBooks({ library: state.library, progress: state.progress, highlights: state.highlights, hydrated: true, hiddenSamples: [] }), { contentType: "post" });
+  assert.equal(books.length, 1);
+  for (const view of ["grid", "list"] as const) {
+    const html = renderToStaticMarkup(createElement(ContentCards, { books, view, fresh: new Set<string>(), onManage() {}, onFavorite() {}, onTag() {}, selectedTag: null }));
+    assert.match(html, /href="\/read\/accepted-post"/);
+    assert.match(html, /Classification pending/);
+    assert.match(html, /Indexing pending/);
+  }
+});
