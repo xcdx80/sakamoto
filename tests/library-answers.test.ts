@@ -517,3 +517,133 @@ test("even an insufficient answer is withheld when retrieved source eligibility 
   assert.equal(result.status, "stale");
   assert.deepEqual(result.gaps, []);
 });
+
+test("an already canceled authenticated answer never authorizes or dispatches paid query embedding or Luna", async () => {
+  const { processLibrary } = await import("../lib/processing");
+  const { budgetStatus } = await import("../lib/paid-work");
+  const identity = makeToken();
+  await createToken(
+    "cancel-reader",
+    identity.id,
+    identity.hash,
+    "Cancellation fixture",
+  );
+  await save(
+    "cancel-source",
+    "Astrometry aligns the measured star positions against a reference catalogue.",
+    {},
+    "cancel-reader",
+  );
+  process.env.GOOGLE_API_KEY = "fixture-google";
+  globalThis.fetch = async () =>
+    Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  await processLibrary("cancel-reader", { limit: 1 });
+  const before = await budgetStatus("cancel-reader");
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  };
+  const controller = new AbortController();
+  controller.abort(new DOMException("Canceled question", "AbortError"));
+  const req = new Request("http://localhost/api/library-answer", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + identity.token,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ query: "How does astrometry align stars?" }),
+    signal: controller.signal,
+  });
+  const result = await (await ask(req)).json();
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.claims, []);
+  assert.equal(calls, 0);
+  const after = await budgetStatus("cancel-reader");
+  assert.equal(after.attempts.length, before.attempts.length);
+});
+
+test("canceling an in-flight query embedding retains ambiguous charges and never dispatches a Luna answer", async () => {
+  const { processLibrary } = await import("../lib/processing");
+  const { budgetStatus } = await import("../lib/paid-work");
+  const identity = makeToken();
+  await createToken(
+    "inflight-answer",
+    identity.id,
+    identity.hash,
+    "Inflight cancellation fixture",
+  );
+  await save(
+    "inflight-source",
+    "Spectroscopy measures a star's spectral lines.",
+    {},
+    "inflight-answer",
+  );
+  process.env.GOOGLE_API_KEY = "fixture-google";
+  globalThis.fetch = async () =>
+    Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  await processLibrary("inflight-answer", { limit: 1 });
+  const before = await budgetStatus("inflight-answer");
+  let google = 0,
+    luna = 0,
+    started!: () => void;
+  const dispatched = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("openai.com")) {
+      luna++;
+      throw new Error("Canceled requests must not call Luna");
+    }
+    google++;
+    started();
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init!.signal!;
+      if (signal.aborted) reject(signal.reason);
+      else
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+    });
+  };
+  const controller = new AbortController();
+  const pending = ask(
+    new Request("http://localhost/api/library-answer", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + identity.token,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        query: "How are stellar spectral lines measured?",
+      }),
+      signal: controller.signal,
+    }),
+  );
+  await dispatched;
+  controller.abort(new DOMException("Reader canceled", "AbortError"));
+  const result = await (await pending).json();
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.claims, []);
+  assert.deepEqual(result.citations, []);
+  assert.equal(google, 1);
+  assert.equal(luna, 0);
+  const after = await budgetStatus("inflight-answer");
+  assert.equal(
+    Math.round((after.reservedUsd - before.reservedUsd) * 1e6),
+    1639,
+  );
+  assert.equal(
+    after.attempts.filter((a) => a.status === "uncertain").length,
+    1,
+  );
+});

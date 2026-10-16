@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    return Response.json(await searchEvidence(owner, options), {
+    return Response.json(await searchEvidence(owner, options, req.signal), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch {

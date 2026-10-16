@@ -233,7 +233,7 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
         if (name === "save_articles") return ok(await saveArticles(userId, args, label));
         if (name === "save_text") return ok(await saveText(userId, args, label));
         if (name === "reindex_library") return ok(toolResult("Search rebuild scheduling.",await scheduleSearchRebuild(userId,args)));
-        if (name === "search_saved_passages") { const result=await searchEvidence(userId,searchOptions(args)); return ok(toolResult("Saved source evidence.",result)); }
+        if (name === "search_saved_passages") { const result=await searchEvidence(userId,searchOptions(args),signal); return ok(toolResult("Saved source evidence.",result)); }
         if (name === "search_library") return ok(await searchLibrary(userId, args));
         if (name === "list_topics") return ok(await listTopics(userId));
         return err(-32602, `Unknown tool: ${name}`);

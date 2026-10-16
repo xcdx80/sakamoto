@@ -1,5 +1,5 @@
 /** One saved-evidence answer operation for HTTP and MCP. No web tools or caller-supplied sources. */
-import { db } from "./db";
+import { savedEvidenceIsCurrent } from "./evidence-store";
 import { PaidWorkError } from "./paid-work";
 import { prepareReaderAttempt, runReaderAttempt } from "./reader-answers";
 import {
@@ -8,6 +8,7 @@ import {
   type SearchOptions,
   type Evidence,
   type EvidenceSearch,
+  EMBEDDING_CONTRACT,
 } from "./retrieval";
 export type AnswerOptions = Omit<SearchOptions, "limit">;
 export type AnswerCitation = Evidence & { id: string };
@@ -130,29 +131,6 @@ function parseAnswer(
     gaps: value.gaps as string[],
   };
 }
-async function citationsStillEligible(
-  owner: string,
-  citations: AnswerCitation[],
-  options: AnswerOptions,
-) {
-  if (!citations.length) return true;
-  const matches = await db().query(
-    `select evidence->>'id' as id from jsonb_array_elements($2::jsonb) evidence where exists (
-    select 1 from saved_passages p join articles a on a.user_id=p.user_id and a.id=p.source_id and a.source_revision=p.source_revision and not a.deleted
-    where p.user_id=$1 and p.source_id=evidence->>'itemId' and p.source_revision=(evidence->>'sourceRevision')::integer and p.address=evidence->'address' and p.text=evidence->>'excerpt'
-    and ($3::text is null or coalesce(a.data->>'contentType',a.doc->>'contentType',case when sakamoto_x_post_id(coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl')) is not null then 'post' when coalesce(a.doc->>'origin','') in ('file','paste') or coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl','') ~* '\\.pdf([?#].*)?$' then 'document' else 'article' end)=$3)
-    and ($4::text is null or coalesce(a.data->>'topic','unsorted')=$4) and coalesce(a.data->'tags','[]') @> $5::jsonb
-  )`,
-    [
-      owner,
-      JSON.stringify(citations),
-      options.contentType ?? null,
-      options.topic ?? null,
-      JSON.stringify(options.tags ?? []),
-    ],
-  );
-  return matches.length === citations.length;
-}
 function originalUrl(raw: string | undefined) {
   try {
     const url = new URL(raw ?? "");
@@ -167,7 +145,27 @@ export async function askLibrary(
   signal: AbortSignal = new AbortController().signal,
 ): Promise<LibraryAnswer> {
   const options = answerOptions(raw);
-  const found = await searchEvidence(owner, { ...options, limit: 12 });
+  const controller = AbortSignal.any([signal, AbortSignal.timeout(45000)]);
+  let found: EvidenceSearch;
+  try {
+    controller.throwIfAborted();
+    found = await searchEvidence(owner, { ...options, limit: 12 }, controller);
+  } catch (error) {
+    if (!controller.aborted) throw error;
+    return {
+      status: "failed",
+      claims: [],
+      citations: [],
+      gaps: [],
+      notice:
+        "The question was canceled before a complete answer was available.",
+      retrieval: {
+        mode: "lexical",
+        semanticStatus: options.semantic === false ? "disabled" : "pending",
+        contract: EMBEDDING_CONTRACT,
+      },
+    };
+  }
   const { results, ...retrieval } = found;
   const empty = (
     status: LibraryAnswer["status"],
@@ -190,7 +188,6 @@ export async function askLibrary(
     originalUrl: originalUrl(e.originalUrl),
     id: `E${index + 1}`,
   }));
-  const controller = AbortSignal.any([signal, AbortSignal.timeout(45000)]);
   try {
     controller.throwIfAborted();
     const prepared = await prepareReaderAttempt(
@@ -231,7 +228,7 @@ export async function askLibrary(
     const answer = parseAnswer(text, evidence);
     const ids = new Set(answer.claims.flatMap((c) => c.citationIds));
     const citations = evidence.filter((e) => ids.has(e.id));
-    if (!(await citationsStillEligible(owner, evidence, options)))
+    if (!(await savedEvidenceIsCurrent(owner, evidence, options)))
       return empty(
         "stale",
         "A supporting source changed, was removed, or no longer matches your filters. Ask again for current evidence.",
