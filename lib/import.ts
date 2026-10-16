@@ -3,7 +3,6 @@
 import { accountEpoch, scopedKey } from "./account-scope";
 
 import { textToArticle, wordCount, type Article } from "./article";
-import { shelveText } from "./shelving";
 import { savePdf, saveDoc, useStore, type LibraryItem } from "./store";
 
 /** `needKey`: the import needs the reader's own model API key (a long PDF, or free use spent). `file`: the original, kept with a PDF. */
@@ -80,7 +79,6 @@ export async function keep(a: Article, file?: Blob, extra?: Partial<LibraryItem>
   if (file) await savePdf(a.id, file);
   if (accountEpoch() !== epoch) return "Account changed. Import again in the current account.";
   useStore.getState().addToLibrary(a, wordCount(a), extra);
-  if (!extra?.topic) void shelveText(a);
   return null;
 }
 

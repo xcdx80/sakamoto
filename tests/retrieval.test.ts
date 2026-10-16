@@ -6,6 +6,7 @@ import { createToken, shelveForUser } from "../lib/db";
 import { POST as search } from "../app/api/library-search/route";
 let token = "";
 before(async () => {
+  delete process.env.TYPESAFE_API_KEY;
   await setupPostgres();
   const t = makeToken();
   token = t.token;
@@ -482,7 +483,7 @@ test("interrupted indexing retries reuse completed vectors and never publish a p
       },
     );
     const first = await processLibrary("retry-reader", { limit: 1 });
-    const job = first.jobs[0];
+    const job = first.jobs.find((job: any) => job.kind === "indexing")!;
     assert.equal(job.state, "retryable");
     assert.equal(
       (await searchEvidence("retry-reader", { query: "durable" })).mode,
@@ -493,7 +494,10 @@ test("interrupted indexing retries reuse completed vectors and never publish a p
       limit: 1,
       retryJobId: job.id,
     });
-    assert.equal(retried.jobs[0].state, "complete");
+    assert.equal(
+      retried.jobs.find((job: any) => job.kind === "indexing")!.state,
+      "complete",
+    );
     assert.equal(calls, 3, "completed passage is not billed again");
     assert.equal(
       (await budgetStatus("retry-reader")).attempts.filter(
@@ -734,8 +738,14 @@ test("healthy bounded indexing continues beyond eight windows without consuming 
     let windows = 0;
     while (state !== "complete" && windows < 12) {
       const result = await processLibrary("continuation-reader", { limit: 1 });
-      state = result.jobs[0].state;
-      now = Math.max(now, Date.parse(result.jobs[0].nextAttemptAt) + 1);
+      state = result.jobs.find((job: any) => job.kind === "indexing")!.state;
+      now = Math.max(
+        now,
+        Date.parse(
+          result.jobs.find((job: any) => job.kind === "indexing")!
+            .nextAttemptAt,
+        ) + 1,
+      );
       assert.notEqual(
         state,
         "terminal",
@@ -814,7 +824,12 @@ test("a metadata-only item receives its first indexing job when source text arri
     })
   ).json();
   assert.equal(supplied.accepted[0].sourceRevision, 1);
-  assert.equal((await processingStatus(owner)).jobs[0]?.state, "pending");
+  assert.equal(
+    (await processingStatus(owner)).jobs.find(
+      (job: any) => job.kind === "indexing",
+    )?.state,
+    "pending",
+  );
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {

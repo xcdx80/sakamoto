@@ -59,7 +59,10 @@ async function account() {
     );
     const result = (await response.json()).result;
     assert.equal(result.isError, undefined, JSON.stringify(result));
-    return result.structuredContent;
+    // These fixtures exercise direct-link jobs; independent category/index jobs are covered at their own public seams.
+    const content = result.structuredContent;
+    if (content?.jobs) content.jobs = content.jobs.filter((job: any) => job.kind === "link");
+    return content;
   };
   return {
     owner,
@@ -93,9 +96,9 @@ test("accepted direct links are durably pending and owner-scoped before any proc
   ).results[0];
   const status = await a.call("processing_status");
   assert.equal(status.jobs.filter((j: any) => j.kind === "link").length, 1);
-  assert.equal(status.jobs[0].sourceId, receipt.itemId);
-  assert.equal(status.jobs[0].sourceRevision, 1);
-  assert.equal(status.jobs[0].state, "pending");
+  assert.equal(status.jobs.find((job: any) => job.kind === "link")!.sourceId, receipt.itemId);
+  assert.equal(status.jobs.find((job: any) => job.kind === "link")!.sourceRevision, 1);
+  assert.equal(status.jobs.find((job: any) => job.kind === "link")!.state, "pending");
   assert.equal(
     (await (await account()).call("processing_status")).jobs.length,
     0,
@@ -262,12 +265,12 @@ test("concurrent processors cannot duplicate claims; expired leases recover and 
       throw new Error("Processor returned before claiming source.");
     }),
   ]);
-  assert.equal((await a.call("processing_status")).jobs[0].state, "running");
+  assert.equal((await a.call("processing_status")).jobs.find((job: any) => job.kind === "link")!.state, "running");
   assert.equal((await a.call("process_library", { limit: 1 })).processed, 0);
   now += 46_000;
   const recovered = await a.call("process_library", { limit: 1 });
-  assert.equal(recovered.jobs[0].state, "complete");
-  assert.equal(recovered.jobs[0].attempts, 2);
+  assert.equal(recovered.jobs.find((job: any) => job.kind === "link")!.state, "complete");
+  assert.equal(recovered.jobs.find((job: any) => job.kind === "link")!.attempts, 2);
   release(article("obsolete-worker"));
   await interrupted;
   const shelf = (await a.call("search_library", {})).results;
@@ -335,7 +338,7 @@ test("deleting a source during extraction cancels publication without losing unr
     },
   });
   await processing;
-  assert.equal((await a.call("processing_status")).jobs[0].state, "cancelled");
+  assert.equal((await a.call("processing_status")).jobs.find((job: any) => job.kind === "link")!.state, "cancelled");
   assert.equal((await a.call("search_library", {})).results.length, 0);
   configureProcessing({});
 });
@@ -408,7 +411,7 @@ test("automatic retries back off, stop after four attempts, and deliberate Retry
   let job: any;
   for (let attempt = 1; attempt <= 4; attempt++) {
     const result = await a.call("process_library", { limit: 1 });
-    job = result.jobs[0];
+    job = result.jobs.find((job: any) => job.kind === "link")!;
     assert.equal(job.attempts, attempt);
     assert.equal(job.state, attempt === 4 ? "terminal" : "retryable");
     if (attempt < 4) {
@@ -426,7 +429,7 @@ test("automatic retries back off, stop after four attempts, and deliberate Retry
   assert.equal((await a.call("process_library", { limit: 1 })).processed, 0);
   for (let attempt = 5; attempt <= 8; attempt++) {
     job = (await a.call("process_library", { limit: 1, retryJobId: job.id }))
-      .jobs[0];
+      .jobs.find((job: any) => job.kind === "link")!;
     assert.equal(job.attempts, attempt);
   }
   assert.equal(
@@ -739,7 +742,7 @@ test("publication rechecks real lease expiry after waiting for its transaction l
     }),
   });
   const recovered = await a.call("process_library", { limit: 1 });
-  assert.equal(recovered.jobs[0].attempts, 2);
-  assert.equal(recovered.jobs[0].resultItemId, "recovered-lock-worker");
+  assert.equal(recovered.jobs.find((job: any) => job.kind === "link")!.attempts, 2);
+  assert.equal(recovered.jobs.find((job: any) => job.kind === "link")!.resultItemId, "recovered-lock-worker");
   configureProcessing({});
 });

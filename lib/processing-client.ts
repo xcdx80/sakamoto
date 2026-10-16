@@ -55,3 +55,14 @@ export async function linkedDiscoveries(itemId: string, after = "") {
     next: string | null;
   }>;
 }
+
+/** Explicit category replay never mutates the browser snapshot or its manual fields. */
+export async function reclassifyItem(itemId:string) {
+ const owner=useStore.getState().scope,epoch=accountEpoch();
+ if(!owner)throw new Error("Sign in to categorize saved material.");
+ const response=await fetch("/api/shelve",{method:"POST",headers:{"X-Sakamoto-Owner":owner,"Content-Type":"application/json"},body:JSON.stringify({itemId,reclassify:true})});
+ const result=await response.json();
+ if(accountEpoch()!==epoch)throw new Error("Account changed; reload category status.");
+ if(!response.ok)throw new Error(result.error??"Could not schedule categorization.");
+ return result;
+}

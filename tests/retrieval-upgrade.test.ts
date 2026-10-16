@@ -116,7 +116,12 @@ test("populated pre009 libraries upgrade and backfill lexical and durable semant
     "Upgrade fixture",
   );
   assert.equal(receipt.results[0].status, "incomplete");
-  assert.equal((await processingStatus("upgrade-reader")).jobs.length, 0);
+  assert.equal(
+    (await processingStatus("upgrade-reader")).jobs.filter(
+      (j) => j.kind === "indexing",
+    ).length,
+    0,
+  );
   await applyMigrations(migrations);
   await applyMigrations(migrations);
   const lexical = await searchEvidence("upgrade-reader", {

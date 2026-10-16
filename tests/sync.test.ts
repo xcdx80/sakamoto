@@ -166,10 +166,10 @@ test("conflicting offline text is retained as a separate document before adoptin
     assert.equal(copy?.sourceUrl, undefined);
     assert.match(useStore.getState().syncNotice ?? "", /offline copy/);
     sync.stop();
-    const { shelveText } = await import("../lib/shelving");
+    const { reclassifyItem } = await import("../lib/processing-client");
     globalThis.fetch = async () => Response.json({ topic: "science", tags: ["automatic tag"], scene: "A desk" });
     assert.ok(copy);
-    await shelveText(copy);
+    await reclassifyItem(copy.id);
     assert.deepEqual(useStore.getState().library.find((x) => x.id === recovered.id)?.tags, []);
   } finally {
     sync.stop();

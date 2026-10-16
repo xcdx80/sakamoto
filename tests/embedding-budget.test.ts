@@ -8,6 +8,7 @@ import { budgetStatus } from "../lib/paid-work";
 const original = globalThis.fetch;
 before(async () => {
   await setupPostgres();
+  delete process.env.TYPESAFE_API_KEY;
   process.env.GOOGLE_API_KEY = "fixture-google";
   process.env.SAKAMOTO_BUDGET_USD = "0.002";
 });
@@ -29,7 +30,9 @@ test("unknown Google usage retains its reservation, caps paid queries and leaves
   };
   await save("unknown", "Unknown usage source remains searchable.");
   assert.equal(
-    (await processLibrary("budget-search", { limit: 1 })).jobs[0].state,
+    (await processLibrary("budget-search", { limit: 1 })).jobs.find(
+      (job: any) => job.kind === "indexing",
+    )!.state,
     "complete",
   );
   const budget = await budgetStatus("budget-search");
@@ -58,7 +61,7 @@ test("credible over-bound Google usage durably halts all paid work while preserv
   await save("overbound", "Overbound source is retained in the library.");
   const result = await processLibrary("budget-search", { limit: 1 });
   assert.equal(
-    result.jobs.find((j) => j.sourceId === "overbound")?.state,
+    result.jobs.find((j) => j.sourceId === "overbound" && j.kind === "indexing")?.state,
     "retryable",
   );
   assert.equal((await budgetStatus("budget-search")).halted, true);
