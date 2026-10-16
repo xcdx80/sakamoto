@@ -91,9 +91,27 @@ test("legacy cache known to have synced accounts is not silently displayed when 
   assert.equal(JSON.parse(localStorage.getItem("gloss:v1")!).library[0].id, "legacy-private");
 });
 
-test('a signed-out reader never fetches private server text into anonymous storage', async () => {
-  const { fetchText } = await import('../lib/sync');
+test("a signed-out reader never fetches private server text into anonymous storage", async () => {
+  const { fetchText } = await import("../lib/sync");
   store.useStore.getState().activateAccount(null);
-  globalThis.fetch = async () => Response.json({ doc: { id: 'server-private', title: 'Private server content', blocks: [] } });
-  assert.equal(await fetchText('server-private'), null);
+  globalThis.fetch = async () => Response.json({ doc: { id: "server-private", title: "Private server content", blocks: [] } });
+  assert.equal(await fetchText("server-private"), null);
+});
+
+test("a pending classification preserves manual tags independently from an unset topic", async () => {
+  const { shelveText } = await import("../lib/shelving");
+  store.useStore.getState().activateAccount("manual-category-owner");
+  const article = { id: "classification-race", title: "Manual tags", origin: "paste" as const, blocks: [] };
+  store.useStore.getState().addToLibrary(article, 10);
+  let resolve!: (response: Response) => void;
+  globalThis.fetch = () =>
+    new Promise<Response>((r) => {
+      resolve = r;
+    });
+  const pending = shelveText(article);
+  store.useStore.getState().shelve(article.id, { tags: ["my manual tag"] });
+  resolve(Response.json({ topic: "science", tags: ["automatic tag"], scene: "A desk" }));
+  await pending;
+  assert.deepEqual(store.useStore.getState().library[0].tags, ["my manual tag"]);
+  assert.equal(store.useStore.getState().library[0].topic, "science");
 });

@@ -70,6 +70,7 @@ export type LibraryItem = {
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
   sourceRevision?: number;
+  recoveredFrom?: {itemId:string;sourceRevision:number};
   /* The library: where it is shelved, and what it looks like there. */
   /** One of the library's topics (lib/library.ts); missing until it has been sorted. */
   topic?: string;
@@ -114,6 +115,7 @@ type Persisted = {
 
 type UI = {
   syncError: string | null;
+  syncNotice: string | null;
   hydrated: boolean;
   activeGloss: string | null;
   hoverGloss: string | null;
@@ -210,6 +212,7 @@ export const useStore = create<State>((set, get) => ({
   progress: {},
   library: [],
   syncError: null,
+  syncNotice: null,
   scope: undefined,
   settings: DEFAULT_SETTINGS,
   hydrated: false,
@@ -233,6 +236,7 @@ export const useStore = create<State>((set, get) => ({
     set({
       scope: owner,
       syncError: null,
+      syncNotice: null,
       hydrated: false,
       library: [],
       highlights: {},
@@ -523,9 +527,15 @@ function idb(): Promise<IDBDatabase> {
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, store = DOCS): Promise<T> {
   const db = await idb();
   return new Promise((resolve, reject) => {
-    const req = fn(db.transaction(store, mode).objectStore(store));
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    const transaction=db.transaction(store,mode);
+    const req=fn(transaction.objectStore(store));
+    let result:T;
+    req.onsuccess=()=> {result=req.result;};
+    req.onerror=()=>reject(req.error);
+    transaction.oncomplete=()=>resolve(result);
+    transaction.onabort=()=>reject(transaction.error??new Error("Browser storage transaction aborted."));
+    transaction.onerror=()=>reject(transaction.error);
+
   });
 }
 

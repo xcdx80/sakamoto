@@ -23,6 +23,7 @@ const SEEN_KEY = "gloss:library-seen";
 
 export function Library() {
   const { user, isSignedIn } = useUser();
+  const syncNotice = useStore(s=>s.syncNotice);
   const syncError = useStore((s) => s.syncError);
   const account = useStore((s) => s.scope);
   const adopt = useStore((s) => s.adoptAnonymous);
@@ -161,6 +162,7 @@ export function Library() {
         <TopBar here="library" onLibrary={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
       </div>
       <main className="mx-auto w-full max-w-[1180px] px-4 pb-32 sm:px-8">
+        {syncNotice && <p role="status" className="mx-auto max-w-6xl px-6 py-4 text-sm">{syncNotice} <button className="underline" onClick={()=>useStore.getState().setUI({syncNotice:null})}>Dismiss</button></p>}
         {syncError && (
           <p role="alert" className="mx-auto max-w-6xl px-6 py-4 text-sm">
             {syncError}{" "}

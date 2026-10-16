@@ -24,12 +24,20 @@ type Text = Pick<Article, "id" | "title" | "author" | "source" | "dek"> & { bloc
 export async function shelveText(a: Text): Promise<void> {
   const epoch = accountEpoch();
   if (resting || inflight.has(a.id)) return;
+  const initialTags = useStore.getState().library.find((x) => x.id === a.id)?.tags;
   inflight.add(a.id);
   try {
     const res = await fetch("/api/shelve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: a.title, author: a.author, source: a.source, dek: a.dek, excerpt: a.blocks ? excerptOf(a.blocks) : undefined, apiKey: readApiKey() || undefined }),
+      body: JSON.stringify({
+        title: a.title,
+        author: a.author,
+        source: a.source,
+        dek: a.dek,
+        excerpt: a.blocks ? excerptOf(a.blocks) : undefined,
+        apiKey: readApiKey() || undefined,
+      }),
     });
     if (res.status === 429 || res.status === 401) {
       const j = (await res.json().catch(() => ({}))) as { code?: string };
@@ -43,8 +51,14 @@ export async function shelveText(a: Text): Promise<void> {
     if (accountEpoch() !== epoch) return;
     const st = useStore.getState();
     const cur = st.library.find((x) => x.id === a.id);
-    if (!cur || cur.topic) return;
-    st.shelve(a.id, { topic: s.topic, tags: s.tags.length ? s.tags : undefined, scene: s.scene });
+    if (!cur) return;
+    const patch: Partial<LibraryItem> = {};
+    if (!cur.topic) {
+      patch.topic = s.topic;
+      patch.scene = s.scene;
+    }
+    if (!cur.tags?.length && cur.tags === initialTags) patch.tags = s.tags.length ? s.tags : undefined;
+    if (Object.keys(patch).length) st.shelve(a.id, patch);
   } catch {
     // Unsorted is a fine place to wait.
   } finally {

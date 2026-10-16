@@ -19,6 +19,7 @@
  * seconds, so what an agent saves arrives while you look.
  */
 
+import { OfflineSourceConflictError, preserveOfflineSource } from "./offline-source";
 import { READER_METADATA_FIELDS } from "./library-ownership";
 import { accountEpoch, accountScope } from "./account-scope";
 import { forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
@@ -113,8 +114,9 @@ export function startSync(userId: string) {
   const serial = (fn: () => Promise<void>) =>
     (chain = chain
       .then(() => (current() ? fn() : undefined))
-      .catch(() => {
-        if (current()) useStore.getState().setUI({ syncError: "Sync paused. Your local changes are retained for retry." });
+      .catch((error: unknown) => {
+        if (current())
+          useStore.getState().setUI({ syncError: error instanceof OfflineSourceConflictError ? error.message : "Sync paused. Your local changes are retained for retry." });
       }));
 
   async function push() {
@@ -195,8 +197,18 @@ export function startSync(userId: string) {
       if (!current()) return;
       const local = snapshot();
       // Rebase pending field edits onto the latest server metadata. Source text is never replayed over a newer revision.
-      for (const row of changes.articles ?? []) {
-        if (base.seen.articles[row.id]?.[3] !== row.sourceRevision) await forgetDoc(row.id,userId);
+      const latestArticles = [...new Map((changes.articles ?? []).map((row) => [row.id, row])).values()];
+      for (const row of latestArticles) {
+        const prior = base.seen.articles[row.id],
+          pending = local.entities.articles.get(row.id);
+        if (prior?.[3] !== row.sourceRevision) {
+          if (prior && pending && (pending.data as { rev?: number }).rev !== JSON.parse(prior[0]).rev && !row.deleted) {
+            const title = await preserveOfflineSource(row.id, userId);
+            if (!current()) return;
+            useStore.getState().setUI({ syncNotice: `A newer source arrived. Your offline copy is saved separately as “${title}”.` });
+          }
+          await forgetDoc(row.id, userId);
+        }
       }
       if (!current()) return;
       const rebased: RemoteChanges = {};
@@ -219,6 +231,10 @@ export function startSync(userId: string) {
             want = pending.data as Record<string, unknown>;
           const manual = READER_METADATA_FIELDS;
           const patch = Object.fromEntries(manual.filter((k) => stable(want[k]) !== stable(was[k])).map((k) => [k, want[k]]));
+          if (prior[3] === r.sourceRevision && want.rev !== was.rev) {
+            patch.rev = want.rev;
+            patch.words = want.words;
+          }
           return { ...r, data: { ...r.data, ...patch } };
         });
       }
