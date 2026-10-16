@@ -17,10 +17,10 @@ import { blockText, contentTypeOf, isContentType, textToArticle, wordCount, type
 import { shelfOf, shelveForUser, tokenUser, type ShelfRow } from "./db";
 import { arxivFullText, fetchArticle, notAnArticle } from "./fetch-article";
 import { TOPIC, TOPICS, isTopic, yearOf, type TopicKey } from "./library";
-import { chargeFree, checkFreeUser } from "./quota";
+
 import { allow } from "./ratelimit";
-import { classify } from "./shelve";
-import { excerptOf } from "./excerpt";
+import { scheduleClassification } from "./classification";
+
 import type { LibraryItem } from "./store";
 
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -54,6 +54,7 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+ {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
   { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
   {
@@ -212,6 +213,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
         if (name === "processing_status") return ok(toolResult("Received material processing status.", await processingStatus(userId, args)));
         if (name === "restore_bookmarks") { const result = await restoreBookmarks(userId, args); return ok(toolResult("Explicit bookmark restore receipts.", result)); }
@@ -273,11 +275,10 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
       return { url, status: "already_saved", title: String(k.data.title ?? "") };
     }
 
-    const { topic, tags, scene } = await sortOf(userId, a);
-    const item = shelfItem(a, { topic, tags, scene, via });
+    const item = shelfItem(a, { via });
     await shelveForUser(userId, item, a);
     have.set(key, { id: a.id, data: item as unknown as Record<string, unknown>, pct: 0 });
-    return { url, status: "saved", title: a.title, topic: TOPIC[topic ?? "unsorted"].name };
+    return { url, status: "saved", title: a.title, topic: TOPIC.unsorted.name };
   };
 
   // A few at a time: pages are slow, and one bad link never holds up the rest.
@@ -300,16 +301,6 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
 function savesLeft(shelf: ShelfRow[]) {
   const dayAgo = Date.now() - 86_400_000;
   return PER_DAY - shelf.filter((r) => r.data.addedBy === "agent" && Number(r.data.addedAt) > dayAgo).length;
-}
-
-/** Sort it now, on the reader's own allowance. Out of allowance, it waits in Unsorted and the browser sorts it later. */
-async function sortOf(userId: string, a: Article): Promise<{ topic?: TopicKey; tags?: string[]; scene?: string }> {
-  const free = await checkFreeUser(userId);
-  if (!free.ok) return {};
-  const c = await classify({ title: a.title, author: a.author, source: a.source, dek: a.dek, excerpt: excerptOf(a.blocks) });
-  if (!c.ok) return {};
-  await chargeFree(free.subject, c.usd);
-  return { topic: c.shelving.topic, scene: c.shelving.scene, tags: c.shelving.tags.length ? c.shelving.tags : undefined };
 }
 
 /* ---------- save_text ---------- */
@@ -360,7 +351,7 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
   a.published = str(args.published);
   for (const k of ["author", "source", "sourceUrl", "published"] as const) if (a[k] === undefined) delete a[k];
 
-  const item = shelfItem(a, { ...(await sortOf(userId, a)), via });
+  const item = shelfItem(a, { via });
   await shelveForUser(userId, item, a);
   const topic = TOPIC[isTopic(item.topic) ? item.topic : "unsorted"].name;
   return toolResult(`Saved: ${a.title} (${topic}, ${item.words.toLocaleString("en-US")} words)\n\nIt'll be on the shelves at ${SITE}/library.`, {
@@ -373,7 +364,7 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
   });
 }
 
-function shelfItem(a: Article, s: { topic?: TopicKey; tags?: string[]; scene?: string; via?: string }): LibraryItem {
+function shelfItem(a: Article, s: { via?: string }): LibraryItem {
   const item: LibraryItem = {
     id: a.id,
     title: a.title,
@@ -387,9 +378,7 @@ function shelfItem(a: Article, s: { topic?: TopicKey; tags?: string[]; scene?: s
     year: yearOf(a.published),
     sourceUrl: a.sourceUrl,
     image: a.image,
-    topic: s.topic,
-    tags: s.tags,
-    scene: s.scene,
+    processing: { classification: "pending", indexing: "pending" },
     addedBy: "agent",
     // The connection's name, as the reader chose it ("Grok Bot", "Claude"), so the library can say who shelved it.
     addedVia: s.via || undefined,

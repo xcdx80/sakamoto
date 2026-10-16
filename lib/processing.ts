@@ -1,4 +1,5 @@
 /** Durable processing of already received library material. Never fetches bookmarks from Grok. */
+import { registerLibraryProcessingHandlers } from "./processing-handlers";
 import { db } from "./db";
 import { fetchArticle, type FetchResult } from "./fetch-article";
 import { normalizeUrl } from "./links";
@@ -149,6 +150,7 @@ export async function processLibrary(
   owner: string,
   args: { limit?: number; retryJobId?: string } = {},
 ) {
+  registerLibraryProcessingHandlers(registerProcessingHandler);
   const limit = Math.max(1, Math.min(4, Number(args.limit) || 4));
   const end = Date.now() + 23_000;
   if (args.retryJobId) {
@@ -255,6 +257,7 @@ export async function processLibrary(
 }
 /** Cron stays bounded across owners as well as jobs. Its caller must authenticate the scheduler secret. */
 export async function processScheduled() {
+  registerLibraryProcessingHandlers(registerProcessingHandler);
   const rows = await db().query(
     `select distinct user_id from processing_jobs where kind=any($1::text[]) and
  ((state in ('pending','retryable') and next_attempt_at<=$2) or (state='running' and lease_expires_at<=$2)) limit 1`,

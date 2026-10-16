@@ -10,7 +10,6 @@ import { forgetCover } from "@/lib/covers";
 import { filterBooks, libraryStats, SAMPLES_UNTIL, SORTS, sortBooks, TAGS, TOPIC, TOPICS, tagOptions, toLibraryBooks, type Book, type Sort, type TagKey, type TopicKey } from "@/lib/library";
 import { hideSample, useLibraryPrefs } from "@/lib/library-prefs";
 import { applySettings } from "@/lib/settings";
-import { backfill } from "@/lib/shelving";
 import { useStore } from "@/lib/store";
 import { watchShelf, retrySync } from "@/lib/sync";
 import { AddButton, AddPanel, type AddTab } from "./AddPanel";
@@ -112,11 +111,6 @@ export function Library() {
       waveTimer.current = setTimeout(closeWave, 9000);
     }, byAgent ? 14_000 : 6000);
   }, [hydrated, library, closeWave]);
-
-  // Texts shelved before the library existed are sorted onto topics the first time it opens.
-  useEffect(() => {
-    if (hydrated) void backfill(useStore.getState().library);
-  }, [hydrated, library.length]);
 
   const own = library.filter((x) => x.origin !== "sample");
   const books = useMemo(() => toLibraryBooks({ library, progress, highlights, hydrated, hiddenSamples: prefs.hiddenSamples }), [library, progress, highlights, hydrated, prefs.hiddenSamples]);

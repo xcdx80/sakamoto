@@ -59,7 +59,10 @@ async function account() {
     );
     const result = (await response.json()).result;
     assert.equal(result.isError, undefined, JSON.stringify(result));
-    return result.structuredContent;
+    // These fixtures exercise direct-link jobs; independent category/index jobs are covered at their own public seams.
+    const content = result.structuredContent;
+    if (content?.jobs) content.jobs = content.jobs.filter((job: any) => job.kind === "link");
+    return content;
   };
   return {
     owner,
