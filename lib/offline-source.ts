@@ -29,7 +29,7 @@ export async function preserveOfflineSource(id: string, owner: string): Promise<
   };
   delete copy.sourceUrl;
   if (!(await saveDoc(copy, owner)) || !current()) throw new OfflineSourceConflictError();
-  useStore.getState().addToLibrary(copy, item.words, { tags: item.tags, favorite: item.favorite, topic: item.topic, recoveredFrom });
+  useStore.getState().addToLibrary(copy, item.words, { tags: item.tags, favorite: item.favorite, topic: item.topic, manualFields: item.manualFields, recoveredFrom });
   if (!checkpointLibrary() || !current()) {
     if (current()) useStore.getState().removeFromLibrary(copy.id);
     throw new OfflineSourceConflictError();

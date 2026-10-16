@@ -148,6 +148,7 @@ test("conflicting offline text is retained as a separate document before adoptin
   await waitFor(() => useStore.getState().library[0]?.id === original.id);
   sync.stop();
   await saveDoc(original);
+  useStore.getState().shelve(original.id, { tags: [] });
   await useStore.getState().updateText({ ...original, blocks: [{ id: "b1", type: "p", runs: [{ text: "My offline correction" }] }] }, 3);
   await shelveForUser(
     owner,
@@ -164,6 +165,12 @@ test("conflicting offline text is retained as a separate document before adoptin
     assert.equal(copy?.contentType, "document");
     assert.equal(copy?.sourceUrl, undefined);
     assert.match(useStore.getState().syncNotice ?? "", /offline copy/);
+    sync.stop();
+    const { shelveText } = await import("../lib/shelving");
+    globalThis.fetch = async () => Response.json({ topic: "science", tags: ["automatic tag"], scene: "A desk" });
+    assert.ok(copy);
+    await shelveText(copy);
+    assert.deepEqual(useStore.getState().library.find((x) => x.id === recovered.id)?.tags, []);
   } finally {
     sync.stop();
   }
