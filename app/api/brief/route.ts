@@ -1,73 +1,64 @@
 import { BRIEF_TASK, systemFor, type DocPayload } from "@/lib/prompts";
-import { completeJSON, DEFAULT_MODEL, isModelKey } from "@/lib/together";
-import { undash, type BriefData } from "@/lib/article";
-import { chargeFree, checkFree, estimateUsd, needKey } from "@/lib/quota";
-import { MODELS } from "@/lib/models";
-
+import { requestOwner } from "@/lib/owner";
+import { paidFailure } from "@/lib/paid-work";
+import { prepareReaderAttempt, runReaderAttempt } from "@/lib/reader-answers";
+import { BRIEF_SCHEMA, readBrief } from "@/lib/reader-brief";
+import type { Usage } from "@/lib/models";
 export const runtime = "nodejs";
 export const maxDuration = 120;
-
 export async function POST(req: Request) {
-  let body: { apiKey?: string; model?: string; doc?: DocPayload };
+  let owner: string | null;
   try {
-    body = await req.json();
+    owner = await requestOwner(req);
   } catch {
-    return Response.json({ error: "Body must be JSON." }, { status: 400 });
+    return Response.json(
+      { error: "Sign in to summarize saved text." },
+      { status: 401 },
+    );
   }
-  const doc = body.doc;
-  if (!doc?.title || !Array.isArray(doc.paras) || doc.paras.length === 0) {
-    return Response.json({ error: "doc is required." }, { status: 400 });
+  if (!owner)
+    return Response.json(
+      { error: "Sign in to summarize saved text." },
+      { status: 401 },
+    );
+  try {
+    const { doc } = (await req.json()) as { doc?: DocPayload };
+    if (
+      !doc?.title ||
+      typeof doc.title !== "string" ||
+      !Array.isArray(doc.paras) ||
+      !doc.paras.length ||
+      !doc.paras.every(
+        (p) =>
+          p && Number.isInteger(p.n) && p.n > 0 && typeof p.text === "string",
+      )
+    )
+      return Response.json({ error: "doc is required." }, { status: 400 });
+    const operationId =
+      req.headers.get("idempotency-key") || crypto.randomUUID();
+    const prepared = await prepareReaderAttempt(
+      owner,
+      operationId,
+      "summary-1",
+      [
+        { role: "system", content: systemFor(doc) },
+        { role: "user", content: BRIEF_TASK },
+      ],
+      16000,
+      { response_format: BRIEF_SCHEMA },
+    );
+    let raw = "",
+      usage: Usage | undefined;
+    for await (const event of runReaderAttempt(prepared, req.signal)) {
+      if (event.type === "content") raw += event.text;
+      else if (event.type === "usage") usage = event.usage;
+      else if (event.type === "tool")
+        throw new Error("The summary requested an unsupported tool.");
+    }
+    return Response.json({ brief: readBrief(raw, doc), usage, model: "luna" });
+  } catch (error) {
+    if (error instanceof SyntaxError)
+      return Response.json({ error: "Body must be JSON." }, { status: 400 });
+    return paidFailure(error);
   }
-
-  const apiKey = body.apiKey?.trim() || undefined;
-  // A gloss of the whole text spends from the same free allowance.
-  let free: Awaited<ReturnType<typeof checkFree>> | null = null;
-  if (!apiKey) {
-    if (!process.env.TOGETHER_API_KEY) return needKey(null);
-    free = await checkFree(req);
-    if (!free.ok) return needKey(free);
-  }
-
-  const model = isModelKey(body.model) ? body.model : DEFAULT_MODEL;
-  const result = await completeJSON<BriefData>({
-    model,
-    apiKey,
-    signal: req.signal,
-    // Thinking first: checking a text's headline figures against its own tables is arithmetic, and without it the
-    // model repeats the abstract. About 10 s instead of 3 on a 14k-token paper, and half a cent more. The thinking
-    // spends from max_tokens (up to 7k on that paper), so the budget is generous.
-    thinking: true,
-    maxTokens: 16000,
-    messages: [
-      { role: "system", content: systemFor(doc) },
-      { role: "user", content: BRIEF_TASK },
-    ],
-  });
-  if (free) {
-    const chars = doc.paras.reduce((a, p) => a + (p.text?.length ?? 0), 0);
-    await chargeFree(free.subject, result.ok ? result.usage.costUsd : estimateUsd(chars, MODELS[model].inPerM));
-  }
-  if (!result.ok) return Response.json({ error: result.error }, { status: 502 });
-
-  // Keep only well-formed, in-range items so the UI never links to nothing.
-  const valid = new Set(doc.paras.map((p) => p.n));
-  const d = result.data;
-  // The shared system prompt asks glosses to ==mark== their answer; a brief has no use for it.
-  const clean = (t: string) => undash(t).replace(/==/g, "");
-  const cited = (list: unknown, max: number) =>
-    (Array.isArray(list) ? (list as { text?: unknown; cite?: unknown }[]) : [])
-      .filter((c): c is { text: string; cite?: unknown } => Boolean(c) && typeof c.text === "string" && c.text.trim().length > 0)
-      .map((c) => ({ text: clean(c.text), cite: valid.has(Number(c.cite)) ? Number(c.cite) : 0 }))
-      .slice(0, max);
-  const brief: BriefData = {
-    gist: clean(String(d.gist ?? "")),
-    claims: cited(d.claims, 6),
-    caveats: cited(d.caveats, 4),
-    sections: (Array.isArray(d.sections) ? d.sections : [])
-      .filter((s) => s && typeof s.title === "string" && valid.has(Number(s.start)))
-      .map((s) => ({ title: clean(s.title), start: Number(s.start) }))
-      .sort((a, b) => a.start - b.start)
-      .slice(0, 10),
-  };
-  return Response.json({ brief, usage: result.usage, model }, { headers: free ? { "X-Free-Left": free.left.toFixed(3) } : undefined });
 }

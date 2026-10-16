@@ -1,13 +1,17 @@
 "use client";
 
-import { accountEpoch, scopedKey } from "./account-scope";
+import { accountEpoch, accountScope, scopedKey } from "./account-scope";
 
 import type { Action } from "./actions";
 import type { BriefData } from "./article";
 import { docPayload, type DocIndex } from "./doc";
 import { uid, useStore, type Anchor, type Gloss, type Turn } from "./store";
 import type { ModelKey, StreamEvent, Usage } from "./models";
-import { MODELS, modelOf } from "./models";
+import { MODELS } from "./models";
+
+function readerHeaders() {
+  return { "Content-Type": "application/json", "X-Sakamoto-Owner": accountScope() ?? "anonymous", "Idempotency-Key": crypto.randomUUID() };
+}
 
 const KEY_STORAGE = "together:api-key";
 
@@ -48,6 +52,7 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
   // History after the first answer: alternating user/assistant, ending with the new user turn.
   const history = g.turns
     .slice(1, -1)
+    .slice(-12)
     .filter((t) => !t.error)
     .map((t) => ({ role: t.role, content: t.content }));
 
@@ -60,13 +65,11 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
   const update = (fn: (t: Turn) => Turn) => accountEpoch() === epoch && useStore.getState().updateGloss(articleId, glossId, (x) => lastAssistant(x, fn));
 
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: readerHeaders(),
       signal: ctrl.signal,
       body: JSON.stringify({
-        apiKey: apiKey || undefined,
         model: modelKey,
         length: st.settings.length,
         doc: docPayload(ix, g.anchor?.start.b ?? g.at),
@@ -76,6 +79,7 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
       }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     if (!res.ok || !res.body) {
       const { error, needKey } = await failure(res);
       update((t) => ({ ...t, streaming: false, error, needKey }));
@@ -85,6 +89,7 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
     const dec = new TextDecoder();
     let buf = "";
     let pending = "";
+    let completed = false;
     let raf = 0;
     const flush = () => {
       raf = 0;
@@ -107,7 +112,8 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
         } catch {
           continue;
         }
-        if (e.type === "content") {
+        if (e.type === "done") completed = true;
+        else if (e.type === "content") {
           // Batch tokens into animation frames so a fast model never janks the page.
           pending += e.text;
           if (!raf) raf = requestAnimationFrame(flush);
@@ -127,10 +133,12 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
     }
     if (raf) cancelAnimationFrame(raf);
     flush();
+    if (!completed) update((t) => ({ ...t, error: t.error ?? "The answer was interrupted. Potentially billed usage remains reserved." }));
   } catch (err) {
-    if (ctrl.signal.aborted) update((t) => ({ ...t, streaming: false, error: t.content ? undefined : "Stopped." }));
+    if (ctrl.signal.aborted) update((t) => ({ ...t, streaming: false, error: "Stopped. Potentially billed usage remains reserved." }));
     else update((t) => ({ ...t, streaming: false, error: `Connection lost: ${String(err)}` }));
   } finally {
+    window.dispatchEvent(new Event("sakamoto:budget"));
     controllers.delete(glossId);
     update((t) => ({ ...t, streaming: false, searching: false }));
   }
@@ -141,7 +149,7 @@ export function startGloss(
   opts: { anchor?: Anchor; at?: string; action: Action; question?: string; modelKey?: ModelKey }
 ): string {
   const st = useStore.getState();
-  const modelKey = modelOf(opts.modelKey ?? st.settings.model);
+  const modelKey: ModelKey = "luna";
   // The answer is written in the margin, which focus mode hides: step out of it.
   if (st.focusMode) st.setUI({ focusMode: false });
   const g: Gloss = {
@@ -162,7 +170,7 @@ export function startGloss(
 
 export function followUp(ix: DocIndex, glossId: string, question: string, modelKey?: ModelKey) {
   const st = useStore.getState();
-  const mk = modelOf(modelKey ?? st.settings.model);
+  const mk: ModelKey = "luna";
   st.updateGloss(ix.article.id, glossId, (g) => ({
     ...g,
     turns: [
@@ -174,10 +182,10 @@ export function followUp(ix: DocIndex, glossId: string, question: string, modelK
   void stream(ix, glossId, mk);
 }
 
-/** Re-runs the latest answer, optionally on a different model. */
+/** Intentionally starts a newly funded Luna attempt for the latest answer. */
 export function retry(ix: DocIndex, glossId: string, modelKey?: ModelKey) {
   const st = useStore.getState();
-  const mk = modelOf(modelKey ?? st.settings.model);
+  const mk: ModelKey = "luna";
   st.updateGloss(ix.article.id, glossId, (g) =>
     lastAssistant(g, () => ({ role: "assistant", content: "", streaming: true, modelKey: mk, model: MODELS[mk].label }))
   );
@@ -188,16 +196,16 @@ export async function fetchBrief(ix: DocIndex) {
   const epoch = accountEpoch();
   const st = useStore.getState();
   const id = ix.article.id;
-  const modelKey = modelOf(st.settings.model);
+  const modelKey: ModelKey = "luna";
   st.setBrief(id, { status: "loading", sourceRevision: ix.article.sourceRevision ?? 1 });
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/brief", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: apiKey || undefined, model: modelKey, doc: docPayload(ix) }),
+      headers: readerHeaders(),
+      body: JSON.stringify({ model: modelKey, doc: docPayload(ix) }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     const j = (await res.json()) as { brief?: BriefData; usage?: Usage; error?: string; code?: string };
     if (j.brief)
       accountEpoch() === epoch &&
@@ -249,14 +257,14 @@ export async function streamAsk(
 ) {
   let full = "";
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: readerHeaders(),
       signal,
-      body: JSON.stringify({ ...body, apiKey: apiKey || undefined, model: modelOf(useStore.getState().settings.model) }),
+      body: JSON.stringify({ ...body, model: "luna" }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     if (!res.ok || !res.body) {
       on.error?.((await failure(res)).error);
       return;

@@ -14,7 +14,8 @@ export const APP_UA = "Sakamoto/0.1";
 
 import { MODELS, costFor, type ModelEntry, type ModelKey, type StreamEvent, type Usage } from "./models";
 
-export { MODELS, DEFAULT_MODEL, isModelKey, costFor } from "./models";
+export const DEFAULT_MODEL: ModelKey = "flash";
+export { MODELS, isModelKey, costFor } from "./models";
 export type { ModelKey, StreamEvent, Usage } from "./models";
 
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
