@@ -27,7 +27,9 @@ import { Margin } from "./Margin";
 import { Notebook } from "./Notebook";
 import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
+import { LinkedDiscoveries } from "./LinkedDiscoveries";
 import { TopBar } from "./TopBar";
+import { ThreadReading } from "./ThreadReading";
 
 export function Reader({ id, initial }: { id: string; initial: Article | null }) {
   const [article, setArticle] = useState<Article | null>(initial);
@@ -538,6 +540,7 @@ function ReaderInner({ article }: { article: Article }) {
                     </a>
                   )}
                 </div>
+                <LinkedDiscoveries key={article.id} itemId={article.id} />
                 {article.post && <p className="focus-hide mt-4 text-[13px] text-ink-3">Completeness reported by agent: {article.post.completeness.status}.{article.post.completeness.reason ? ` ${article.post.completeness.reason}` : ""}</p>}
                 <CarefulRead article={article} />
                 <div className="focus-hide rise" style={{ animationDelay: "200ms" }}>
@@ -545,6 +548,7 @@ function ReaderInner({ article }: { article: Article }) {
                 </div>
               </header>
 
+              <ThreadReading itemId={article.id} sourceRevision={article.sourceRevision} enabled={Boolean(article.post)}>
               <div ref={setArticleEl} className="prose-read" onClick={onTextClick} onMouseOver={onTextOver} onMouseLeave={() => setUI({ hoverGloss: null })}>
                 {article.blocks.map((b) => (
                   <Block
@@ -563,6 +567,8 @@ function ReaderInner({ article }: { article: Article }) {
                   />
                 ))}
               </div>
+
+              </ThreadReading>
 
               <footer className="focus-hide mt-16 border-t border-rule pt-10 text-[13.5px] leading-relaxed text-ink-3">
                 <p aria-hidden className="mb-8 text-center font-serif text-[26px] leading-none text-[var(--rubric)]">
