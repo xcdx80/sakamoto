@@ -23,7 +23,7 @@ type Text = Pick<Article, "id" | "title" | "author" | "source" | "dek"> & { bloc
 
 export async function shelveText(a: Text): Promise<void> {
   const epoch = accountEpoch();
-  if (resting || inflight.has(a.id)) return;
+  if (resting || inflight.has(a.id) || useStore.getState().library.find((x) => x.id === a.id)?.processing) return;
   const initialTags = useStore.getState().library.find((x) => x.id === a.id)?.tags;
   inflight.add(a.id);
   try {
@@ -72,7 +72,7 @@ let backfilling = false;
 export async function backfill(items: LibraryItem[], limit = 40): Promise<void> {
   const epoch = accountEpoch();
   if (backfilling || resting) return;
-  const todo = items.filter((x) => !x.topic && x.origin !== "sample").slice(0, limit);
+  const todo = items.filter((x) => !x.topic && x.origin !== "sample" && !x.processing).slice(0, limit);
   if (!todo.length) return;
   backfilling = true;
   try {

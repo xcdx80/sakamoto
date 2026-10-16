@@ -57,6 +57,8 @@ export type BriefState = { sourceRevision?: number } & (
 export type { Settings } from "./settings";
 
 export type LibraryItem = {
+  postId?: string;
+  processing?: import("./bookmarks").ProcessingState;
   id: string;
   title: string;
   author?: string;

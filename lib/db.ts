@@ -97,11 +97,11 @@ export async function pushRows(userId: string, changes: Partial<Record<Collectio
       const result = await db().query(
         `insert into ${table}(user_id,id,article_id,data,deleted${article ? ",doc,manual_fields" : ""})
         select $1,$2,$3,$4::jsonb,$5${article ? ", $7::jsonb, $8::jsonb" : ""} where $6=0 or exists(select 1 from ${table} where user_id=$1 and id=$2)
-        on conflict(user_id,id) do update set data=excluded.data, deleted=excluded.deleted${
+        on conflict(user_id,id) do update set data=${article ? "case when excluded.deleted then articles.data else excluded.data end" : "excluded.data"}, deleted=excluded.deleted${
           article
             ? `,
           doc=case when excluded.deleted then ${table}.doc else coalesce(excluded.doc,${table}.doc) end,
-          manual_fields=${table}.manual_fields || excluded.manual_fields`
+          manual_fields=case when excluded.deleted then ${table}.manual_fields else ${table}.manual_fields || excluded.manual_fields end`
             : ""
         }
         where ${table}.revision=$6 ${article ? "and ($7::jsonb is null or articles.source_revision=$9)" : ""}

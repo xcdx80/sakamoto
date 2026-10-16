@@ -80,6 +80,7 @@ export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
 export type Book = {
+  processing?: LibraryItem["processing"];
   id: string;
   title: string;
   author: string;
@@ -302,7 +303,7 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
   const marks = (id: string) => hydrated ? (highlights[id] ?? []).length : 0;
   const ownCount = library.filter((item) => item.origin !== "sample").length;
   const mine: Book[] = library.filter((item) => item.origin !== "sample" || !hiddenSamples.includes(item.id)).map((item) => ({
-    id: item.id, title: tidyTitle(item.title), author: bylineOf(item), year: item.year,
+    processing: item.processing, id: item.id, title: tidyTitle(item.title), author: bylineOf(item), year: item.year,
     url: item.sourceUrl, topic: topicOf(item.topic), contentType: contentTypeOf(item),
     minutes: readingMinutes(item.words), dek: item.dek, tags: item.tags ?? [],
     favorite: Boolean(item.favorite), pct: read(item.id), highlights: marks(item.id),
