@@ -861,3 +861,167 @@ test("a metadata-only item receives its first indexing job when source text arri
     globalThis.fetch = original;
   }
 });
+
+test("planned job deadlines during paid embedding preserve progress beyond eight windows and retain uncertain attempts", async () => {
+  const { processLibrary } = await import("../lib/processing");
+  const { searchEvidence } = await import("../lib/retrieval");
+  const { budgetStatus } = await import("../lib/paid-work");
+  const originalFetch = globalThis.fetch,
+    originalNow = Date.now,
+    originalTimeout = AbortSignal.timeout;
+  let now = originalNow(),
+    interrupted = 0,
+    successful = 0;
+  const timers: { at: number; controller: AbortController }[] = [];
+  Date.now = () => now;
+  AbortSignal.timeout = (ms: number) => {
+    const controller = new AbortController();
+    timers.push({ at: now + ms, controller });
+    return controller.signal;
+  };
+  globalThis.fetch = async (_url, init) => {
+    now += 5500;
+    for (const timer of timers)
+      if (timer.at <= now && !timer.controller.signal.aborted)
+        timer.controller.abort(
+          new DOMException("Planned deadline", "TimeoutError"),
+        );
+    if (init?.signal?.aborted) {
+      interrupted++;
+      throw init.signal.reason;
+    }
+    successful++;
+    return Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  };
+  try {
+    await shelveForUser(
+      "inflight-reader",
+      { id: "inflight", title: "Inflight source" },
+      {
+        id: "inflight",
+        title: "Inflight source",
+        blocks: Array.from({ length: 40 }, (_, n) => ({
+          id: "b" + n,
+          type: "p",
+          runs: [{ text: `Independent in-flight observation ${n}.` }],
+        })),
+      },
+    );
+    const before = await budgetStatus("inflight-reader");
+    now += 1000;
+    let state = "pending",
+      windows = 0;
+    while (state !== "complete" && windows < 20) {
+      const result = await processLibrary("inflight-reader", { limit: 1 });
+      const job = result.jobs.find((j) => j.kind === "indexing")!;
+      state = job.state;
+      assert.notEqual(
+        state,
+        "terminal",
+        "planned in-call deadline cannot exhaust the failure allowance",
+      );
+      now = Math.max(now, Date.parse(job.nextAttemptAt) + 1);
+      windows++;
+    }
+    assert.equal(state, "complete");
+    assert.ok(windows > 8);
+    assert.equal(successful, 40);
+    assert.ok(interrupted > 8);
+    const after = await budgetStatus("inflight-reader");
+    assert.equal(
+      Math.round((after.reservedUsd - before.reservedUsd) * 1e6),
+      interrupted * 1639,
+      "each interrupted paid call remains fully reserved",
+    );
+    const result = await searchEvidence("inflight-reader", {
+      query: "astronomical measurements",
+    });
+    assert.equal(result.mode, "hybrid");
+    assert.equal(result.results[0].itemId, "inflight");
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
+test("zero-progress embedding timeouts retain the four automatic and eight deliberate failure limit", async () => {
+  const { processLibrary } = await import("../lib/processing");
+  const { searchEvidence } = await import("../lib/retrieval");
+  const originalFetch = globalThis.fetch,
+    originalNow = Date.now,
+    originalTimeout = AbortSignal.timeout;
+  let now = originalNow(),
+    calls = 0;
+  const timers: { at: number; controller: AbortController }[] = [];
+  Date.now = () => now;
+  AbortSignal.timeout = (ms: number) => {
+    const controller = new AbortController();
+    timers.push({ at: now + ms, controller });
+    return controller.signal;
+  };
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    now += 11000;
+    for (const timer of timers)
+      if (timer.at <= now && !timer.controller.signal.aborted)
+        timer.controller.abort(
+          new DOMException("Per-call timeout", "TimeoutError"),
+        );
+    throw init?.signal?.reason;
+  };
+  try {
+    await shelveForUser(
+      "zero-progress-reader",
+      { id: "no-progress", title: "No progress" },
+      {
+        id: "no-progress",
+        title: "No progress",
+        blocks: [
+          {
+            id: "body",
+            type: "p",
+            runs: [{ text: "Saved source survives embedding timeouts." }],
+          },
+        ],
+      },
+    );
+    now += 1000;
+    let job;
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const result = await processLibrary("zero-progress-reader", {
+        limit: 1,
+        ...(attempt >= 5 ? { retryJobId: job!.id } : {}),
+      });
+      job = result.jobs.find((j) => j.kind === "indexing")!;
+      assert.equal(job.attempts, attempt);
+      assert.equal(
+        job.state,
+        attempt === 4 || attempt === 8 ? "terminal" : "retryable",
+      );
+      now = Math.max(now, Date.parse(job.nextAttemptAt) + 1);
+    }
+    assert.equal(
+      (
+        await processLibrary("zero-progress-reader", {
+          limit: 1,
+          retryJobId: job!.id,
+        })
+      ).processed,
+      0,
+    );
+    assert.equal(calls, 8);
+    const found = await searchEvidence("zero-progress-reader", {
+      query: "survives",
+      semantic: false,
+    });
+    assert.equal(found.results[0].itemId, "no-progress");
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+    AbortSignal.timeout = originalTimeout;
+  }
+});

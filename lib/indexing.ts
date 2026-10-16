@@ -66,9 +66,19 @@ export async function indexSavedSource(
         );
         available.add(passage.content_fingerprint);
       } catch (error) {
+        // Only the job's own planned abort can yield healthy progress here.
+        // Provider rejections, transport failures and the per-call timeout keep
+        // their failure allowance even if the job deadline has since passed.
+        const continuing =
+          signal.aborted &&
+          error === signal.reason &&
+          Date.now() >= deadline &&
+          completed > Number(job.checkpoint.completed ?? 0);
         return {
-          state:
-            error instanceof PaidWorkError && error.code === "provider_rejected"
+          state: continuing
+            ? "continue"
+            : error instanceof PaidWorkError &&
+                error.code === "provider_rejected"
               ? "terminal"
               : "retryable",
           error:
