@@ -23,7 +23,7 @@ import { OfflineSourceConflictError, preserveOfflineSource } from "./offline-sou
 import { READER_METADATA_FIELDS } from "./library-ownership";
 import { derivedDocumentMetadata } from "./source-edits";
 import { accountEpoch, accountScope } from "./account-scope";
-import { acknowledgeDocRevision, forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
+import { acknowledgeDocRevision, bindPendingSource, forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
 import type { Article } from "./article";
 import { forgetCover } from "./covers";
 
@@ -66,7 +66,10 @@ function snapshot(): Snapshot {
   const st = useStore.getState();
   const entities = Object.fromEntries(COLLECTIONS.map((c) => [c, new Map<string, Entity>()])) as Snapshot["entities"];
   const busy = new Set<string>();
-  const put = (c: Collection, id: string, articleId: string, data: unknown) => entities[c].set(id, { articleId, data, key: stable(data) });
+  const put = (c: Collection, id: string, articleId: string, data: unknown) => {
+    if(c!=="articles" && (data as {pendingSource?:string})?.pendingSource){busy.add(`${c}:${id}`);return;}
+    entities[c].set(id, { articleId, data, key: stable(data) });
+  };
 
   for (const item of st.library) put("articles", item.id, item.id, item);
   for (const [aid, list] of Object.entries(st.highlights)) for (const h of list) put("highlights", h.id, aid, h);
@@ -179,7 +182,8 @@ export function startSync(userId: string) {
     const flush = async () => {
       if (!batch.length) return;
       const changes: Partial<Record<Collection, OutRow[]>> = {};
-      for (const r of batch) (changes[r.c] ??= []).push(r.row);
+      const committed=<T extends object>(value:T):T=>{const copy={...value} as T & {pendingSource?:unknown};delete copy.pendingSource;return copy;};
+      for (const r of batch) (changes[r.c] ??= []).push({...r.row,data:committed(r.row.data as object),...(r.row.doc?{doc:committed(r.row.doc)}:{})});
       if (!current()) return;
       const res = await fetch("/api/sync", { method: "POST", headers: { "Content-Type": "application/json", "X-Sakamoto-Owner": userId }, body: JSON.stringify({ changes }) });
       if (!res.ok) throw new Error(`push ${res.status}`);
@@ -189,6 +193,7 @@ export function startSync(userId: string) {
         const receipt = result.accepted.find((x) => x.collection === r.c && x.id === r.row.id);
         if (!receipt) continue;
         if (r.c === "articles" && r.row.doc && receipt.sourceRevision !== undefined) {
+          if(r.row.doc.pendingSource)bindPendingSource(r.row.id,r.row.doc.pendingSource,r.row.id,receipt.sourceRevision);
           const acknowledged = await acknowledgeDocRevision(r.row.doc, receipt.sourceRevision, userId);
           if (!current()) return;
           if (acknowledged) window.dispatchEvent(new CustomEvent("gloss:text-replaced", { detail: acknowledged }));

@@ -16,6 +16,7 @@ export function derivedDocument(
       return copy;
     }),
   };
+  delete copy.pendingSource;
   delete copy.post;
   delete copy.pdfSource;
   delete copy.sourceUrl;

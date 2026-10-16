@@ -344,24 +344,96 @@ test("a successful edited-source acknowledgement updates only its matching cache
     );
     sync.stop();
     const original = (await fetchText(id))!;
+    useStore
+      .getState()
+      .addHighlight({
+        id: "original-before-edit",
+        articleId: id,
+        sourceRevision: 1,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 8 },
+          quote: "Original",
+        },
+        note: "Original note",
+        createdAt: 1,
+      });
     assert.equal(
-      await useStore
-        .getState()
-        .updateText(
-          {
-            ...original,
-            blocks: [
-              {
-                id: "b1",
-                type: "p",
-                runs: [{ text: "Revised amber source." }],
-              },
-            ],
-          },
-          3,
-        ),
+      await useStore.getState().updateText(
+        {
+          ...original,
+          blocks: [
+            {
+              id: "b1",
+              type: "p",
+              runs: [{ text: "Revised amber source." }],
+            },
+          ],
+        },
+        3,
+      ),
       true,
     );
+    const pending = (await loadDoc(id))!;
+    useStore
+      .getState()
+      .addHighlight({
+        id: "pending-before-ack",
+        articleId: id,
+        sourceRevision: pending.sourceRevision,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 7 },
+          quote: "Revised",
+        },
+        note: "New body note before acknowledgement",
+        createdAt: 2,
+      });
+    useStore
+      .getState()
+      .addGloss({
+        id: "pending-whole-text",
+        articleId: id,
+        sourceRevision: pending.sourceRevision,
+        at: "b1",
+        action: "ask",
+        question: "My saved question",
+        turns: [
+          { role: "assistant", content: "Saved response on revised body" },
+        ],
+        createdAt: 2,
+      });
+    useStore
+      .getState()
+      .setBrief(id, {
+        status: "loading",
+        sourceRevision: pending.sourceRevision,
+        pendingSource: pending.pendingSource,
+      });
+    useStore
+      .getState()
+      .setProgress(id, {
+        sourceRevision: pending.sourceRevision,
+        pendingSource: pending.pendingSource,
+        block: "b1",
+        pct: 0.5,
+        at: 3,
+      });
+    useStore
+      .getState()
+      .addHighlight({
+        id: "historical-while-pending",
+        articleId: id,
+        sourceRevision: 1,
+        pendingSource: null,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 8 },
+          quote: "Original",
+        },
+        note: "Explicit historical note",
+        createdAt: 3,
+      });
     sync = startSync(owner);
     await waitFor(async () => (await loadDoc(id))?.sourceRevision === 2);
     retrySync();
@@ -370,28 +442,87 @@ test("a successful edited-source acknowledgement updates only its matching cache
         useStore.getState().library.find((item) => item.id === id)
           ?.sourceRevision === 2,
     );
-    const current = (await loadDoc(id))!;
-    assert.equal(current.blocks[0].runs[0].text, "Revised amber source.");
     useStore
       .getState()
-      .addHighlight({
-        id: "new-annotation",
-        articleId: id,
-        sourceRevision: current.sourceRevision,
-        anchor: {
-          start: { b: "b1", o: 0 },
-          end: { b: "b1", o: 7 },
-          quote: "Revised",
-        },
-        note: "New body note",
-        createdAt: 1,
+      .setBrief(id, {
+        status: "ready",
+        sourceRevision: pending.sourceRevision,
+        pendingSource: pending.pendingSource,
+        data: { gist: "Summary of revised body", claims: [], sections: [] },
+        at: 3,
       });
+    const current = (await loadDoc(id))!;
+    assert.equal(current.blocks[0].runs[0].text, "Revised amber source.");
+    useStore.getState().addHighlight({
+      id: "new-annotation",
+      articleId: id,
+      sourceRevision: current.sourceRevision,
+      anchor: {
+        start: { b: "b1", o: 0 },
+        end: { b: "b1", o: 7 },
+        quote: "Revised",
+      },
+      note: "New body note",
+      createdAt: 1,
+    });
     retrySync();
-    await waitFor(async () =>
-      (await pullRows(owner)).changes.highlights.some(
-        (row) => row.id === "new-annotation",
-      ),
+    await waitFor(async () => {
+      const rows = await pullRows(owner);
+      return (
+        ["new-annotation", "pending-before-ack", "original-before-edit"].every(
+          (id) => rows.changes.highlights.some((row) => row.id === id),
+        ) &&
+        rows.changes.glosses.some((row) => row.id === "pending-whole-text") &&
+        rows.changes.briefs.some((row) => row.id === id) &&
+        rows.changes.progress.some((row) => row.id === id)
+      );
+    }, "all source-bound annotations persisted");
+    const annotations = await pullRows(owner);
+    const pendingMark = annotations.changes.highlights.find(
+      (row) => row.id === "pending-before-ack",
+    )!;
+    assert.ok(pendingMark);
+    assert.equal(pendingMark.data.sourceRevision, 2);
+    assert.equal(pendingMark.data.note, "New body note before acknowledgement");
+    assert.equal(
+      annotations.changes.highlights.find(
+        (row) => row.id === "original-before-edit",
+      )?.data.sourceRevision,
+      1,
     );
+    assert.equal(
+      annotations.changes.glosses.find((row) => row.id === "pending-whole-text")
+        ?.data.sourceRevision,
+      2,
+    );
+    assert.equal(
+      annotations.changes.briefs.find((row) => row.id === id)?.data
+        .sourceRevision,
+      2,
+    );
+    assert.equal(
+      annotations.changes.progress.find((row) => row.id === id)?.data
+        .sourceRevision,
+      2,
+    );
+    assert.equal(
+      annotations.changes.highlights.find(
+        (row) => row.id === "historical-while-pending",
+      )?.data.sourceRevision,
+      1,
+    );
+    for (const collection of [
+      annotations.changes.highlights,
+      annotations.changes.glosses,
+      annotations.changes.briefs,
+      annotations.changes.progress,
+    ])
+      for (const row of collection)
+        assert.equal(
+          row.data.pendingSource,
+          undefined,
+          "local pending identity must not become server metadata",
+        );
     const saved = (await pullRows(owner)).changes.highlights.find(
       (row) => row.id === "new-annotation",
     )!;
@@ -458,29 +589,115 @@ test("a delayed source receipt cannot overwrite or stamp a newer pending body", 
     );
     sync.stop();
     const original = (await fetchText(id))!;
-    await useStore
+    await useStore.getState().updateText(
+      {
+        ...original,
+        blocks: [{ id: "b1", type: "p", runs: [{ text: "First amber" }] }],
+      },
+      2,
+    );
+    useStore
       .getState()
-      .updateText(
-        {
-          ...original,
-          blocks: [{ id: "b1", type: "p", runs: [{ text: "First amber" }] }],
+      .addHighlight({
+        id: "amber-pending",
+        articleId: id,
+        sourceRevision: 1,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 5 },
+          quote: "First",
         },
-        2,
-      );
+        note: "Note on first edited body",
+        createdAt: 2,
+      });
     hold = true;
     sync = startSync(owner);
     await sent;
-    await useStore
-      .getState()
-      .updateText(
-        {
-          ...original,
-          blocks: [{ id: "b1", type: "p", runs: [{ text: "Later silver" }] }],
-        },
-        2,
+    assert.equal(
+      (await pullRows(owner)).changes.highlights.some(
+        (row) => row.id === "amber-pending",
+      ),
+      false,
+      "unacknowledged annotations must not be published at the old revision",
+    );
+    const originalPut = IDBObjectStore.prototype.put,
+      originalSet = localStorage.setItem;
+    IDBObjectStore.prototype.put = function (
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      if (String(key).includes(":offline-"))
+        throw new DOMException("Full", "QuotaExceededError");
+      return originalPut.call(this, value, key);
+    };
+    localStorage.setItem = (key: string, value: string) => {
+      if (key.includes(":offline-"))
+        throw new DOMException("Full", "QuotaExceededError");
+      originalSet(key, value);
+    };
+    try {
+      assert.equal(
+        await useStore
+          .getState()
+          .updateText(
+            {
+              ...original,
+              blocks: [
+                { id: "b1", type: "p", runs: [{ text: "Later silver" }] },
+              ],
+            },
+            2,
+          ),
+        false,
       );
+      assert.equal((await loadDoc(id))?.blocks[0].runs[0].text, "First amber");
+      assert.equal(
+        useStore
+          .getState()
+          .highlights[id].find((mark) => mark.id === "amber-pending")?.note,
+        "Note on first edited body",
+      );
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+      localStorage.setItem = originalSet;
+    }
+
+    await useStore.getState().updateText(
+      {
+        ...original,
+        blocks: [{ id: "b1", type: "p", runs: [{ text: "Later silver" }] }],
+      },
+      2,
+    );
+    const copy = useStore
+      .getState()
+      .library.find((item) => item.id.startsWith("offline-"))!;
+    assert.ok(copy);
+    assert.equal(
+      (await loadDoc(copy.id))?.blocks[0].runs[0].text,
+      "First amber",
+    );
+    useStore
+      .getState()
+      .addHighlight({
+        id: "silver-pending",
+        articleId: id,
+        sourceRevision: 1,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 5 },
+          quote: "Later",
+        },
+        note: "Note on later edited body",
+        createdAt: 3,
+      });
     release();
-    await waitFor(()=>JSON.parse(values.get(`sakamoto:sync:v2:${owner}`)??"{}").seen?.articles?.[id]?.[3]===2,"first source receipt persisted");
+    await waitFor(
+      () =>
+        JSON.parse(values.get(`sakamoto:sync:v2:${owner}`) ?? "{}").seen
+          ?.articles?.[id]?.[3] === 2,
+      "first source receipt persisted",
+    );
     const pending = (await loadDoc(id))!;
     assert.equal(pending.blocks[0].runs[0].text, "Later silver");
     assert.equal(
@@ -489,7 +706,38 @@ test("a delayed source receipt cannot overwrite or stamp a newer pending body", 
       "receipt for amber must not label silver as revision two",
     );
     retrySync();
-    await waitFor(async () => (await loadDoc(id))?.sourceRevision === 3,"newer body revision three");
+    await waitFor(
+      async () => (await loadDoc(id))?.sourceRevision === 3,
+      "newer body revision three",
+    );
+    retrySync();
+    await waitFor(async () => {
+      const notes = (await pullRows(owner)).changes.highlights;
+      return (
+        notes.some((row) => row.id === "silver-pending") &&
+        notes.some((row) => row.id === "amber-pending")
+      );
+    }, "both pending generations persisted");
+    const notes = (await pullRows(owner)).changes.highlights;
+    const amber = notes.find((row) => row.id === "amber-pending")!,
+      silver = notes.find((row) => row.id === "silver-pending")!;
+    assert.equal(amber.articleId, copy.id);
+    assert.equal(amber.data.sourceRevision, 1);
+    assert.equal(silver.articleId, id);
+    assert.equal(silver.data.sourceRevision, 3);
+    const recovered = (
+      await (
+        await read(
+          new Request("http://localhost/api/articles/" + copy.id, {
+            headers: { authorization: "Bearer " + token.token },
+          }),
+          { params: Promise.resolve({ id: copy.id }) },
+        )
+      ).json()
+    ).doc;
+    assert.ok(
+      recovered.blocks[0].runs[0].text.includes(amber.data.anchor.quote),
+    );
     const current = (await fetchText(id))!;
     assert.equal(current.blocks[0].runs[0].text, "Later silver");
     const historical = await (
@@ -569,37 +817,33 @@ test("edited structured posts publish the visible body as a derived document and
     );
     sync.stop();
     const original = (await fetchText(id))!;
-    useStore
-      .getState()
-      .addHighlight({
-        id: "original-mark",
-        articleId: id,
-        sourceRevision: 1,
-        anchor: {
-          start: { b: "b1", o: 0 },
-          end: { b: "b1", o: 8 },
-          quote: "Original",
-        },
-        createdAt: 1,
-      });
+    useStore.getState().addHighlight({
+      id: "original-mark",
+      articleId: id,
+      sourceRevision: 1,
+      anchor: {
+        start: { b: "b1", o: 0 },
+        end: { b: "b1", o: 8 },
+        quote: "Original",
+      },
+      createdAt: 1,
+    });
     useStore
       .getState()
       .shelve(id, { tags: ["my tag"], topic: "business", favorite: true });
-    await useStore
-      .getState()
-      .updateText(
-        {
-          ...original,
-          blocks: [
-            {
-              id: "b1",
-              type: "p",
-              runs: [{ text: "My revised amber source" }],
-            },
-          ],
-        },
-        4,
-      );
+    await useStore.getState().updateText(
+      {
+        ...original,
+        blocks: [
+          {
+            id: "b1",
+            type: "p",
+            runs: [{ text: "My revised amber source" }],
+          },
+        ],
+      },
+      4,
+    );
     const remote = (await pullRows(owner)).changes.articles.find(
       (row) => row.id === id,
     )!;
@@ -757,25 +1001,63 @@ test("edited structured posts publish the visible body as a derived document and
     globalThis.fetch = browserFetch;
     sync.stop();
     const edited = (await loadDoc(id))!;
-    await useStore
+    await useStore.getState().updateText(
+      {
+        ...edited,
+        blocks: [
+          {
+            id: "b1",
+            type: "p",
+            runs: [{ text: "Offline violet revision" }],
+          },
+        ],
+      },
+      3,
+    );
+    useStore
       .getState()
-      .updateText(
-        {
-          ...edited,
-          blocks: [
-            {
-              id: "b1",
-              type: "p",
-              runs: [{ text: "Offline violet revision" }],
-            },
-          ],
+      .addHighlight({
+        id: "violet-conflict-note",
+        articleId: id,
+        sourceRevision: 2,
+        anchor: {
+          start: { b: "b1", o: 0 },
+          end: { b: "b1", o: 7 },
+          quote: "Offline",
         },
-        3,
-      );
+        note: "Keep note with offline text",
+        createdAt: 4,
+      });
+    useStore
+      .getState()
+      .addGloss({
+        id: "violet-conflict-whole",
+        articleId: id,
+        sourceRevision: 2,
+        at: "b1",
+        action: "ask",
+        turns: [
+          {
+            role: "assistant",
+            content: "Partial whole-text entry",
+            streaming: true,
+          },
+        ],
+        createdAt: 4,
+      });
+    const violet = (await loadDoc(id))!;
+    useStore
+      .getState()
+      .setBrief(id, {
+        status: "loading",
+        sourceRevision: violet.sourceRevision,
+        pendingSource: violet.pendingSource,
+      });
+
     // Older clients may have left original post metadata beside edited blocks.
     const { saveDoc } = await import("../lib/store");
     await saveDoc({
-      ...edited,
+      ...violet,
       post: original.post,
       blocks: [
         { id: "b1", type: "p", runs: [{ text: "Offline violet revision" }] },
@@ -822,6 +1104,55 @@ test("edited structured posts publish the visible body as a derived document and
         })
       ).json()
     ).doc;
+    useStore
+      .getState()
+      .updateGloss(id, "violet-conflict-whole", (g) => ({
+        ...g,
+        turns: [
+          {
+            role: "assistant",
+            content: "Completed whole-text entry on violet body",
+            streaming: false,
+          },
+        ],
+      }));
+    useStore
+      .getState()
+      .setBrief(id, {
+        status: "ready",
+        sourceRevision: violet.sourceRevision,
+        pendingSource: violet.pendingSource,
+        data: { gist: "Late violet summary", claims: [], sections: [] },
+        at: 4,
+      });
+    retrySync();
+    await waitFor(async () => {
+      const rows = await pullRows(owner);
+      return (
+        rows.changes.highlights.some(
+          (row) => row.id === "violet-conflict-note",
+        ) &&
+        rows.changes.glosses.some(
+          (row) => row.id === "violet-conflict-whole",
+        ) &&
+        rows.changes.briefs.some((row) => row.id === recovered.id)
+      );
+    }, "conflict annotations persisted");
+    const marks = await pullRows(owner);
+    for (const row of [
+      marks.changes.highlights.find((row) => row.id === "violet-conflict-note"),
+      marks.changes.glosses.find((row) => row.id === "violet-conflict-whole"),
+      marks.changes.briefs.find((row) => row.id === recovered.id),
+    ]) {
+      assert.ok(row);
+      assert.equal(row.articleId, recovered.id);
+      assert.equal(row.data.sourceRevision, 1);
+    }
+    assert.equal(
+      marks.changes.glosses.find((row) => row.id === "violet-conflict-whole")
+        ?.data.turns[0].content,
+      "Completed whole-text entry on violet body",
+    );
     assert.equal(recovery.post, undefined);
     assert.equal(recovery.blocks[0].runs[0].text, "Offline violet revision");
     assert.deepEqual(recovery.recoveredFrom, { itemId: id, sourceRevision: 2 });
@@ -936,22 +1267,20 @@ test("actual PDF offline recovery removes extraction and physical-page claims fr
     );
     sync.stop();
     await saveDoc(original);
-    await useStore
-      .getState()
-      .updateText(
-        {
-          ...original,
-          blocks: [
-            {
-              id: "p1-text",
-              type: "p",
-              page: 1,
-              runs: [{ text: "My revised amber source" }],
-            },
-          ],
-        },
-        4,
-      );
+    await useStore.getState().updateText(
+      {
+        ...original,
+        blocks: [
+          {
+            id: "p1-text",
+            type: "p",
+            page: 1,
+            runs: [{ text: "My revised amber source" }],
+          },
+        ],
+      },
+      4,
+    );
     const local = (await loadDoc(id))!;
     assert.equal(local.pdfSource, undefined);
     assert.equal(local.blocks[0].page, undefined);
