@@ -21,8 +21,9 @@
 
 import { OfflineSourceConflictError, preserveOfflineSource } from "./offline-source";
 import { READER_METADATA_FIELDS } from "./library-ownership";
+import { derivedDocumentMetadata } from "./source-edits";
 import { accountEpoch, accountScope } from "./account-scope";
-import { forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
+import { acknowledgeDocRevision, forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
 import type { Article } from "./article";
 import { forgetCover } from "./covers";
 
@@ -187,6 +188,11 @@ export function startSync(userId: string) {
       for (const r of batch) {
         const receipt = result.accepted.find((x) => x.collection === r.c && x.id === r.row.id);
         if (!receipt) continue;
+        if (r.c === "articles" && r.row.doc && receipt.sourceRevision !== undefined) {
+          const acknowledged = await acknowledgeDocRevision(r.row.doc, receipt.sourceRevision, userId);
+          if (!current()) return;
+          if (acknowledged) window.dispatchEvent(new CustomEvent("gloss:text-replaced", { detail: acknowledged }));
+        }
         if (r.key === null) delete base.seen[r.c][r.row.id];
         else base.seen[r.c][r.row.id] = [r.key, r.row.articleId, receipt.revision, receipt.sourceRevision];
       }
@@ -275,7 +281,8 @@ export function startSync(userId: string) {
             patch.rev = want.rev;
             patch.words = want.words;
           }
-          return { ...r, data: { ...r.data, ...patch } };
+          const data = { ...r.data, ...patch };
+          return { ...r, data: prior[3] === r.sourceRevision && want.rev !== was.rev ? derivedDocumentMetadata(data) : data };
         });
       }
       useStore.getState().applyRemote(rebased);

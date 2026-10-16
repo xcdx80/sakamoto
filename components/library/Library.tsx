@@ -173,7 +173,7 @@ export function Library() {
         {account && anonymousCount > 0 && !adopted && (
           <aside className="mx-auto max-w-6xl px-6 py-4" aria-label="Anonymous library">
             <p>{anonymousCount} items remain saved on this device outside your account.</p>
-            <button className="underline" onClick={() => void adopt().then(() => setAdopted(true))}>
+            <button className="underline" onClick={() => void adopt().then(() => setAdopted(true)).catch(() => {})}>
               Copy anonymous library into this account
             </button>
             <button className="ml-4 underline" onClick={() => setAdopted(true)}>

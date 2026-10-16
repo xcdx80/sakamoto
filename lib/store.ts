@@ -5,6 +5,7 @@ import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-
 import { create } from "zustand";
 import type { Action } from "./actions";
 import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
+import { derivedDocument, derivedDocumentMetadata } from "./source-edits";
 import { modelOf, type ModelKey, type Source, type Usage } from "./models";
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type Marker, type Settings } from "./settings";
 
@@ -257,14 +258,23 @@ export const useStore = create<State>((set, get) => ({
   adoptAnonymous: async () => {
     const owner = accountScope();
     if (!owner) return;
-    let old: Partial<Persisted> = {};
-    old = adoptionSnapshot();
+    const epoch = accountEpoch();
+    const currentOwner = () => accountScope() === owner && accountEpoch() === epoch;
+    const fail = (title: string): never => {
+      const error = new Error(`Could not durably copy “${title}”. Anonymous data is unchanged. Free storage or restore the source and retry.`);
+      if (currentOwner()) set({ syncError: error.message });
+      throw error;
+    };
+    const old = adoptionSnapshot();
     for (const item of old.library ?? []) {
+      const destination = await loadDoc(item.id, owner);
+      if (!currentOwner()) return;
+      if (destination) continue; // Keep an existing readable account copy without replacement.
       const doc = await loadDoc(item.id, null, true);
-      if (accountScope() !== owner) return;
-      if (doc && !get().library.some((x) => x.id === item.id)) await saveDoc(doc, owner);
+      if (!currentOwner()) return;
+      if (doc && !(await saveDoc(doc, owner))) fail(item.title);
+      if (!currentOwner()) return;
     }
-    if (accountScope() !== owner) return;
     const current = get();
     const arrays = <T extends { id: string }>(older: Record<string, T[]>, newer: Record<string, T[]>) =>
       Object.fromEntries(
@@ -273,14 +283,15 @@ export const useStore = create<State>((set, get) => ({
           [...(older[id] ?? []).filter((x) => !(newer[id] ?? []).some((y) => x.id === y.id)), ...(newer[id] ?? [])],
         ]),
       );
-    set({
+    const adopted: Persisted = {
       library: [...(old.library ?? []).filter((x) => !current.library.some((y) => y.id === x.id)), ...current.library],
       highlights: arrays(old.highlights ?? {}, current.highlights),
       glosses: arrays(old.glosses ?? {}, current.glosses),
       briefs: { ...old.briefs, ...current.briefs },
       progress: { ...old.progress, ...current.progress },
-    });
-    persist(get());
+    };
+    if (!persist(adopted)) fail("anonymous library");
+    set({ ...adopted, syncError: null });
   },
   hydrate: () => {
     if (get().hydrated) return;
@@ -431,8 +442,8 @@ export const useStore = create<State>((set, get) => ({
   // the marks stay. The rev bump makes sync send the text again.
   updateText: async (a, words) => {
     const epoch = accountEpoch();
-    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
-    set((st) => ({ library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)) }));
+    if (!(await saveDoc(derivedDocument(a))) || accountEpoch() !== epoch) return false;
+    set((st) => ({ library: st.library.map((x) => (x.id === a.id ? { ...derivedDocumentMetadata(x), words, rev: (x.rev ?? 0) + 1 } : x)) }));
     return true;
   },
 
@@ -440,11 +451,11 @@ export const useStore = create<State>((set, get) => ({
   // text, so highlights, glosses and the whole-text gloss go with it; the caller asks first.
   replaceText: async (a, words) => {
     const epoch = accountEpoch();
-    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
+    if (!(await saveDoc(derivedDocument(a))) || accountEpoch() !== epoch) return false;
     set((st) => {
       const rest = <T>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== a.id)) as Record<string, T>;
       return {
-        library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)),
+        library: st.library.map((x) => (x.id === a.id ? { ...derivedDocumentMetadata(x), words, rev: (x.rev ?? 0) + 1 } : x)),
         highlights: rest(st.highlights),
         glosses: rest(st.glosses),
         briefs: rest(st.briefs),
@@ -570,6 +581,59 @@ export async function saveDoc(a: Article, owner: string | null = accountScope())
   } catch {
     return false;
   }
+}
+
+/** Stamp only the exact uploaded cache value; a later local edit must never be replaced by its receipt. */
+export async function acknowledgeDocRevision(
+  uploaded: Article,
+  revision: number,
+  owner: string,
+): Promise<Article | null> {
+  const key = scopedKey(uploaded.id, owner),
+    expected = JSON.stringify(uploaded);
+  let unavailable: unknown;
+  try {
+    const db = await idb();
+    const result = await new Promise<{
+      found: boolean;
+      acknowledged: Article | null;
+    }>((resolve, reject) => {
+      const transaction = db.transaction(DOCS, "readwrite"),
+        store = transaction.objectStore(DOCS),
+        read = store.get(key);
+      let acknowledged: Article | null = null,
+        found = false;
+      read.onsuccess = () => {
+        found = Boolean(read.result);
+        if (found && JSON.stringify(read.result) === expected) {
+          acknowledged = { ...read.result, sourceRevision: revision };
+          store.put(acknowledged, key);
+        }
+      };
+      transaction.oncomplete = () => resolve({ found, acknowledged });
+      transaction.onabort = () =>
+        reject(
+          transaction.error ?? new Error("Source revision cache write failed."),
+        );
+      transaction.onerror = () => reject(transaction.error);
+    });
+    if (result.found) return result.acknowledged;
+  } catch (error) {
+    unavailable = error;
+  }
+  const raw = localStorage.getItem(scopedKey(DOC_PREFIX + uploaded.id, owner));
+  if (raw) {
+    const cached = JSON.parse(raw) as Article;
+    if (JSON.stringify(cached) !== expected) return null;
+    const acknowledged = { ...cached, sourceRevision: revision };
+    localStorage.setItem(
+      scopedKey(DOC_PREFIX + uploaded.id, owner),
+      JSON.stringify(acknowledged),
+    );
+    return acknowledged;
+  }
+  if (unavailable) throw unavailable;
+  return null;
 }
 
 export async function loadDoc(id: string, owner: string | null = accountScope(), explicitLegacyAdoption = false): Promise<Article | null> {

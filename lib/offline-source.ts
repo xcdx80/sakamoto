@@ -1,6 +1,7 @@
 import { accountEpoch, accountScope } from "./account-scope";
 import { checkpointLibrary, loadDoc, saveDoc, uid, useStore } from "./store";
 import type { Article } from "./article";
+import { derivedDocument } from "./source-edits";
 
 export class OfflineSourceConflictError extends Error {
   constructor() {
@@ -18,7 +19,7 @@ export async function preserveOfflineSource(id: string, owner: string): Promise<
   if (!original || !current()) throw new OfflineSourceConflictError();
   const recoveredFrom = { itemId: id, sourceRevision: item.sourceRevision ?? 1 };
   const copy: Article = {
-    ...original,
+    ...derivedDocument(original, "Offline recovery"),
     id: "offline-" + uid(),
     title: item.title + " (offline copy)",
     origin: "paste",
@@ -27,7 +28,6 @@ export async function preserveOfflineSource(id: string, owner: string): Promise<
     sourceRevision: 1,
     recoveredFrom,
   };
-  delete copy.sourceUrl;
   if (!(await saveDoc(copy, owner)) || !current()) throw new OfflineSourceConflictError();
   useStore.getState().addToLibrary(copy, item.words, { tags: item.tags, favorite: item.favorite, topic: item.topic, manualFields: item.manualFields, recoveredFrom });
   if (!checkpointLibrary() || !current()) {
