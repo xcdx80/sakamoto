@@ -10,7 +10,7 @@
  */
 
 export const TOGETHER_URL = "https://api.together.xyz/v1/chat/completions";
-export const APP_UA = "Gloss/0.1";
+export const APP_UA = "Sakamoto/0.1";
 
 import { MODELS, costFor, type ModelEntry, type ModelKey, type StreamEvent, type Usage } from "./models";
 

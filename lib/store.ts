@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { Action } from "./actions";
-import type { Article, BriefData } from "./article";
+import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
 import { modelOf, type ModelKey, type Source, type Usage } from "./models";
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type Marker, type Settings } from "./settings";
 
@@ -61,6 +61,8 @@ export type LibraryItem = {
   source?: string;
   words: number;
   origin: Article["origin"];
+  /** Optional for entries saved before content types were introduced. */
+  contentType?: ContentType;
   addedAt: number;
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
@@ -80,7 +82,7 @@ export type LibraryItem = {
   favorite?: boolean;
   /** When it was first read to the end. */
   finishedAt?: number;
-  /** Shelved by an agent, through the Gloss MCP server. */
+  /** Saved by an agent, through the Sakamoto MCP server. */
   addedBy?: "agent";
   /** Which connection an agent saved it through, by the name the reader gave it. */
   addedVia?: string;
@@ -282,6 +284,7 @@ export const useStore = create<State>((set, get) => ({
         source: a.source,
         words,
         origin: a.origin,
+        contentType: contentTypeOf(a),
         addedAt: a.addedAt ?? Date.now(),
         dek: a.dek,
         year,

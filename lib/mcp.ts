@@ -1,16 +1,17 @@
 /**
- * The Gloss MCP server: a reader's agent saves articles (by link, or as text it
+ * The Sakamoto MCP server: a reader's agent saves articles (by link, or as text it
  * has read itself) to their library and looks through it. Streamable HTTP, stateless: every request is one JSON-RPC
  * message answered with JSON, no session and no event stream.
  *
  * Auth is a personal token from the library ("Connect an agent"), sent as
  * `Authorization: Bearer gls_...`, or as the last part of the URL
- * (usegloss.io/mcp/gls_...) for clients that only take a URL.
+ * (your-site/mcp/gls_...) for clients that only take a URL.
  */
 
 import { hashToken, looksLikeToken } from "./agent";
 import { normalizeUrl } from "./links";
-import { blockText, textToArticle, wordCount, type Article } from "./article";
+import { SITE_URL } from "./brand";
+import { blockText, contentTypeOf, isContentType, textToArticle, wordCount, type Article } from "./article";
 import { shelfOf, shelveForUser, tokenUser, type ShelfRow } from "./db";
 import { arxivFullText, fetchArticle, notAnArticle } from "./fetch-article";
 import { TOPIC, TOPICS, isTopic, yearOf, type TopicKey } from "./library";
@@ -25,17 +26,17 @@ const PER_CALL = 25;
 /** About 60,000 words: a long essay or a two-hour transcript, well short of a book. */
 const MAX_TEXT = 400_000;
 const PER_DAY = 1000;
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://usegloss.io";
+const SITE = SITE_URL;
 
-const INSTRUCTIONS = `Gloss is a reader. This server is the reader's own library in Gloss: save articles to it, and look through what is there.
-When saving from social posts or bookmarks, send the URL of the article, essay or paper itself (the link inside the post), not the post. Gloss reads each page in, sorts it onto a topic, and it appears on the reader's shelves the next time they open Gloss.
-Gloss can't fetch posts on X and other social sites, videos, or pages behind a login. When the post itself is the piece (an X Article, a long post, a thread) or the reader wants a video's transcript, read it yourself and send the full text with save_text.`;
+const INSTRUCTIONS = `Sakamoto is a reader. This server is the reader's own library in Sakamoto: save articles to it, and look through what is there.
+When saving from social posts or bookmarks, send the URL of the article, essay or paper itself (the link inside the post), not the post. Sakamoto reads each page in, sorts it onto a topic, and it appears on the reader's shelves the next time they open Sakamoto.
+Sakamoto can't fetch posts on X and other social sites, videos, or pages behind a login. When the post itself is the piece (an X Article, a long post, a thread) or the reader wants a video's transcript, read it yourself and send the full text with save_text.`;
 
 const TOOLS = [
   {
     name: "save_articles",
     title: "Save articles to the library",
-    description: `Save web articles, essays, blog posts or papers to the reader's Gloss library. Gloss fetches each page, keeps its full text and sorts it onto a topic. Up to ${PER_CALL} URLs per call. Send the article's own URL, not a link to a post on X or another social site. Links already in the library are skipped. Returns what happened to each URL.`,
+    description: `Save web articles, essays, blog posts or papers to the reader's Sakamoto library. Sakamoto fetches each page, keeps its full text and sorts it onto a topic. Up to ${PER_CALL} URLs per call. Send the article's own URL, not a link to a post on X or another social site. Links already in the library are skipped. Returns what happened to each URL.`,
     inputSchema: {
       type: "object",
       properties: { urls: { type: "array", items: { type: "string" }, minItems: 1, maxItems: PER_CALL, description: "Article URLs to save." } },
@@ -47,7 +48,7 @@ const TOOLS = [
   {
     name: "save_text",
     title: "Save a text to the library",
-    description: "Save a text you have read yourself to the reader's Gloss library, for what Gloss can't fetch from a link: an X Article, a long post or a thread on X, a video's transcript, a page behind a login. Send the whole text as Markdown (blank lines between paragraphs, # for headings), word for word, not a summary. Give the original URL so the reader can open the source and the text isn't saved twice. One text per call.",
+    description: "Save a text you have read yourself to the reader's Sakamoto library, for what Sakamoto can't fetch from a link: an X Article, a long post or a thread on X, a video's transcript, a page behind a login. Send the whole text as Markdown (blank lines between paragraphs, # for headings), word for word, not a summary. Give the original URL so the reader can open the source and the text isn't saved twice. One text per call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -57,6 +58,7 @@ const TOOLS = [
         url: { type: "string", description: "Where it came from: the post, article or video URL." },
         source: { type: "string", description: "The publication or site, like \"X\" or a YouTube channel. Defaults to the URL's site." },
         published: { type: "string", description: "When it was published, as a date." },
+        contentType: { type: "string", enum: ["article", "document", "post"], description: "Optional source type. Otherwise inferred from its URL or pasted text." },
       },
       required: ["text"],
       additionalProperties: false,
@@ -66,7 +68,7 @@ const TOOLS = [
   {
     name: "search_library",
     title: "Search the library",
-    description: "Find texts in the reader's Gloss library by words in the title, author, source or tags, by topic, or by reading status. With no arguments, lists the most recently added.",
+    description: "Find texts in the reader's Sakamoto library by words in the title, author, source or tags, by topic, or by reading status. With no arguments, lists the most recently added.",
     inputSchema: {
       type: "object",
       properties: {
@@ -123,14 +125,14 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
 
   const header = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   const token = looksLikeToken(header) ? header : looksLikeToken(pathToken) ? pathToken : null;
-  if (!process.env.DATABASE_URL) return fail(first.id, -32000, "The Gloss library is not available on this server.", 503);
+  if (!process.env.DATABASE_URL) return fail(first.id, -32000, "The Sakamoto library is not available on this server.", 503);
   let who: { userId: string; label: string } | null = null;
   try {
     who = token ? await tokenUser(hashToken(token)) : null;
   } catch {
-    return fail(first.id, -32000, "The Gloss library is not reachable right now. Try again in a minute.", 503);
+    return fail(first.id, -32000, "The Sakamoto library is not reachable right now. Try again in a minute.", 503);
   }
-  if (!who) return fail(first.id, -32001, `Missing or revoked Gloss token. Make one in your library at ${SITE}/library, under Connect an agent.`, 401);
+  if (!who) return fail(first.id, -32001, `Missing or revoked Sakamoto token. Make one in your library at ${SITE}/library, under Connect an agent.`, 401);
   const { userId, label } = who;
   if (!allow(`mcp:${userId}`, 60, 60_000)) return fail(first.id, -32002, "Too many requests. Wait a minute, then try again.", 429);
 
@@ -150,7 +152,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       return ok({
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "gloss", title: "Gloss library", version: "1.0.0", websiteUrl: SITE },
+        serverInfo: { name: "sakamoto", title: "Sakamoto library", version: "1.0.0", websiteUrl: SITE },
         instructions: INSTRUCTIONS,
       });
     }
@@ -201,7 +203,7 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
   const one = async ({ url, key }: { url: string; key: string }): Promise<Saved> => {
     const kind = notAnArticle(url);
     if (kind === "social") return { url, status: "failed", reason: "This is a social post, not an article. Send the link the post points to, or, if the post is the piece, read it and send its text with save_text." };
-    if (kind === "video") return { url, status: "failed", reason: "This is a video, not an article. Gloss reads text: send its transcript with save_text." };
+    if (kind === "video") return { url, status: "failed", reason: "This is a video, not an article. Sakamoto reads text: send its transcript with save_text." };
     const known = have.get(key);
     if (known) return { url, status: "already_saved", title: String(known.data.title ?? ""), topic: TOPIC[isTopic(known.data.topic) ? known.data.topic : "unsorted"].name };
     if (budget <= 0) return { url, status: "failed", reason: `The daily limit of ${PER_DAY} saves is reached. Try again tomorrow.` };
@@ -212,7 +214,7 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
     let r = html ? await fetchArticle(html) : null;
     if (!r?.ok) r = await fetchArticle(url, { pdf: true });
     if (!r.ok) return { url, status: "failed", reason: r.error };
-    if ("pdf" in r) return { url, status: "failed", reason: "This link is a PDF. Agents can't save PDFs yet; open it in Gloss to read it." };
+    if ("pdf" in r) return { url, status: "failed", reason: "This link is a PDF. Agents can't save PDFs yet; open it in Sakamoto to read it." };
     const a = r.article;
     if (have.has(normalizeUrl(a.sourceUrl ?? ""))) {
       const k = have.get(normalizeUrl(a.sourceUrl ?? ""))!;
@@ -292,6 +294,7 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
   a.author = str(args.author);
   a.source = str(args.source) ?? (url ? new URL(url).hostname.replace(/^www\./, "") : undefined);
   a.sourceUrl = url;
+  a.contentType = contentTypeOf({ sourceUrl: url, origin: a.origin, contentType: isContentType(args.contentType) ? args.contentType : undefined });
   a.published = str(args.published);
   for (const k of ["author", "source", "sourceUrl", "published"] as const) if (a[k] === undefined) delete a[k];
 
@@ -303,6 +306,7 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
     title: a.title,
     topic,
     words: item.words,
+    readInSakamoto: `${SITE}/read/${a.id}`,
     readInGloss: `${SITE}/read/${a.id}`,
   });
 }
@@ -315,6 +319,7 @@ function shelfItem(a: Article, s: { topic?: TopicKey; tags?: string[]; scene?: s
     source: a.source,
     words: wordCount(a),
     origin: a.origin ?? "url",
+    contentType: contentTypeOf(a),
     addedAt: Date.now(),
     dek: a.dek,
     year: yearOf(a.published),
@@ -341,10 +346,12 @@ function describe(r: ShelfRow) {
     author: typeof d.author === "string" ? d.author : undefined,
     url: typeof d.sourceUrl === "string" ? d.sourceUrl : undefined,
     topic: TOPIC[topic].name,
+    contentType: contentTypeOf(d as LibraryItem),
     tags: Array.isArray(d.tags) ? d.tags : [],
     minutes: Math.max(1, Math.round(Number(d.words ?? 0) / 230)),
     status: r.pct >= 1 ? "finished" : r.pct > 0 ? "reading" : "unread",
     addedAt: new Date(Number(d.addedAt ?? 0)).toISOString().slice(0, 10),
+    readInSakamoto: `${SITE}/read/${r.id}`,
     readInGloss: `${SITE}/read/${r.id}`,
   };
 }

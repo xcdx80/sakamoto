@@ -2,6 +2,33 @@
 
 import { texToText } from "./tex";
 
+export type ContentType = "article" | "document" | "post";
+
+export const CONTENT_TYPES: { key: ContentType; label: string }[] = [
+  { key: "article", label: "Article" },
+  { key: "document", label: "Document" },
+  { key: "post", label: "Post" },
+];
+
+export const isContentType = (value: unknown): value is ContentType => value === "article" || value === "document" || value === "post";
+
+/** Older saved texts have no type. Infer one without rewriting their content or anchors. */
+export function contentTypeOf(source: { contentType?: ContentType; sourceUrl?: string; url?: string; origin?: string }): ContentType {
+  if (isContentType(source.contentType)) return source.contentType;
+  const raw = source.sourceUrl ?? source.url;
+  if (raw) {
+    try {
+      const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+      const host = url.hostname.toLowerCase().replace(/^www\./, "");
+      if ((url.protocol === "https:" || url.protocol === "http:") && ["x.com", "twitter.com", "mobile.twitter.com", "mobile.x.com"].includes(host) && /^\/(?:[\w]+\/status|i\/web\/status)\/\d+(?:\/|$)/.test(url.pathname)) return "post";
+      if (/\.pdf$/i.test(url.pathname)) return "document";
+      // Pasted article text with an ordinary source URL is still a web article.
+      if (source.origin !== "file" && (url.protocol === "https:" || url.protocol === "http:")) return "article";
+    } catch {}
+  }
+  return source.origin === "file" || source.origin === "paste" ? "document" : "article";
+}
+
 export type Run = { text: string; em?: boolean; strong?: boolean; code?: boolean; href?: string };
 
 export type BlockType = "p" | "h2" | "h3" | "quote" | "li" | "pre" | "note" | "figure" | "table";
@@ -31,6 +58,8 @@ export type Article = {
   dek?: string;
   source?: string;
   sourceUrl?: string;
+  /** Optional for compatibility with existing saved texts. */
+  contentType?: ContentType;
   blocks: Block[];
   /** The page's own lead picture (og:image), by its original URL: the library shows it on the cover. */
   image?: string;
@@ -155,6 +184,7 @@ export function textToArticle(input: string, opts: { title?: string; origin: Art
     title: title ? tidyTitle(title) : "Untitled",
     blocks,
     origin: opts.origin,
+    contentType: contentTypeOf({ origin: opts.origin }),
     addedAt: Date.now(),
   };
 }

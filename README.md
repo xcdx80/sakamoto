@@ -1,18 +1,18 @@
 <p align="center">
-  <a href="https://usegloss.io"><img alt="Gloss" src="public/og.png"></a>
+  <img alt="Sakamoto" src="public/sakamoto.svg">
 </p>
 
-<h1 align="center">Gloss</h1>
+<h1 align="center">Sakamoto</h1>
 
-<p align="center">A reader for articles, chapters and PDFs: select any line, start typing, and an open model writes the answer in the margin beside it, citing paragraphs you can check: <a href="https://usegloss.io">usegloss.io</a></p>
+<p align="center">A reader for articles, chapters and PDFs: select any line, start typing, and an open model writes the answer in the margin beside it, citing paragraphs you can check</p>
 
 ## Tech stack
 
 - Next.js 16 (App Router, Turbopack), React 19, Tailwind v4, Zustand. Local-first: texts live in IndexedDB, and glosses, highlights and settings in localStorage, all in the browser and all working signed out.
 - Optional accounts with Clerk. Signed in, your shelf, texts, highlights, notes, glosses and reading progress sync to Postgres on Neon (`lib/sync.ts`, `app/api/sync`); a text is fetched onto another device when it is opened there.
 - Your own notes on any highlight, in the margin beside the model's (`Lens.tsx`, `Margin.tsx`). A daily review on the home page brings back five of your highlights, spaced like flashcards (`lib/review.ts`); the shelf searches every highlight and note, and exports them all as Markdown files ready for Obsidian (`lib/export.ts`, `lib/zip.ts`).
-- The library (`/library`, `components/library/`): everything on your shelf as a bookcase, arranged by topic, recency, colour or length, with a topic view of painted plates and a 3D book that comes off the shelf. Any text can be renamed (click its title, there or in the shelf sheet), and the three samples can be taken off the shelf, remembered per device (`hiddenSamples` in `lib/library-prefs.ts`). Every new text is sorted onto one of 24 fixed topics, with a few tags, by one DeepSeek V4.1 Flash call (`lib/shelve.ts`, `app/api/shelve`, about $0.0001 a text); texts from before are sorted the first time the library opens (`lib/shelving.ts`). Covers show the page's own picture printed in the topic's ink; painted covers (FLUX.2 [dev], `lib/paint.ts`) are opt-in under Aa, kept on the device and, signed in, with the account (`covers`). Topic plates and icons are generated art in `public/library/`.
-- Agents can save to the library through an MCP server at `/mcp` (`lib/mcp.ts`): Streamable HTTP, stateless, four tools (`save_articles`, `save_text`, `search_library`, `list_topics`). Each reader makes a token in the library under Connect an agent (`app/api/agent-tokens`, only its hash is stored in `agent_tokens`), sent as `Authorization: Bearer gls_...` or as the last part of the URL. Saved links go through the same importer as the site (`lib/fetch-article.ts`); `save_text` takes Markdown the agent read itself, for what Gloss can't fetch (X Articles and long posts, video transcripts, pages behind a login). Both are sorted and written to the reader's synced shelf, so they appear on the next sync. Up to 25 links a call, one text a call, and 1,000 saves a day.
+- The library (`/library`, `components/library/`) displays saved articles, documents and posts as cards or a list, with sorting and filters for topic, tag, content type and reading status. Titles can be edited and samples can be hidden per device. New texts are classified into one of 24 fixed topics with a few tags (`lib/shelve.ts`, `app/api/shelve`); texts from before are classified when the library opens (`lib/shelving.ts`).
+- Agents can save to the library through an MCP server at `/mcp` (`lib/mcp.ts`): Streamable HTTP, stateless, four tools (`save_articles`, `save_text`, `search_library`, `list_topics`). Each reader makes a token in the library under Connect an agent (`app/api/agent-tokens`, only its hash is stored in `agent_tokens`), sent as `Authorization: Bearer gls_...` or as the last part of the URL. Saved links go through the same importer as the site (`lib/fetch-article.ts`); `save_text` takes Markdown the agent read itself, for what Sakamoto can't fetch (X Articles and long posts, video transcripts, pages behind a login). Both are sorted and written to the reader's synced shelf, so they appear on the next sync. Up to 25 links a call, one text a call, and 1,000 saves a day.
 - Read aloud, off by default (Aa, then Listen): Cartesia Sonic 3 on Together, a passage at a time, fetched just ahead of the voice (`app/api/speak`, `components/reader/Listen.tsx`). It always uses the reader's own key.
 - Free use of the shared key is a dollar budget (`lib/quota.ts`): what answers and briefs actually cost, up to 10¢ a day signed out (by hashed IP) or 20¢ signed in, and $1,000 a day across everyone, kept in Postgres (`free_usage`).
 - Newsreader and Schibsted Grotesk, plus Literata and Atkinson Hyperlegible as optional reading faces; six themes, four pens and four highlighters from CSS variables, applied before first paint.
@@ -30,7 +30,7 @@
 3. Create the tables: `npm run db:migrate` (safe to run again)
 4. Run: `npm run dev`, open http://localhost:3100, and paste a link (or press ⌘V anywhere), or open the library and shelve a few classics
 5. Read: select text and type to ask, `/` asks about the whole text, `j` and `k` walk paragraphs, `B` glosses the whole text, `F` is focus mode, `?` lists every key
-6. Check: `npm run lint && npm run build`, then deploy with `vercel --prod` (set the same variables, plus `NEXT_PUBLIC_SITE_URL=https://usegloss.io`, in the project first)
+6. Check: `npm run lint && npm run build`, then deploy with `vercel --prod` (set the same variables, plus `NEXT_PUBLIC_SITE_URL=<your deployment origin>`, in the project first)
 
 ## Roadmap
 

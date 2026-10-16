@@ -4,7 +4,7 @@ import { textToArticle, wordCount, type Article } from "./article";
 import { shelveText } from "./shelving";
 import { savePdf, saveDoc, useStore, type LibraryItem } from "./store";
 
-/** `needKey`: the import needs the reader's own Together key (a long PDF, or free use spent). `file`: the original, kept with a PDF. */
+/** `needKey`: the import needs the reader's own model API key (a long PDF, or free use spent). `file`: the original, kept with a PDF. */
 export type ImportResult = { ok: true; article: Article; file?: Blob } | { ok: false; error: string; needKey?: boolean };
 
 /** A link to a PDF is fetched by the server and read here, as if the file had been dropped. */
@@ -42,7 +42,7 @@ export async function importFromFile(file: File, onProgress?: (p: number, label?
       a.source = file.name;
       return { ok: true, article: a };
     }
-    return { ok: false, error: "Gloss reads PDF, .txt and .md files." };
+    return { ok: false, error: "Sakamoto reads PDF, .txt and .md files." };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not read that file." };
   }

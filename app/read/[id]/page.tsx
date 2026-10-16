@@ -13,7 +13,7 @@ type Props = { params: Promise<{ id: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const a = sampleById((await params).id);
   if (!a) return { robots: { index: false } };
-  const title = `${a.title}, glossed`;
+  const title = `${a.title} | Sakamoto`;
   const description = a.dek ?? `${a.title}${a.author ? `, by ${a.author}` : ""}. Highlight any line and ask it anything.`;
   return {
     title,

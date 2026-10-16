@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Link2, Loader2 } from "lucide-react";
+import { ArrowRight, FileText, Link2, Loader2 } from "lucide-react";
 import { normalizeUrl } from "@/lib/links";
 import { CLASSICS, classicCover } from "@/lib/classics";
 import { importFromUrl, keep } from "@/lib/import";
@@ -38,23 +38,18 @@ export function Starter({ count, signedIn, onAdd }: { count: number; signedIn: b
   return (
     <section className="starter" aria-label="Fill your library">
       <div className="starter-card is-classics">
-        <div className="starter-fan" aria-hidden>
-          {CLASSICS.slice(0, 5).map((c, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={c.key} src={classicCover(c)} alt="" style={{ ["--i" as string]: i }} />
-          ))}
-        </div>
+        <span className="starter-icon" aria-hidden><FileText size={20} /></span>
         <div className="min-w-0">
           <p className="starter-title">{count ? "Add a few classics" : "Start with a few classics"}</p>
           <p className="starter-body">A dozen essays people keep coming back to: Hamming, Feynman, Orwell, Graham, Wallace and more.</p>
           <button type="button" onClick={shelveClassics} disabled={Boolean(busy)} className="starter-btn">
             {busy ? (
               <>
-                <Loader2 size={15} className="animate-spin" /> Shelving {busy.done} of {busy.total}
+                <Loader2 size={15} className="animate-spin" /> Saving {busy.done} of {busy.total}
               </>
             ) : (
               <>
-                Shelve them <ArrowRight size={15} />
+                Add to library <ArrowRight size={15} />
               </>
             )}
           </button>
@@ -66,13 +61,13 @@ export function Starter({ count, signedIn, onAdd }: { count: number; signedIn: b
           <Link2 size={20} />
         </span>
         <span className="starter-title">Save your own links</span>
-        <span className="starter-body">Paste one or many. Gloss reads each one in and sorts it onto a topic.</span>
+        <span className="starter-body">Paste one or many. Sakamoto reads each one in and sorts it onto a topic.</span>
       </button>
       <button type="button" className="starter-card" onClick={() => onAdd("agent")}>
         <span className="starter-icon is-agent">
           <MarkStack size={24} />
         </span>
-        <span className="starter-title">Let your agent shelve for you</span>
+        <span className="starter-title">Let your agent save for you</span>
         <span className="starter-body">
           Give Grok Bot, Claude or ChatGPT your library, and ask it to save the good articles from your bookmarks.{!signedIn && " Needs an account."}
         </span>

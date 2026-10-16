@@ -2,12 +2,11 @@
 
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { AlignJustify, AlignLeft, Focus, Headphones, Map as MapIcon, Minus, Paintbrush, Pilcrow, Plus, RotateCcw } from "lucide-react";
+import { AlignJustify, AlignLeft, Focus, Headphones, Map as MapIcon, Minus, Pilcrow, Plus, RotateCcw } from "lucide-react";
 import { MODELS, type ModelKey } from "@/lib/models";
 import { applySettings, DEFAULT_SETTINGS, FACES, MARKERS, PENS, resolveTheme, THEMES, type Settings } from "@/lib/settings";
 import { useStore } from "@/lib/store";
 import { Popover, barBtn } from "./Popover";
-import { setLibraryPrefs, useLibraryPrefs } from "@/lib/library-prefs";
 
 function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { key: T; label: ReactNode }[]; onChange: (v: T) => void; label: string }) {
   return (
@@ -87,31 +86,6 @@ function Swatch({ theme, on }: { theme: (typeof THEMES)[number]; on: boolean }) 
         </span>
       )}
     </span>
-  );
-}
-
-/** The library's one setting: a painted cover for every text. Off by default, since each one is an image model call. */
-function PaintedCovers() {
-  const { paintedCovers } = useLibraryPrefs();
-  return (
-    <div className="flex items-center justify-between gap-3 border-t border-rule pt-3.5">
-      <div className="min-w-0">
-        <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-ink-2">
-          <Paintbrush size={13} /> Painted covers
-        </p>
-        <p className="mt-0.5 text-[11.5px] leading-snug text-ink-3">A picture for each text in your library, about 2¢ each.</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={paintedCovers}
-        aria-label="Painted covers"
-        onClick={() => setLibraryPrefs({ paintedCovers: !paintedCovers })}
-        className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${paintedCovers ? "bg-[var(--rubric)]" : "bg-rule-strong"}`}
-      >
-        <span className={`absolute left-[3px] top-[3px] size-4 rounded-full bg-raised shadow transition-transform duration-200 ${paintedCovers ? "translate-x-4" : ""}`} />
-      </button>
-    </div>
   );
 }
 
@@ -268,7 +242,6 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                   </div>
                 </>
               )}
-              <PaintedCovers />
             </div>
           )}
 

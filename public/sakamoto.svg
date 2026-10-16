@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f6f3ec"/>
+  <g transform="translate(80 85) scale(2)" fill="none">
+    <path d="M3 6.5h10.5M3 11.5h10.5M3 16.5h6.5" stroke="#1d1b18" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M18.5 3v18" stroke="#1d1b18" stroke-width="1.1" stroke-linecap="round" opacity=".32"/>
+    <circle cx="18.5" cy="11.5" r="2.9" fill="#c1401b"/>
+  </g>
+  <g font-family="Georgia, serif" fill="#1d1b18">
+    <text x="150" y="122" font-size="42">Sakamoto</text>
+    <text x="80" y="295" font-size="76">Highlight any line.</text>
+    <text x="80" y="385" font-size="76" fill="#c1401b">Ask it anything.</text>
+  </g>
+  <text x="80" y="490" font-family="Arial, sans-serif" font-size="24" fill="#686258">Your library. Your notes. Answers with sources.</text>
+</svg>

@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { Check, Copy, Download, Trash2, X } from "lucide-react";
-import { GlossMark } from "@/components/brand/Gloss";
+import { SakamotoMark } from "@/components/brand/Sakamoto";
 import { cmp } from "@/lib/anchor";
 import { undash } from "@/lib/article";
 import { stopGloss } from "@/lib/ask";
@@ -136,7 +136,7 @@ export function Notebook() {
 
       {!entries.length ? (
         <div className="flex flex-1 flex-col items-center justify-center px-10 pb-16 text-center">
-          <GlossMark className="size-11 text-ink-4" />
+          <SakamotoMark className="size-11 text-ink-4" />
           <p className="mt-5 font-serif text-[20px] leading-tight text-ink">Nothing here yet</p>
           <p className="mt-2 max-w-[270px] text-[13.5px] leading-relaxed text-ink-3">
             Select a line and type a question, or highlight it. Every question and answer lands here, in reading order.

@@ -5,7 +5,7 @@ import { inlineMd, markdownBlocks, slugify, tidyTitle, undash, type Article, typ
 import { readApiKey } from "./ask";
 
 /**
- * PDF to Gloss blocks, in two passes.
+ * PDF to Sakamoto blocks, in two passes.
  *
  * 1. LiteParse (Rust, compiled to WebAssembly) reads the text layer in the
  *    browser: reading order across columns, headings, lists and real tables,
@@ -14,7 +14,7 @@ import { readApiKey } from "./ask";
  *    glyphs) are rendered and read by a vision model on the server
  *    (/api/pdf-page), a few at a time.
  *
- * Longer PDFs need the reader's own Together key: every question sends the
+ * Longer PDFs need the reader's own model API key: every question sends the
  * whole text, so a book would spend a day's free use in a few questions.
  */
 
@@ -73,7 +73,7 @@ export async function pdfToArticle(file: File, onProgress?: PdfProgress): Promis
   const label = `${pages} page${pages === 1 ? "" : "s"}`;
   if (pages > PDF_FREE_PAGES && !readApiKey()) {
     session.free();
-    throw new PdfError(`This PDF has ${pages} pages. PDFs over ${PDF_FREE_PAGES} pages use your own Together key, since every question sends the whole text.`, true);
+    throw new PdfError(`This PDF has ${pages} pages. PDFs over ${PDF_FREE_PAGES} pages use your own model API key, since every question sends the whole text.`, true);
   }
 
   // Pass 1: the text layer, a batch at a time.
@@ -156,6 +156,7 @@ export async function pdfToArticle(file: File, onProgress?: PdfProgress): Promis
     source: `${file.name}${total > PDF_MAX_PAGES ? `, first ${PDF_MAX_PAGES} pages` : ""}`,
     blocks,
     origin: "file",
+    contentType: "document",
     addedAt: Date.now(),
     ...(hard.length ? { upgrade: hard } : {}),
   };
@@ -179,7 +180,7 @@ const plain = (md: string) =>
     .join("")
     .trim();
 
-/** One LiteParse block as a Gloss block, or nothing for rules, pictures and the shards of diagrams. */
+/** One LiteParse block as a Sakamoto block, or nothing for rules, pictures and the shards of diagrams. */
 function toBlock(b: LayoutBlock): Block | null {
   const runs = (t: string) => inlineMd(undash(t.replace(/\s+/g, " ").trim()));
   switch (b.kind) {
@@ -286,7 +287,7 @@ async function readByVision(lp: LP, bytes: Uint8Array, pageNums: number[], into:
           });
           const j = (await res.json()) as { markdown?: string; error?: string; code?: string };
           if (j.markdown) into.set(s.pageNum, markdownBlocks(htmlTablesToMarkdown(j.markdown)));
-          else if (j.code === "need_key") stop = new PdfError(j.error ?? "Add your Together key to read scanned pages.", true);
+          else if (j.code === "need_key") stop = new PdfError(j.error ?? "Add your model API key to read scanned pages.", true);
         } catch {}
         done++;
         onProgress?.(done / pageNums.length, label());

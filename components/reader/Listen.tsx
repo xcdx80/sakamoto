@@ -174,7 +174,7 @@ export function startListening(ix: DocIndex, fromBlock: string | null) {
     if (RATES.includes(r)) useListen.setState({ rate: r });
   } catch {}
   if ("mediaSession" in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: ix.article.title, artist: ix.article.author ?? ix.article.source ?? "Gloss" });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: ix.article.title, artist: ix.article.author ?? ix.article.source ?? "Sakamoto" });
     navigator.mediaSession.setActionHandler("play", () => toggleListening());
     navigator.mediaSession.setActionHandler("pause", () => toggleListening());
   }
