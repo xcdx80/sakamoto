@@ -647,3 +647,150 @@ test("canceling an in-flight query embedding retains ambiguous charges and never
     1,
   );
 });
+
+test("canceling while Luna authorization waits releases its known-undispatched reservation", async () => {
+  const { budgetStatus } = await import("../lib/paid-work");
+  const identity = makeToken();
+  await createToken(
+    "reservation-answer",
+    identity.id,
+    identity.hash,
+    "Authorization cancellation fixture",
+  );
+  await save(
+    "reservation-source",
+    "Optical metrology compares a reference surface.",
+    {},
+    "reservation-answer",
+  );
+  const before = await budgetStatus("reservation-answer");
+  const locker = await pool.connect();
+  let locked = false;
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    throw init?.signal?.reason ?? new Error("Unexpected dispatch");
+  };
+  try {
+    await locker.query("begin");
+    locked = true;
+    await locker.query("select * from paid_budget where id=true for update");
+    const pid = Number(
+      (await locker.query("select pg_backend_pid() as pid")).rows[0].pid,
+    );
+    const controller = new AbortController();
+    const pending = ask(
+      new Request("http://localhost/api/library-answer", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + identity.token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ query: "Optical metrology", semantic: false }),
+        signal: controller.signal,
+      }),
+    );
+    let blocked = false;
+    for (let n = 0; n < 100; n++) {
+      blocked = (
+        await pool.query(
+          "select exists(select 1 from pg_stat_activity where $1::integer=any(pg_blocking_pids(pid))) as blocked",
+          [pid],
+        )
+      ).rows[0].blocked;
+      if (blocked) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(
+      blocked,
+      true,
+      "the public question must reach the held authorization row",
+    );
+    controller.abort(
+      new DOMException("Reader canceled before dispatch", "AbortError"),
+    );
+    await locker.query("commit");
+    locked = false;
+    const result = await (await pending).json();
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.claims, []);
+    assert.deepEqual(result.citations, []);
+    assert.equal(calls, 0);
+    const after = await budgetStatus("reservation-answer");
+    assert.equal(after.reservedUsd, before.reservedUsd);
+    assert.equal(after.settledUsd, before.settledUsd);
+    assert.deepEqual(
+      after.attempts.map((a) => a.status),
+      ["released"],
+    );
+  } finally {
+    if (locked) await locker.query("rollback");
+    locker.release();
+  }
+});
+
+test("canceling a genuinely dispatched Luna request retains its ambiguous reservation", async () => {
+  const { budgetStatus } = await import("../lib/paid-work");
+  const identity = makeToken();
+  await createToken(
+    "luna-inflight",
+    identity.id,
+    identity.hash,
+    "Dispatched answer cancellation fixture",
+  );
+  await save(
+    "luna-inflight-source",
+    "Interferometry compares optical path lengths.",
+    {},
+    "luna-inflight",
+  );
+  const before = await budgetStatus("luna-inflight");
+  let started!: () => void;
+  const dispatched = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let calls = 0;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://api.openai.com/v1/chat/completions");
+    calls++;
+    assert.equal(init!.signal!.aborted, false);
+    started();
+    return new Promise<Response>((_resolve, reject) =>
+      init!.signal!.addEventListener(
+        "abort",
+        () => reject(init!.signal!.reason),
+        { once: true },
+      ),
+    );
+  };
+  const controller = new AbortController();
+  const pending = ask(
+    new Request("http://localhost/api/library-answer", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + identity.token,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ query: "Interferometry", semantic: false }),
+      signal: controller.signal,
+    }),
+  );
+  await dispatched;
+  controller.abort(
+    new DOMException("Reader canceled after dispatch", "AbortError"),
+  );
+  const result = await (await pending).json();
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.claims, []);
+  assert.deepEqual(result.citations, []);
+  assert.equal(calls, 1);
+  const after = await budgetStatus("luna-inflight");
+  assert.equal(
+    Math.round((after.reservedUsd - before.reservedUsd) * 1e6),
+    33968,
+  );
+  assert.deepEqual(
+    after.attempts.map((attempt) => attempt.status),
+    ["uncertain"],
+  );
+});

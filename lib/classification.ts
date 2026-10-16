@@ -41,6 +41,7 @@ export async function classifySavedSource({
       state = state.slice(0, Math.floor(state.length * 0.9));
     const body = jevRequest(state),
       serializedInput = JSON.stringify(body);
+    signal.throwIfAborted();
     reservation = await reservePaidWork({
       owner,
       operationId: `classify:${job.id}`,
@@ -49,6 +50,12 @@ export async function classifySavedSource({
       serializedInput,
       maxOutputTokens: 32768,
     });
+    // No request has been sent while durable authorization was waiting.
+    if (signal.aborted) {
+      await releaseRejectedPaidWork(reservation);
+      reservation = undefined;
+      throw signal.reason;
+    }
     const { data, cost } = await decideCategory(body, signal, (id) =>
       recordPaidResponse(reservation!, id ?? ""),
     );
