@@ -504,3 +504,62 @@ test("the canonical migration upgrades populated earlier sources and schedules t
     await pool.query(`drop schema ${schema} cascade`);
   }
 });
+
+test("first source text arriving on an existing metadata-only item schedules classification without inventing a revision", async () => {
+  const a = await account();
+  const { pushRows, pullRows } = await import("../lib/db");
+  const id = "first-source-" + crypto.randomUUID(),
+    item = {
+      id,
+      title: "Metadata first",
+      origin: "file",
+      contentType: "document",
+    };
+  await pushRows(a.owner, {
+    articles: [
+      {
+        id,
+        article_id: id,
+        data: item,
+        deleted: false,
+        revision: 0,
+        manualFields: [],
+      },
+    ],
+  });
+  assert.equal((await a.call("processing_status")).jobs.length, 0);
+  const initial = (await pullRows(a.owner)).changes.articles.find(
+    (r) => r.id === id,
+  )!;
+  await pushRows(a.owner, {
+    articles: [
+      {
+        id,
+        article_id: id,
+        data: item,
+        deleted: false,
+        revision: initial.revision,
+        sourceRevision: initial.sourceRevision,
+        manualFields: [],
+        doc: {
+          id,
+          title: item.title,
+          origin: "file",
+          contentType: "document",
+          blocks: [
+            {
+              id: "p1",
+              type: "p",
+              runs: [{ text: "Working with reliable AI agents." }],
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const jobs = (await a.call("processing_status")).jobs.filter(
+    (j: any) => j.kind === "classification",
+  );
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].sourceRevision, 1);
+});

@@ -7,7 +7,7 @@ create table source_classifications (
 );
 create function schedule_classification() returns trigger language plpgsql as $$
 begin
- if not new.deleted and new.doc is not null and (TG_OP='INSERT' or old.deleted or old.source_revision<>new.source_revision) then
+ if not new.deleted and new.doc is not null and (TG_OP='INSERT' or old.deleted or old.doc is null or old.source_revision<>new.source_revision) then
   insert into processing_jobs(user_id,source_id,source_revision,kind,target) values(new.user_id,new.id,new.source_revision,'classification','topics-v1') on conflict do nothing;
  end if;
  return new;
