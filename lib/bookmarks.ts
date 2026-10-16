@@ -18,7 +18,7 @@ export type PostSource = {
   completeness: { status: "complete" | "partial" | "unknown"; reason?: string; verification: "agent_reported" };
   provenance: { via: string; receivedAt: string };
 };
-export type ProcessingState = { classification: "pending" | "complete" | "failed"; indexing: "pending" | "complete" | "failed" };
+export type ProcessingState = { classification: "pending" | "complete" | "failed" | "paused" | "uncertain"; classificationMessage?: string; classifier?: Record<string, unknown>; indexing: "pending" | "complete" | "failed" };
 
 const MAX_POSTS = 25;
 const MAX_BATCH_BYTES = 2_000_000;

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   receivedProcessing,
+  reclassifyItem,
   type ProcessingStatus,
 } from "@/lib/processing-client";
 import type { ProcessingJob } from "@/lib/processing";
@@ -47,6 +48,12 @@ export function Processing({
       setBusy(false);
     }
   };
+  const reclassify = async (itemId:string) => {
+    setBusy(true);setError("");
+    try { await reclassifyItem(itemId);setStatus(await receivedProcessing()); }
+    catch(e) { setError(e instanceof Error?e.message:"Could not schedule category."); }
+    finally { setBusy(false); }
+  };
   if (!status?.jobs.length && !error) return null;
   return (
     <section
@@ -60,7 +67,7 @@ export function Processing({
         </button>
       </div>
       <p className="mt-1 text-black/60">
-        Process saved links here. Ask Grok separately to fetch new bookmarks.
+        Process saved sources and categories here. Ask Grok separately to fetch new bookmarks.
         Daily processing handles a bounded batch.
       </p>
       {error && <p role="alert">{error}</p>}
@@ -91,6 +98,9 @@ export function Processing({
                   {" · "}
                   {job.error}
                 </span>
+              )}
+              {job.kind === "classification" && job.state !== "running" && (
+                <button disabled={busy} onClick={() => reclassify(job.sourceId)} className="ml-2 underline">Reclassify</button>
               )}
               {job.state === "retryable" && (
                 <span>

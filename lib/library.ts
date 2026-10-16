@@ -8,6 +8,8 @@ import type { Highlight, LibraryItem, Progress } from "./store";
 export { CONTENT_TYPES, contentTypeOf, type ContentType } from "./article";
 
 export type TopicKey =
+  | "ai-engineering"
+  | "distribution"
   | "ai"
   | "programming"
   | "infra"
@@ -47,6 +49,8 @@ export type Topic = {
 };
 
 export const TOPICS: Topic[] = [
+  { key: "ai-engineering", name: "AI engineering", shades: ["#5b4a9e", "#7a68bf", "#3b2f6e", "#a597d6"], inks: "deep violet and soft lavender", hint: "practical building, evaluating and operating AI applications, retrieval, agent orchestration and model integrations; general AI research belongs in ai", blurb: "Building reliable applications with models." },
+  { key: "distribution", name: "Distribution", shades: ["#7a5230", "#9a7050", "#563820", "#c9a585"], inks: "walnut brown and tan", hint: "acquiring audiences and customers: SEO, marketing channels, sales, content distribution and go-to-market execution; general company strategy belongs in business", blurb: "Helping useful things reach their audience." },
   { key: "ai", name: "AI", shades: ["#5b4a9e", "#7a68bf", "#3b2f6e", "#a597d6"], inks: "deep violet and soft lavender", hint: "machine learning, language models, AI research, AI products and agents", blurb: "Machines that learn: models, agents, research and what it all means." },
   { key: "programming", name: "Programming", shades: ["#2f4f8f", "#4a6fb3", "#1d3263", "#8aa6d8"], inks: "navy blue and cornflower blue", hint: "software engineering, languages, code, developer tools, open source, engineering practice", blurb: "How software is made, and the people who make it." },
   { key: "infra", name: "Infrastructure", shades: ["#6b6a2a", "#8b8a43", "#4a491a", "#bdbb7f"], inks: "olive and pale khaki", hint: "systems, cloud, GPUs, inference, databases, distributed systems, performance, devops", blurb: "The machinery underneath: systems, chips, clouds and the bills that come with them." },
@@ -75,7 +79,7 @@ export const TOPICS: Topic[] = [
 ];
 
 export const TOPIC = Object.fromEntries(TOPICS.map((t) => [t.key, t])) as Record<TopicKey, Topic>;
-export const isTopic = (v: unknown): v is TopicKey => typeof v === "string" && v in TOPIC;
+export const isTopic = (v: unknown): v is TopicKey => typeof v === "string" && Object.hasOwn(TOPIC, v);
 export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
@@ -192,8 +196,8 @@ export function lookOf(b: Pick<Book, "id" | "topic" | "minutes">): Look {
 
 /* ---------- pictures ---------- */
 
-export const topicArtSrc = (k: TopicKey) => `/library/topics/${k}.webp`;
-export const iconSrc = (k: TopicKey | TagKey) => `/library/icons/${k}.webp`;
+export const topicArtSrc = (k: TopicKey) => `/library/topics/${k === "ai-engineering" ? "ai" : k === "distribution" ? "business" : k}.webp`;
+export const iconSrc = (k: TopicKey | TagKey) => `/library/icons/${k === "ai-engineering" ? "ai" : k === "distribution" ? "business" : k}.webp`;
 
 /* ---------- shelving ---------- */
 
