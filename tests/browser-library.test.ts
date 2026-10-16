@@ -266,3 +266,162 @@ test("intentional text replacement keeps its new body and library choices withou
   assert.equal(item.origin, "paste");
   assert.equal(store.useStore.getState().highlights[original.id], undefined);
 });
+
+test("notes admitted during a replacement commit retain their exact pending body across success and storage failures", async () => {
+  for (const scenario of [
+    "complete",
+    "replacement-failure",
+    "recovery-failure",
+  ] as const) {
+    const owner = "commit-window-" + scenario + crypto.randomUUID(),
+      id = "commit-window-source";
+    store.useStore.getState().activateAccount(owner);
+    const original: import("../lib/article").Article = {
+      id,
+      title: "Commit window",
+      sourceRevision: 1,
+      origin: "file",
+      blocks: [{ id: "b1", type: "p", runs: [{ text: "Original cobalt" }] }],
+    };
+    await store.saveDoc(original);
+    store.useStore.getState().addToLibrary(original, 2);
+    assert.equal(
+      await store.useStore
+        .getState()
+        .updateText(
+          {
+            ...original,
+            blocks: [{ id: "b1", type: "p", runs: [{ text: "First amber" }] }],
+          },
+          2,
+        ),
+      true,
+    );
+    const amber = (await store.loadDoc(id))!;
+    const beforeNoOp = store.useStore.getState().library[0];
+    assert.equal(
+      await store.useStore.getState().updateText({ ...amber }, 2),
+      true,
+    );
+    assert.equal(
+      store.useStore.getState().library.length,
+      1,
+      "same source must not create recovery copies",
+    );
+    assert.equal(store.useStore.getState().library[0].rev, beforeNoOp.rev);
+    assert.equal((await store.loadDoc(id))?.pendingSource, amber.pendingSource);
+    const nativePut = IDBObjectStore.prototype.put,
+      nativeSet = localStorage.setItem;
+    let admitted = false;
+    const addNote = () => {
+      admitted = true;
+      store.useStore
+        .getState()
+        .addHighlight({
+          id: "commit-window-note",
+          articleId: id,
+          sourceRevision: amber.sourceRevision,
+          pendingSource: amber.pendingSource,
+          anchor: {
+            start: { b: "b1", o: 0 },
+            end: { b: "b1", o: 5 },
+            quote: "First",
+          },
+          note: "Note on still-visible amber",
+          createdAt: 1,
+        });
+    };
+    IDBObjectStore.prototype.put = function (value: any, key?: IDBValidKey) {
+      const request = nativePut.call(this, value, key);
+      const replacement =
+        value?.id === id &&
+        value.blocks?.[0]?.runs?.[0]?.text === "Later silver";
+      const recovery = String(value?.id).startsWith("offline-");
+      if (
+        !admitted &&
+        (scenario === "recovery-failure" ? recovery : replacement)
+      ) {
+        queueMicrotask(addNote);
+        if (scenario !== "complete") this.transaction.abort();
+      }
+      return request;
+    };
+    localStorage.setItem = (key: string, value: string) => {
+      if (
+        (scenario === "recovery-failure" && key.includes(":offline-")) ||
+        (scenario === "replacement-failure" &&
+          key.endsWith(":" + id) &&
+          value.includes("Later silver"))
+      )
+        throw new DOMException("Full", "QuotaExceededError");
+      nativeSet.call(localStorage, key, value);
+    };
+    try {
+      const saved = await store.useStore
+        .getState()
+        .updateText(
+          {
+            ...amber,
+            blocks: [{ id: "b1", type: "p", runs: [{ text: "Later silver" }] }],
+          },
+          2,
+        );
+      assert.equal(
+        admitted,
+        true,
+        scenario + " must admit the note after IDB put and before commit",
+      );
+      assert.equal(saved, scenario === "complete");
+      const current = (await store.loadDoc(id))!;
+      assert.equal(
+        current.blocks[0].runs[0].text,
+        scenario === "complete" ? "Later silver" : "First amber",
+      );
+    } finally {
+      IDBObjectStore.prototype.put = nativePut;
+      localStorage.setItem = nativeSet;
+    }
+    // A reload/account reactivation must retain both the note and its actual body.
+    store.useStore.getState().activateAccount("other-" + owner);
+    store.useStore.getState().activateAccount(owner);
+    let entries = Object.entries(store.useStore.getState().highlights);
+    let [noteId, notes] = entries.find(([, list]) =>
+      list.some((note) => note.id === "commit-window-note"),
+    )!;
+    let note = notes.find((note) => note.id === "commit-window-note")!;
+    assert.equal(note.note, "Note on still-visible amber");
+    const body = (await store.loadDoc(noteId))!;
+    assert.equal(body.blocks[0].runs[0].text, "First amber");
+    assert.ok(body.blocks[0].runs[0].text.includes(note.anchor.quote));
+    if (scenario === "recovery-failure") {
+      assert.equal(noteId, id);
+      assert.equal(note.pendingSource, amber.pendingSource);
+      assert.equal(
+        await store.useStore
+          .getState()
+          .updateText(
+            {
+              ...amber,
+              blocks: [
+                { id: "b1", type: "p", runs: [{ text: "Later silver" }] },
+              ],
+            },
+            2,
+          ),
+        true,
+      );
+      entries = Object.entries(store.useStore.getState().highlights);
+      [noteId, notes] = entries.find(([, list]) =>
+        list.some((note) => note.id === "commit-window-note"),
+      )!;
+      note = notes.find((note) => note.id === "commit-window-note")!;
+    }
+    assert.notEqual(noteId, id);
+    assert.equal(note.sourceRevision, 1);
+    assert.equal(note.pendingSource, undefined);
+    assert.equal(
+      (await store.loadDoc(noteId))?.blocks[0].runs[0].text,
+      "First amber",
+    );
+  }
+});

@@ -537,10 +537,9 @@ export const useStore = create<State>((set, get) => ({
       owner = accountScope();
     const previous = await loadDoc(a.id, owner);
     if (accountEpoch() !== epoch) return false;
-    if (
-      previous?.pendingSource &&
-      hasPendingAnnotations(a.id, previous.pendingSource)
-    ) {
+    if (previous && JSON.stringify(previous.blocks) === JSON.stringify(a.blocks)) return true;
+    // Preserve before the asynchronous replacement: a note can still arrive for the visible old body.
+    if (previous?.pendingSource) {
       const { preserveOfflineSource } = await import("./offline-source");
       try {
         await preserveOfflineSource(a.id, owner);
@@ -717,19 +716,6 @@ export async function saveDoc(a: Article, owner: string | null = accountScope())
   } catch {
     return false;
   }
-}
-
-export function hasPendingAnnotations(
-  id: string,
-  pendingSource: string,
-): boolean {
-  const st = useStore.getState();
-  return [
-    ...(st.highlights[id] ?? []),
-    ...(st.glosses[id] ?? []),
-    st.briefs[id],
-    st.progress[id],
-  ].some((value) => value?.pendingSource === pendingSource);
 }
 
 /** Bind only annotations created for this local body; historical marks are never rewritten. */
