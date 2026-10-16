@@ -51,6 +51,7 @@ export type Block = {
 };
 
 export type Article = {
+  post?: import("./bookmarks").PostSource;
   sourceRevision?: number;
   recoveredFrom?: {itemId:string;sourceRevision:number};
   id: string;
