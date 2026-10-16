@@ -117,3 +117,52 @@ test("large PDF links remain eligible without downloading them as web articles",
   assert.equal(!result.ok && result.kind, "pdf");
   assert.equal(cancelled, true);
 });
+test("invalid native HTTP response status becomes a structured fetch failure without an uncaught callback error", async () => {
+  const http = await import("node:http"),
+    { syncBuiltinESMExports } = await import("node:module"),
+    { PassThrough } = await import("node:stream"),
+    { EventEmitter } = await import("node:events"),
+    { mock } = await import("node:test");
+  let destroyed = false;
+  const response = new PassThrough() as any;
+  response.statusCode = 600;
+  response.headers = {};
+  response.on("close", () => {
+    destroyed = true;
+  });
+  const original = http.default.request;
+  mock.method(http.default, "request", ((
+    _url: any,
+    _options: any,
+    callback: any,
+  ) => {
+    const request = new EventEmitter() as any;
+    request.end = () => queueMicrotask(() => callback(response));
+    return request;
+  }) as typeof original);
+  syncBuiltinESMExports();
+  configureArticleFetch({
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      fetchArticle("http://public.example/status"),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Native callback did not settle.")),
+          500,
+        );
+      }),
+    ]);
+    assert.equal(result.ok, false);
+    assert.equal(!result.ok && result.retryable, true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(destroyed, true);
+  } finally {
+    clearTimeout(timer);
+    mock.restoreAll();
+    syncBuiltinESMExports();
+    response.destroy();
+  }
+});

@@ -47,7 +47,7 @@ export function ThreadReading({ itemId, sourceRevision = 1, enabled, children }:
       <p className="mt-2 text-[13px] text-ink-3">{thread.ordering === 'uncertain' ? 'Ordering is uncertain; displayed order is provisional.' : 'Posts are ordered by their supplied reply relationships.'}</p>
       <button type="button" onClick={() => setAttempt((n)=>n+1)} className="mt-3 text-[13px] underline underline-offset-4">Refresh context</button>
       {thread.gaps.length > 0 && <ul aria-label="Thread gaps" className="mt-4 space-y-2 text-[13px] text-ink-3">
-        {thread.gaps.map((gap,index)=><li key={index}>{gap.kind}{gap.postId ? ` · post ${gap.postId}` : ''}{gap.fromPostId ? ` · ${gap.relationship === 'quote' ? 'quoted by' : 'parent of'} ${gap.fromPostId}` : ''}: {gap.reason}</li>)}
+        {thread.gaps.map((gap,index)=><li key={index}>{gap.kind}{gap.postId ? ` · post ${gap.postId}` : ''}{gap.fromPostId ? ` · ${gap.relationship === 'quote' ? 'quoted by' : 'parent of'} ${gap.fromPostId}` : ''}: {gap.reason}{gap.savedUrl && <Link href={gap.savedUrl} className="ml-2 underline underline-offset-4">Open saved post</Link>}</li>)}
       </ul>}
     </div>
     <ol className="space-y-10">

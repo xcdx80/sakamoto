@@ -167,3 +167,26 @@ test('authenticated thread reads keep equal provider IDs private and reject an i
   mismatched.headers.set('x-sakamoto-owner','some-other-account');
   assert.equal((await GET(mismatched,{params:Promise.resolve({id:saved.itemId})})).status,401);
 });
+
+test('thread responses bound serialized UTF8 bytes and retain whole selected sources with explicit omitted-source addresses',async()=> {
+ for(const text of ['a'.repeat(400_000),'界'.repeat(150_000)]) {
+  const a=await account();
+  let selected:any;
+  for(let offset=0;offset<12;offset+=3) {
+   const receipts=await a.save(Array.from({length:3},(_,i)=>post(String(1001+offset+i),{text,...(offset+i?{replyToPostId:String(1000+offset+i)}:{})})));
+   selected=receipts.at(-1);
+  }
+  const response=await a.read(selected.itemId);
+  assert.equal(response.status,200);
+  const serialized=await response.text();
+  assert.ok(Buffer.byteLength(serialized,'utf8')<=4_000_000,`Response was ${Buffer.byteLength(serialized,'utf8')} bytes.`);
+  const view=JSON.parse(serialized);
+  assert.equal(view.posts.find((entry:any)=>entry.itemId===selected.itemId).post.fullText,text);
+  assert.ok(view.posts.length<12);
+  assert.ok(view.posts.every((entry:any)=>entry.post.fullText===text&&entry.savedUrl===`/read/${entry.itemId}?revision=1`));
+  const omitted=view.gaps.filter((gap:any)=>gap.kind==='limit'&&gap.savedUrl);
+  assert.equal(omitted.length,12-view.posts.length);
+  assert.ok(omitted.every((gap:any)=>gap.postId&&gap.savedUrl.includes('?revision=1')));
+  assert.equal(view.ordering,'uncertain');
+ }
+});

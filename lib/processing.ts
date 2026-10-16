@@ -1,7 +1,6 @@
 /** Durable processing of already received library material. Never fetches bookmarks from Grok. */
 import { db } from "./db";
 import { fetchArticle, type FetchResult } from "./fetch-article";
-import { normalizeUrl } from "./links";
 import { wordCount, type Article } from "./article";
 import { yearOf } from "./library";
 export type ProcessingJob = {
@@ -229,8 +228,8 @@ export async function processLibrary(
       aliases = a
         ? [
             ...new Set([
-              normalizeUrl(result.canonicalUrl ?? a.sourceUrl ?? job.target),
-              normalizeUrl(job.target),
+              result.canonicalUrl ?? a.sourceUrl ?? job.target,
+              job.target,
             ]),
           ]
         : [];

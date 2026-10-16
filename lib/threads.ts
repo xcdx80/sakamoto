@@ -5,10 +5,41 @@ import { revisionUrl } from './source-revision';
 import { threadSource, threadSourceSummaries, threadSourceTexts, threadReplyNeighbors, threadOutgoingRelations, THREAD_POST_LIMIT, THREAD_RELATION_LIMIT, type ThreadEdge } from './thread-storage';
 
 export type ThreadPost = { postId: string; itemId: string; role: 'bookmark' | 'context'; sourceRevision: number; savedUrl: string; post: PostSource; relationships: { fromPostId: string; kind: 'reply' | 'quote' }[] };
-export type ThreadGap = { kind: 'missing' | 'deleted' | 'unavailable' | 'ambiguous' | 'cyclic' | 'limit' | 'partial' | 'unknown'; postId?: string; fromPostId?: string; relationship?: 'reply' | 'quote'; reason: string };
+export type ThreadGap = { kind: 'missing' | 'deleted' | 'unavailable' | 'ambiguous' | 'cyclic' | 'limit' | 'partial' | 'unknown'; postId?: string; savedUrl?: string; fromPostId?: string; relationship?: 'reply' | 'quote'; reason: string };
 export type AuthorThread = { posts: ThreadPost[]; context: ThreadPost[]; gaps: ThreadGap[]; ordering: 'reply' | 'uncertain'; conversationComplete: false };
 const sameAuthor = (a: PostSource['author'], b: PostSource['author']) => a.id && b.id ? a.id === b.id : a.handle.toLowerCase() === b.handle.toLowerCase();
 const compare = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
+
+/** Whole-source admission uses serialized UTF8, leaving room for honest gaps and transport overhead. */
+function boundThreadResponse(view: AuthorThread, selectedItemId: string): AuthorThread {
+  const maxBytes = 4_000_000, sourceBudget = 3_700_000;
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+  const result: AuthorThread = { posts: [], context: [], gaps: [], ordering: view.ordering, conversationComplete: false };
+  const selected = view.posts.find((entry) => entry.itemId === selectedItemId);
+  const accepted = new Set<string>();
+  let used = bytes(result);
+  // The selected source has priority even when it sorts last in a long thread.
+  if (selected && used + bytes(selected) <= sourceBudget) { accepted.add(selected.itemId); used += bytes(selected) + 1; }
+  const omitted: ThreadGap[] = [];
+  for (const entry of [...view.posts, ...view.context]) {
+    if (accepted.has(entry.itemId)) continue;
+    const size = bytes(entry) + 1;
+    if (used + size <= sourceBudget) { accepted.add(entry.itemId); used += size; }
+    else omitted.push({ kind: 'limit', postId: entry.postId, savedUrl: entry.savedUrl, reason: 'This whole source is outside the response byte budget. Open its individually saved post to read it.' });
+  }
+  result.posts = view.posts.filter((entry) => accepted.has(entry.itemId));
+  result.context = view.context.filter((entry) => accepted.has(entry.itemId));
+  // Omitted source addresses have priority over secondary graph diagnostics.
+  let omittedGaps = 0;
+  for (const gap of [...omitted, ...view.gaps]) {
+    const size = bytes(gap) + 1;
+    if (used + size + 512 <= maxBytes) { result.gaps.push(gap); used += size; }
+    else omittedGaps++;
+  }
+  if (omittedGaps) result.gaps.push({ kind: 'limit', reason: `${omittedGaps} additional graph diagnostics are outside the response byte budget.` });
+  if (omitted.length || omittedGaps) result.ordering = 'uncertain';
+  return result;
+}
 
 /** At most 100 saved posts/context posts and 100 graph rounds; the limit is explicit in the view. */
 export async function readAuthorThread(owner: string, itemId: string, options: { limit?: number } = {}): Promise<AuthorThread | null> {
@@ -97,5 +128,5 @@ export async function readAuthorThread(owner: string, itemId: string, options: {
     const s = sources.get(id)!;
     return s.doc?.post ? {postId:id,itemId:s.article_id,role:s.role,sourceRevision:s.source_revision,savedUrl:revisionUrl(s.article_id,s.source_revision),post:s.doc.post,relationships:allEdges.filter((e)=>e.target_post_id===id).map((e)=>({fromPostId:e.post_id,kind:e.kind}))} : null;
   };
-  return { posts: ordered.map(present).filter((p):p is ThreadPost=>p!==null), context:[...sources.keys()].filter((id)=>!main.has(id)).sort(compare).map(present).filter((p):p is ThreadPost=>p!==null),gaps,ordering:gaps.some((g)=>['ambiguous','cyclic','limit'].includes(g.kind))?'uncertain':'reply',conversationComplete:false };
+  return boundThreadResponse({ posts: ordered.map(present).filter((p):p is ThreadPost=>p!==null), context:[...sources.keys()].filter((id)=>!main.has(id)).sort(compare).map(present).filter((p):p is ThreadPost=>p!==null),gaps,ordering:gaps.some((g)=>['ambiguous','cyclic','limit'].includes(g.kind))?'uncertain':'reply',conversationComplete:false }, itemId);
 }

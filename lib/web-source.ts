@@ -31,18 +31,23 @@ async function pinnedRequest(
         }) satisfies LookupFunction,
       },
       (res) => {
-        const headers = new Headers();
-        for (const [key, value] of Object.entries(res.headers))
-          if (value !== undefined)
-            headers.set(key, Array.isArray(value) ? value.join(", ") : value);
-        resolve(
-          new Response(
-            [204, 205, 304].includes(res.statusCode ?? 200)
-              ? null
-              : (Readable.toWeb(res) as ReadableStream<Uint8Array>),
-            { status: res.statusCode ?? 502, headers },
-          ),
-        );
+        try {
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(res.headers))
+            if (value !== undefined)
+              headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+          resolve(
+            new Response(
+              [204, 205, 304].includes(res.statusCode ?? 200)
+                ? null
+                : (Readable.toWeb(res) as ReadableStream<Uint8Array>),
+              { status: res.statusCode ?? 502, headers },
+            ),
+          );
+        } catch (error) {
+          res.destroy();
+          reject(error);
+        }
       },
     );
     request.on("error", reject);
