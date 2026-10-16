@@ -15,6 +15,7 @@ import {
   reservePaidWork,
   markPaidWorkUncertain,
   settlePaidWork,
+  recordPaidResponse,
 } from "@/lib/paid-work";
 import { prepareReaderAttempt, runReaderAttempt } from "@/lib/reader-answers";
 import { searchEnabled, searchQuery, WEB_TOOL, webSearch } from "@/lib/search";
@@ -134,7 +135,10 @@ export async function POST(req: Request) {
               await markPaidWorkUncertain(reservation);
               return null;
             }
-            await settlePaidWork(reservation, Math.ceil(found.usd * 1e6));
+            await recordPaidResponse(reservation, found.providerRequestId);
+            if (found.billing.kind === "reported")
+              await settlePaidWork(reservation, found.billing.costMicros);
+            else await markPaidWorkUncertain(reservation);
             send({ type: "sources", sources: found.sources });
             return found;
           } catch (error) {

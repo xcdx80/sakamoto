@@ -11,8 +11,6 @@
 import type { Source } from "./models";
 
 const EXA_URL = "https://api.exa.ai/search";
-/** What a search costs when Exa does not say, charged against a free reader's budget. */
-export const SEARCH_USD = 0.004;
 
 /** The tool the model is offered. Its description is what decides when it searches. */
 export const WEB_TOOL = {
@@ -23,7 +21,13 @@ export const WEB_TOOL = {
       "Search the web for facts the text does not give: who a named person, organisation or place is, what a named work, event or term refers to, or what has happened since the text was written. Do not search for what the text itself says.",
     parameters: {
       type: "object",
-      properties: { query: { type: "string", description: "What to look up, in a few words, e.g. \"Alan G. Chynoweth Bellcore physicist\"" } },
+      properties: {
+        query: {
+          type: "string",
+          description:
+            'What to look up, in a few words, e.g. "Alan G. Chynoweth Bellcore physicist"',
+        },
+      },
       required: ["query"],
     },
   },
@@ -32,17 +36,27 @@ const RESULTS = 5;
 
 export const searchEnabled = () => Boolean(process.env.EXA_API_KEY);
 
-export type WebResults = { sources: Source[]; excerpts: string[]; usd: number };
+export type WebResults = {
+  sources: Source[];
+  excerpts: string[];
+  providerRequestId: string | null;
+  billing: { kind: "reported"; costMicros: number } | { kind: "unknown" };
+};
 
 /** Null when search is off, fails or times out: the answer goes ahead without it. */
-export async function webSearch(query: string, signal?: AbortSignal): Promise<WebResults | null> {
+export async function webSearch(
+  query: string,
+  signal?: AbortSignal,
+): Promise<WebResults | null> {
   const key = process.env.EXA_API_KEY;
   if (!key || !query.trim()) return null;
   try {
     const res = await fetch(EXA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
+        : AbortSignal.timeout(5000),
       body: JSON.stringify({
         query: query.slice(0, 500),
         type: "instant",
@@ -52,27 +66,59 @@ export async function webSearch(query: string, signal?: AbortSignal): Promise<We
     });
     if (!res.ok) return null;
     const j = (await res.json()) as {
-      results?: { title?: string; url?: string; publishedDate?: string; highlights?: string[] }[];
-      costDollars?: { total?: number };
+      results?: {
+        title?: string;
+        url?: string;
+        publishedDate?: string;
+        highlights?: string[];
+      }[];
+      costDollars?: { total?: unknown };
     };
-    const rows = (j.results ?? []).filter((r) => r.url && /^https?:/i.test(r.url) && r.highlights?.length);
+    const rows = (j.results ?? []).filter(
+      (r) => r.url && /^https?:/i.test(r.url) && r.highlights?.length,
+    );
     if (!rows.length) return null;
     const sources: Source[] = rows.map((r, i) => {
       let site = "";
       try {
         site = new URL(r.url!).hostname.replace(/^www\./, "");
       } catch {}
-      return { n: i + 1, title: (r.title || site).trim().slice(0, 160), url: r.url!, site, ...(r.publishedDate ? { date: r.publishedDate.slice(0, 10) } : {}) };
+      return {
+        n: i + 1,
+        title: (r.title || site).trim().slice(0, 160),
+        url: r.url!,
+        site,
+        ...(r.publishedDate ? { date: r.publishedDate.slice(0, 10) } : {}),
+      };
     });
-    const excerpts = rows.map((r) => r.highlights!.join(" … ").replace(/\s+/g, " ").slice(0, 900));
-    return { sources, excerpts, usd: j.costDollars?.total ?? SEARCH_USD };
+    const excerpts = rows.map((r) =>
+      r.highlights!.join(" … ").replace(/\s+/g, " ").slice(0, 900),
+    );
+    const cost = j.costDollars?.total;
+    const micros = typeof cost === "number" ? Math.ceil(cost * 1_000_000) : NaN;
+    const billing: WebResults["billing"] =
+      typeof cost === "number" &&
+      Number.isFinite(cost) &&
+      cost >= 0 &&
+      Number.isSafeInteger(micros)
+        ? { kind: "reported", costMicros: micros }
+        : { kind: "unknown" };
+    return {
+      sources,
+      excerpts,
+      providerRequestId: res.headers.get("x-request-id"),
+      billing,
+    };
   } catch {
     return null;
   }
 }
 
 /** What to search for: the reader's question, with the passage it is about for context. */
-export function searchQuery(t: { action: string; quote?: string; question?: string }, latest?: string): string {
+export function searchQuery(
+  t: { action: string; quote?: string; question?: string },
+  latest?: string,
+): string {
   const quote = t.quote?.replace(/\s+/g, " ").trim().slice(0, 300);
   const question = (latest ?? t.question)?.trim();
   if (t.action === "check" && !latest) return quote ?? question ?? "";

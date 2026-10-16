@@ -250,11 +250,14 @@ export async function releaseRejectedPaidWork(reservation: PaidReservation) {
 export async function recordPaidFailure(
   reservation: PaidReservation,
   error: unknown,
+  operatorReceipt?: PaidReconciliationReceipt,
 ) {
   if (error instanceof PaidBoundExceeded)
     await db().query("select halt_paid_attempt($1,$2::jsonb)", [
       reservation.id,
-      JSON.stringify(error.usage),
+      JSON.stringify(
+        operatorReceipt ? { usage: error.usage, operatorReceipt } : error.usage,
+      ),
     ]);
   else await markPaidWorkUncertain(reservation);
 }
@@ -322,16 +325,23 @@ export function paidFailure(error: unknown): Response {
   );
 }
 
-/** Operator recovery only. Requires independently verified provider usage, never a browser claim. */
-export async function reconcilePaidWork(receipt: {
+export type PaidReconciliationReceipt = {
   verified: true;
   id: string;
   owner: string;
-  model: PaidModel;
   providerRequestId?: string;
   reference: string;
-  usage: PaidUsage;
-}) {
+} & (
+  | { model: "exa-instant"; costMicros: number; usage?: never }
+  | {
+      model: Exclude<PaidModel, "exa-instant">;
+      usage: PaidUsage;
+      costMicros?: never;
+    }
+);
+
+/** Operator recovery only. Requires independently verified provider usage/cost, never a browser claim. */
+export async function reconcilePaidWork(receipt: PaidReconciliationReceipt) {
   if (
     receipt.verified !== true ||
     typeof receipt.reference !== "string" ||
@@ -357,7 +367,36 @@ export async function reconcilePaidWork(receipt: {
       "invalid_usage",
       "The reconciliation receipt does not match the recorded attempt, model or provider request.",
     );
-  const actual = usageMicros(receipt.model, receipt.usage);
+  let actual: number;
+  if (receipt.model === "exa-instant") {
+    if (!integer(receipt.costMicros) || Object.hasOwn(receipt, "usage"))
+      throw new PaidWorkError(
+        "invalid_usage",
+        "Exa reconciliation requires a verified integer microUSD cost receipt, not a token estimate.",
+      );
+    actual = receipt.costMicros;
+  } else {
+    if (Object.hasOwn(receipt, "costMicros"))
+      throw new PaidWorkError(
+        "invalid_usage",
+        "Token-priced reconciliation requires provider token usage.",
+      );
+    try {
+      actual = usageMicros(receipt.model, receipt.usage);
+    } catch (error) {
+      if (error instanceof PaidBoundExceeded)
+        await recordPaidFailure(
+          {
+            id: attempt.id,
+            model: receipt.model,
+            reservedMicros: Number(attempt.reserved_micros),
+          },
+          error,
+          receipt,
+        );
+      throw error;
+    }
+  }
   const result = await db().query(
     "select settle_paid_attempt($1,$2,false,$3::jsonb) as status",
     [receipt.id, actual, JSON.stringify(receipt)],

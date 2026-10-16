@@ -1,6 +1,8 @@
 /** npm run budget:reconcile -- /absolute/path/to/operator-verified-receipt.json
  * Receipt: {verified:true,id,owner,model,providerRequestId?,reference,
  * usage:{inputTokens,outputTokens,cachedInputTokens?,cacheWriteTokens?}}
+ * Exa receipt instead uses model:"exa-instant",costMicros:<verified integer
+ * microUSD>, with no usage field. Estimates/missing billing cannot settle it.
  * Reference identifies independently verified provider usage; an interrupted
  * HTTP response or absence from a dashboard is not proof of zero usage.
  */
