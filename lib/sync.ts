@@ -276,6 +276,7 @@ export function startSync(userId: string) {
 
 /** Fetch one text from the account and keep it on this device. Null when signed out or not there. */
 export async function fetchText(id: string, revision?: number): Promise<Article | null> {
+  if (!accountScope()) return null;
   const epoch = accountEpoch();
   try {
     const res = await fetch(`/api/articles/${encodeURIComponent(id)}${revision ? `?revision=${revision}` : ""}`, {

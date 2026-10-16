@@ -1,6 +1,6 @@
 "use client";
 
-import { accountEpoch, scopedKey } from "./account-scope";
+import { accountEpoch, accountScope, scopedKey } from "./account-scope";
 
 /**
  * Painted covers in the browser: kept in their own IndexedDB store, fetched
@@ -50,8 +50,9 @@ export async function paintedUrl(id: string): Promise<string | null> {
   let blob = (await tx<Blob>("readonly", (s) => s.get(key))) ?? null;
   if (accountEpoch() !== epoch) return null;
   if (!blob) {
+    if (!accountScope()) return null;
     try {
-      const res = await fetch(`/api/covers/${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/covers/${encodeURIComponent(id)}`, {headers:{"X-Sakamoto-Owner":accountScope()!}});
       if (res.ok) {
         blob = await res.blob();
         if (accountEpoch() !== epoch) return null;

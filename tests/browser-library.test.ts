@@ -90,3 +90,10 @@ test("legacy cache known to have synced accounts is not silently displayed when 
   assert.equal(store.useStore.getState().library[0].id, "legacy-private");
   assert.equal(JSON.parse(localStorage.getItem("gloss:v1")!).library[0].id, "legacy-private");
 });
+
+test('a signed-out reader never fetches private server text into anonymous storage', async () => {
+  const { fetchText } = await import('../lib/sync');
+  store.useStore.getState().activateAccount(null);
+  globalThis.fetch = async () => Response.json({ doc: { id: 'server-private', title: 'Private server content', blocks: [] } });
+  assert.equal(await fetchText('server-private'), null);
+});
