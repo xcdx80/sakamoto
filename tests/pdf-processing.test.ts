@@ -9,7 +9,7 @@ import { textPdf } from './pdf-fixtures';
 before(setupPostgres);
 after(() => pool.end());
 async function account() {
-  const token = makeToken(); await createToken('pdf-' + crypto.randomUUID(), token.id, token.hash, 'PDF fixture');
+  const owner='pdf-'+crypto.randomUUID(),token = makeToken(); await createToken(owner, token.id, token.hash, 'PDF fixture');
   process.env.DATABASE_URL = 'test-adapter-only';
   const request = (path: string, body?: unknown) => new Request('http://localhost' + path, { headers: {authorization: 'Bearer ' + token.token, 'content-type': 'application/json'}, ...(body === undefined ? {} : {method: 'POST', body: JSON.stringify(body)}) });
   const call = async (name: string, args: unknown = {}) => {
@@ -19,7 +19,7 @@ async function account() {
   const save = async (postId: string, links: string[]) => call('save_bookmarks', {posts:[{postId,url:`https://x.com/a/status/${postId}`,text:'Saved knowledge with directly linked material.',author:{name:'A',handle:'a'},observedAt:'2026-10-16T10:00:00Z',links}]});
   const read = async (id: string) => { const {GET} = await import('../app/api/articles/[id]/route'); const r = await GET(request('/api/articles/'+id), {params:Promise.resolve({id})}); assert.equal(r.status,200); return (await r.json()).doc; };
   const processLinks = async (args: unknown = {}) => { const result = await call("process_library",args); return {...result,jobs:result.jobs.filter((job:any)=>job.kind==="link")}; };
-  return {call,save,read,request,processLinks};
+  return {owner,call,save,read,request,processLinks};
 }
 test('unattended linked PDF becomes durable page-addressed text and shared discoveries reuse its identity', async () => {
   const bytes = textPdf(['First page text is retained for citations.', 'Second page has its own physical address.']);
@@ -155,6 +155,86 @@ test('MCP recovery keeps literal Markdown-looking identifiers and punctuation in
   assert.equal(doc.blocks.map((b:any)=>b.runs.map((r:any)=>r.text).join('')).join(''),text);
   assert.ok(doc.blocks.every((b:any)=>b.type==='p'&&b.runs.every((r:any)=>!r.em&&!r.strong&&!r.href&&!r.code)));
   configureArticleFetch({});
+});
+
+async function seedMetadataOnly(a:Awaited<ReturnType<typeof account>>,id:string,url:string) {
+  const {POST:push}=await import('../app/api/sync/route');
+  const response=await push(a.request('/api/sync',{changes:{articles:[{id,articleId:id,revision:0,doc:null,data:{id,title:'My retained title',sourceUrl:url,contentType:'article',topic:'business',tags:['retained'],favorite:true,cover:'saved-cover'},manualFields:['title','topic','tags','favorite','cover']}],highlights:[{id:id+'-annotation',articleId:id,revision:0,data:{note:'Keep this source annotation',sourceRevision:1}}]}}));
+  assert.equal(response.status,200); assert.equal((await response.json()).ok,true);
+}
+async function assertMaterialized(a:Awaited<ReturnType<typeof account>>,id:string,text:string) {
+  const doc=await a.read(id); assert.equal(doc.id,id); assert.equal(doc.sourceRevision,1); assert.equal(doc.contentType,'document');
+  assert.match(doc.blocks.map((b:any)=>b.runs.map((r:any)=>r.text).join('')).join(''),new RegExp(text));
+  const item=(await a.call('search_library')).results.find((s:any)=>s.itemId===id);
+  assert.equal(item.title,'My retained title'); assert.equal(item.contentType,'document'); assert.equal(item.topic,'Business'); assert.deepEqual(item.tags,['retained']);
+  const {GET:pull}=await import('../app/api/sync/route'); const changes=(await (await pull(a.request('/api/sync'))).json()).changes;
+  const row=changes.articles.filter((r:any)=>r.id===id).at(-1); assert.equal(row.data.words,4); assert.equal(row.data.contentType,'document'); assert.equal(row.data.favorite,true); assert.equal(row.data.cover,'saved-cover');
+  assert.equal(changes.highlights.find((r:any)=>r.articleId===id).data.note,'Keep this source annotation');
+  const jobs=(await a.call('processing_status')).jobs;
+  assert.deepEqual(jobs.filter((j:any)=>j.sourceId===id&&['classification','indexing'].includes(j.kind)).map((j:any)=>[j.kind,j.state]).sort(),[['classification','pending'],['indexing','pending']]);
+  const search=await a.call('search_saved_passages',{query:text,contentType:'document',semantic:false});
+  assert.ok(search.results.some((r:any)=>r.itemId===id));
+}
+test('automatic PDF processing materializes a canonical metadata-only source without replacing reader metadata or annotations', async () => {
+  const a=await account(),url='https://public.example/metadata-auto',id='legacy-auto';
+  await seedMetadataOnly(a,id,url);
+  configureArticleFetch({lookup:async()=>[{address:'93.184.216.34',family:4}],request:async()=>new Response(textPdf(['Materialized automatic source evidence.']),{headers:{'content-type':'application/pdf'}})});
+  try {
+    await a.save('713',[url+'?utm_source=x']);
+    const job=(await a.processLinks()).jobs[0]; assert.equal(job.state,'complete');assert.equal(job.resultItemId,id);
+    await assertMaterialized(a,id,'Materialized automatic source evidence');
+  } finally {configureArticleFetch({});}
+});
+test('supplied PDF text materializes a canonical metadata-only source and complete replay preserves the saved source', async () => {
+  const {scanPdf}=await import('./pdf-fixtures');
+  const a=await account(),url='https://public.example/metadata-manual',id='legacy-manual';
+  await seedMetadataOnly(a,id,url);
+  configureArticleFetch({lookup:async()=>[{address:'93.184.216.34',family:4}],request:async()=>new Response(scanPdf(),{headers:{'content-type':'application/pdf'}})});
+  try {
+    await a.save('714',[url]);const job=(await a.processLinks()).jobs[0];assert.equal(job.state,'terminal');
+    const receipt=await a.call('supply_link_text',{jobId:job.id,text:'Materialized manual source evidence'});assert.equal(receipt.itemId,id);
+    await assertMaterialized(a,id,'Materialized manual source evidence');
+    const replay=await a.call('supply_link_text',{jobId:job.id,text:'Replacement must not overwrite the saved document'});assert.equal(replay.itemId,id);
+    assert.equal((await a.read(id)).blocks[0].runs[0].text,'Materialized manual source evidence');
+  } finally {configureArticleFetch({});}
+});
+
+test('expiry while waiting to materialize a canonical source rolls back completion and permits a fresh lease retry', async () => {
+  const {configureProcessing}=await import('../lib/processing');
+  const {POST:process}=await import('../app/api/processing/route');
+  const {GET:read}=await import('../app/api/articles/[id]/route');
+  const a=await account(),id='legacy-lock',url='https://public.example/metadata-lock';
+  await seedMetadataOnly(a,id,url); await a.save('715',[url]);
+  let started!:()=>void, release!:(value:any)=>void;
+  const ready=new Promise<void>(resolve=>{started=resolve;});
+  const source={ok:true as const,article:{id:'discard-generated-id',title:'Fetched PDF text',sourceUrl:url,origin:'url' as const,contentType:'document' as const,blocks:[{id:'p1-text',type:'p' as const,page:1,runs:[{text:'Fresh source under a renewed lease.'}]}]}};
+  configureProcessing({fetchArticle:async()=>{started();return new Promise(resolve=>{release=resolve;});}});
+  const pending=process(a.request('/api/processing',{limit:1})); await ready;
+  const job=(await a.call('processing_status')).jobs.find((j:any)=>j.kind==='link');
+  const locker=await pool.connect(); let locked=true;
+  try {
+    await locker.query('begin');
+    await locker.query('select id from articles where user_id=$1 and id=$2 for no key update',[a.owner,id]);
+    const lockPid=Number((await locker.query('select pg_backend_pid() as pid')).rows[0].pid);
+    await pool.query("update processing_jobs set lease_expires_at=clock_timestamp()+interval '1500 milliseconds' where user_id=$1 and id=$2::bigint",[a.owner,job.id]);
+    release(source);
+    let blocked=false;
+    for(let i=0;i<50;i++){
+      blocked=Boolean((await pool.query('select exists(select 1 from pg_stat_activity where $1::integer=any(pg_blocking_pids(pid))) as blocked',[lockPid])).rows[0].blocked);
+      if(blocked)break; await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    assert.equal(blocked,true,'Publication must reach the target-row materialization lock');
+    await new Promise(resolve=>setTimeout(resolve,1600));
+    await locker.query('commit');locked=false;
+    assert.equal((await pending).status,400);
+    const retained=(await a.call('processing_status')).jobs.find((j:any)=>j.id===job.id);
+    assert.equal(retained.state,'running');assert.equal(retained.resultItemId,null);
+    assert.equal((await read(a.request('/api/articles/'+id),{params:Promise.resolve({id})})).status,404);
+    configureProcessing({fetchArticle:async()=>source});
+    const retry=(await a.processLinks({limit:1})).jobs.find((j:any)=>j.id===job.id);
+    assert.equal(retry.state,'complete');assert.equal(retry.attempts,2);assert.equal(retry.resultItemId,id);
+    assert.equal((await a.read(id)).blocks[0].runs[0].text,'Fresh source under a renewed lease.');
+  } finally {if(locked)await locker.query('rollback');locker.release();configureProcessing({});}
 });
 
 test('automatic and recovered PDF sources share real classification/indexing scheduling and page-addressed retrieval', async () => {
