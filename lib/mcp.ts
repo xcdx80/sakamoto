@@ -9,6 +9,8 @@
  */
 
 import { processLibrary, processingStatus } from "./processing";
+import { answerOptions, askLibrary } from "./library-answer";
+import { libraryAnswerText } from "./library-answer-format";
 import { searchEvidence,searchOptions,scheduleSearchRebuild } from "./retrieval";
 import { hashToken, looksLikeToken } from "./agent";
 import { importBookmarks, restoreBookmarks, xPostIdentity } from "./bookmarks";
@@ -55,6 +57,7 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  {name:"ask_library",title:"Ask the saved library",description:"Answer a question using saved passages only, with checked source revision/block/page/post references and supporting excerpts. Uses guarded Luna and optional Google query embedding under the shared cumulative budget. No external web search. Returns honest no_evidence, insufficient, partial, paused, failed or stale states. A valid reference is not a guarantee that a generated claim is supported; inspect excerpts.",inputSchema:{type:"object",properties:{query:{type:"string",maxLength:1000},contentType:{type:"string",enum:["article","document","post"]},topic:{type:"string",enum:TOPICS.map(t=>t.key)},tags:{type:"array",items:{type:"string"},maxItems:20},semantic:{type:"boolean",default:true}},required:["query"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
  {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
   { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
@@ -194,12 +197,12 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
   if (!allow(`mcp:${userId}`, 60, 60_000)) return fail(first.id, -32002, "Too many requests. Wait a minute, then try again.", 429);
 
   // Notifications get no answer; with nothing to answer, the reply is an empty 202.
-  const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label)))).filter((a) => a !== null);
+  const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label, req.signal)))).filter((a) => a !== null);
   if (!answers.length) return new Response(null, { status: 202, headers: CORS });
   return json(batch ? answers : answers[0]);
 }
 
-async function answer(msg: Rpc, userId: string, label: string): Promise<object | null> {
+async function answer(msg: Rpc, userId: string, label: string, signal: AbortSignal): Promise<object | null> {
   if (msg.id === undefined || msg.method?.startsWith("notifications/")) return null;
   const ok = (result: unknown) => ({ jsonrpc: "2.0", id: msg.id, result });
   const err = (code: number, message: string) => ({ jsonrpc: "2.0", id: msg.id ?? null, error: { code, message } });
@@ -221,6 +224,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "ask_library") { const result=await askLibrary(userId,answerOptions(args),signal); return ok(toolResult(libraryAnswerText(result),result)); }
         if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
         if (name === "processing_status") return ok(toolResult("Received material processing status.", await processingStatus(userId, args)));

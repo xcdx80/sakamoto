@@ -18,6 +18,15 @@ export type Evidence = {
   itemId: string;
   sourceRevision: number;
   title: string;
+  author?: string;
+  coverage?: {
+    status: string;
+    reason?: string;
+    verification?: "agent_reported";
+    totalPages?: number;
+    parsedPages?: number;
+    missingPages?: number[];
+  };
   originalUrl?: string;
   contentType: ContentType;
   excerpt: string;
@@ -103,7 +112,7 @@ export async function searchEvidence(
   }
   const rows = await db().query(
     `with eligible as (
- select p.*,a.data,coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl') as original_url,
+ select p.*,a.data,a.doc->'post'->'completeness' as post_coverage,a.doc->'pdfSource' as pdf_coverage,coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl') as original_url,
  coalesce(a.data->>'contentType',a.doc->>'contentType',case when sakamoto_x_post_id(coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl')) is not null then 'post' when coalesce(a.doc->>'origin','') in ('file','paste') or coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl','') ~* '\\.pdf([?#].*)?$' then 'document' else 'article' end) as content_type,
  ts_rank_cd(p.lexical,websearch_to_tsquery('simple',$2)) as lexical_score,
  p.lexical @@ websearch_to_tsquery('simple',$2) as matched,
@@ -139,6 +148,10 @@ export async function searchEvidence(
       itemId: r.source_id,
       sourceRevision: r.source_revision,
       title: r.data.title ?? "Untitled",
+      ...(typeof r.data.author === "string" ? { author: r.data.author } : {}),
+      ...((r.post_coverage ?? r.pdf_coverage)
+        ? { coverage: r.post_coverage ?? r.pdf_coverage }
+        : {}),
       originalUrl: r.original_url,
       contentType: r.content_type,
       excerpt: r.text,
