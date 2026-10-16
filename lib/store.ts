@@ -5,6 +5,8 @@ import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-
 import { create } from "zustand";
 import type { Action } from "./actions";
 import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
+import { derivedDocument, derivedDocumentMetadata } from "./source-edits";
+import type { RevisionAddress } from "./source-revision";
 import { modelOf, type ModelKey, type Source, type Usage } from "./models";
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type Marker, type Settings } from "./settings";
 
@@ -18,7 +20,7 @@ export type Turn = {
   usage?: Usage;
   model?: string;
   modelKey?: ModelKey;
-  /** The reader needs their own key to continue: free answers are spent, or there is no shared key. */
+  /** Historical error flag retained for stored-result compatibility. */
   needKey?: boolean;
   /** Looking things up on the web before the answer starts. */
   searching?: boolean;
@@ -29,6 +31,7 @@ export type Turn = {
 };
 
 export type Gloss = {
+  pendingSource?: string | null;
   sourceRevision?: number;
   id: string;
   articleId: string;
@@ -48,9 +51,9 @@ export type Gloss = {
  */
 export type Review = { due: number; step: number; last: number; off?: boolean };
 
-export type Highlight = { sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
+export type Highlight = { pendingSource?: string | null; sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
 
-export type BriefState = { sourceRevision?: number } & (
+export type BriefState = { pendingSource?: string | null; sourceRevision?: number } & (
   { status: "loading" } | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number } | { status: "error"; error: string; needKey?: boolean }
 );
 
@@ -70,6 +73,7 @@ export type LibraryItem = {
   addedAt: number;
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
+  pendingSource?: string | null;
   sourceRevision?: number;
   recoveredFrom?: { itemId: string; sourceRevision: number };
   manualFields?: ReaderMetadataField[];
@@ -95,7 +99,7 @@ export type LibraryItem = {
   addedVia?: string;
 };
 
-export type Progress = { sourceRevision?: number; block: string; pct: number; at: number };
+export type Progress = { pendingSource?: string | null; sourceRevision?: number; block: string; pct: number; at: number };
 
 /** A row from the account, as the sync route sends it. `data` is null on a tombstone. */
 export type RemoteRow<T> = { id: string; articleId: string; data: T | null; deleted: boolean; revision?: number; sourceRevision?: number };
@@ -207,6 +211,38 @@ function adoptionSnapshot(): Partial<Persisted> {
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
+// Only live callbacks need these aliases; reloads have no surviving in-flight callback.
+// Keys include the account epoch, and account activation clears them.
+const pendingReceipts = new Map<
+  string,
+  { articleId: string; sourceRevision: number }
+>();
+const pendingReceiptKey = (id: string, generation: string) =>
+  `${accountEpoch()}:${id}:${generation}`;
+function annotationSource(
+  library: LibraryItem[],
+  id: string,
+  source: RevisionAddress,
+): RevisionAddress & { articleId: string } {
+  const item = library.find((item) => item.id === id);
+  const pendingSource = Object.hasOwn(source, "pendingSource")
+    ? source.pendingSource
+    : source.sourceRevision === undefined ||
+        source.sourceRevision === (item?.sourceRevision ?? 1)
+      ? item?.pendingSource
+      : undefined;
+  const receipt = pendingSource
+    ? pendingReceipts.get(pendingReceiptKey(id, pendingSource))
+    : undefined;
+  return receipt
+    ? { ...receipt, pendingSource: undefined }
+    : {
+        articleId: id,
+        sourceRevision: source.sourceRevision ?? item?.sourceRevision ?? 1,
+        pendingSource,
+      };
+}
+
 export const useStore = create<State>((set, get) => ({
   glosses: {},
   highlights: {},
@@ -234,6 +270,7 @@ export const useStore = create<State>((set, get) => ({
   activateAccount: (owner) => {
     if (get().scope === owner) return;
     if (get().hydrated) persist(get());
+    pendingReceipts.clear();
     selectAccount(owner);
     set({
       scope: owner,
@@ -257,14 +294,23 @@ export const useStore = create<State>((set, get) => ({
   adoptAnonymous: async () => {
     const owner = accountScope();
     if (!owner) return;
-    let old: Partial<Persisted> = {};
-    old = adoptionSnapshot();
+    const epoch = accountEpoch();
+    const currentOwner = () => accountScope() === owner && accountEpoch() === epoch;
+    const fail = (title: string): never => {
+      const error = new Error(`Could not durably copy “${title}”. Anonymous data is unchanged. Free storage or restore the source and retry.`);
+      if (currentOwner()) set({ syncError: error.message });
+      throw error;
+    };
+    const old = adoptionSnapshot();
     for (const item of old.library ?? []) {
+      const destination = await loadDoc(item.id, owner);
+      if (!currentOwner()) return;
+      if (destination) continue; // Keep an existing readable account copy without replacement.
       const doc = await loadDoc(item.id, null, true);
-      if (accountScope() !== owner) return;
-      if (doc && !get().library.some((x) => x.id === item.id)) await saveDoc(doc, owner);
+      if (!currentOwner()) return;
+      if (doc && !(await saveDoc(doc, owner))) fail(item.title);
+      if (!currentOwner()) return;
     }
-    if (accountScope() !== owner) return;
     const current = get();
     const arrays = <T extends { id: string }>(older: Record<string, T[]>, newer: Record<string, T[]>) =>
       Object.fromEntries(
@@ -273,14 +319,15 @@ export const useStore = create<State>((set, get) => ({
           [...(older[id] ?? []).filter((x) => !(newer[id] ?? []).some((y) => x.id === y.id)), ...(newer[id] ?? [])],
         ]),
       );
-    set({
+    const adopted: Persisted = {
       library: [...(old.library ?? []).filter((x) => !current.library.some((y) => y.id === x.id)), ...current.library],
       highlights: arrays(old.highlights ?? {}, current.highlights),
       glosses: arrays(old.glosses ?? {}, current.glosses),
       briefs: { ...old.briefs, ...current.briefs },
       progress: { ...old.progress, ...current.progress },
-    });
-    persist(get());
+    };
+    if (!persist(adopted)) fail("anonymous library");
+    set({ ...adopted, syncError: null });
   },
   hydrate: () => {
     if (get().hydrated) return;
@@ -327,64 +374,120 @@ export const useStore = create<State>((set, get) => ({
   setUI: (u) => set(u),
 
   addGloss: (g) =>
-    set((st) => ({
-      glosses: {
-        ...st.glosses,
-        [g.articleId]: [...(st.glosses[g.articleId] ?? []), { ...g, sourceRevision: g.sourceRevision ?? st.library.find((x) => x.id === g.articleId)?.sourceRevision ?? 1 }],
-      },
-      activeGloss: g.id,
-      enteringGloss: g.id,
-    })),
+    set((st) => {
+      const bound = { ...g, ...annotationSource(st.library, g.articleId, g) };
+      return {
+        glosses: {
+          ...st.glosses,
+          [bound.articleId]: [...(st.glosses[bound.articleId] ?? []), bound],
+        },
+        activeGloss: g.id,
+        enteringGloss: g.id,
+      };
+    }),
 
   updateGloss: (articleId, id, fn) =>
-    set((st) => ({
-      glosses: { ...st.glosses, [articleId]: (st.glosses[articleId] ?? []).map((g) => (g.id === id ? fn(g) : g)) },
-    })),
+    set((st) => {
+      // An in-flight response can finish after its pending body moved to an offline copy.
+      const target = st.glosses[articleId]?.some((g) => g.id === id)
+        ? articleId
+        : Object.keys(st.glosses).find((key) =>
+            st.glosses[key].some((g) => g.id === id),
+          );
+      return target
+        ? {
+            glosses: {
+              ...st.glosses,
+              [target]: st.glosses[target].map((g) =>
+                g.id === id ? fn(g) : g,
+              ),
+            },
+          }
+        : {};
+    }),
 
   removeGloss: (articleId, id) =>
     set((st) => ({
-      glosses: { ...st.glosses, [articleId]: (st.glosses[articleId] ?? []).filter((g) => g.id !== id) },
+      glosses: {
+        ...st.glosses,
+        [articleId]: (st.glosses[articleId] ?? []).filter((g) => g.id !== id),
+      },
       activeGloss: st.activeGloss === id ? null : st.activeGloss,
       hoverGloss: st.hoverGloss === id ? null : st.hoverGloss,
     })),
 
   addHighlight: (h) => {
-    set((st) => ({
-      highlights: {
-        ...st.highlights,
-        [h.articleId]: [...(st.highlights[h.articleId] ?? []), { ...h, sourceRevision: h.sourceRevision ?? st.library.find((x) => x.id === h.articleId)?.sourceRevision ?? 1 }],
-      },
-      enteringHighlight: h.id,
-    }));
-    setTimeout(() => get().enteringHighlight === h.id && set({ enteringHighlight: null }), 700);
+    set((st) => {
+      const bound = { ...h, ...annotationSource(st.library, h.articleId, h) };
+      return {
+        highlights: {
+          ...st.highlights,
+          [bound.articleId]: [...(st.highlights[bound.articleId] ?? []), bound],
+        },
+        enteringHighlight: h.id,
+      };
+    });
+    setTimeout(
+      () =>
+        get().enteringHighlight === h.id && set({ enteringHighlight: null }),
+      700,
+    );
   },
 
   updateHighlight: (articleId, id, patch) =>
     set((st) => ({
-      highlights: { ...st.highlights, [articleId]: (st.highlights[articleId] ?? []).map((h) => (h.id === id ? { ...h, ...patch } : h)) },
+      highlights: {
+        ...st.highlights,
+        [articleId]: (st.highlights[articleId] ?? []).map((h) =>
+          h.id === id ? { ...h, ...patch } : h,
+        ),
+      },
     })),
 
   removeHighlight: (articleId, id) =>
     set((st) => ({
-      highlights: { ...st.highlights, [articleId]: (st.highlights[articleId] ?? []).filter((h) => h.id !== id) },
+      highlights: {
+        ...st.highlights,
+        [articleId]: (st.highlights[articleId] ?? []).filter(
+          (h) => h.id !== id,
+        ),
+      },
       activeHighlight: st.activeHighlight === id ? null : st.activeHighlight,
     })),
 
   setBrief: (articleId, b) =>
     set((st) => {
       const briefs = { ...st.briefs };
-      if (b) briefs[articleId] = { ...b, sourceRevision: b.sourceRevision ?? st.library.find((x) => x.id === articleId)?.sourceRevision ?? 1 };
-      else delete briefs[articleId];
+      if (b) {
+        const { articleId: target, ...source } = annotationSource(
+          st.library,
+          articleId,
+          b,
+        );
+        briefs[target] = { ...b, ...source };
+      } else delete briefs[articleId];
       return { briefs };
     }),
 
   setProgress: (articleId, p) =>
     set((st) => {
       // The first time a text is read to the end, the library notes when.
-      const done = p.pct >= 1 && st.library.some((x) => x.id === articleId && !x.finishedAt);
+      const { articleId: target, ...source } = annotationSource(
+        st.library,
+        articleId,
+        p,
+      );
+      const done =
+        p.pct >= 1 && st.library.some((x) => x.id === target && !x.finishedAt);
       return {
-        progress: { ...st.progress, [articleId]: { ...p, sourceRevision: p.sourceRevision ?? st.library.find((x) => x.id === articleId)?.sourceRevision ?? 1 } },
-        ...(done ? { library: st.library.map((x) => (x.id === articleId ? { ...x, finishedAt: p.at } : x)) } : {}),
+        progress: { ...st.progress, [target]: { ...p, ...source } },
+        ...(done
+          ? {
+              library: st.library.map((x) =>
+                x.id === target ? { ...x, finishedAt: p.at } : x,
+              ),
+            }
+          : {}),
       };
     }),
 
@@ -427,12 +530,42 @@ export const useStore = create<State>((set, get) => ({
     set((st) => ({ library: st.library.filter((x) => x.id !== id) }));
   },
 
-  // Part of a text read again (a page swapped in by lib/upgrade.ts) where no mark is anchored:
+  // Part of a text read again (an existing saved page replacement) where no mark is anchored:
   // the marks stay. The rev bump makes sync send the text again.
   updateText: async (a, words) => {
-    const epoch = accountEpoch();
-    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
-    set((st) => ({ library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)) }));
+    const epoch = accountEpoch(),
+      owner = accountScope();
+    const previous = await loadDoc(a.id, owner);
+    if (accountEpoch() !== epoch) return false;
+    if (previous && JSON.stringify(previous.blocks) === JSON.stringify(a.blocks)) return true;
+    // Preserve before the asynchronous replacement: a note can still arrive for the visible old body.
+    if (previous?.pendingSource) {
+      const { preserveOfflineSource } = await import("./offline-source");
+      try {
+        await preserveOfflineSource(a.id, owner);
+      } catch {
+        return false;
+      }
+      if (accountEpoch() !== epoch) return false;
+    }
+    const edited = { ...derivedDocument(a), pendingSource: uid() };
+    if (!(await saveDoc(edited, owner)) || accountEpoch() !== epoch)
+      return false;
+    set((st) => ({
+      library: st.library.map((x) =>
+        x.id === a.id
+          ? {
+              ...derivedDocumentMetadata(x),
+              pendingSource: edited.pendingSource,
+              words,
+              rev: (x.rev ?? 0) + 1,
+            }
+          : x,
+      ),
+    }));
+    window.dispatchEvent(
+      new CustomEvent("gloss:text-replaced", { detail: edited }),
+    );
     return true;
   },
 
@@ -440,11 +573,24 @@ export const useStore = create<State>((set, get) => ({
   // text, so highlights, glosses and the whole-text gloss go with it; the caller asks first.
   replaceText: async (a, words) => {
     const epoch = accountEpoch();
-    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
+    const edited = { ...derivedDocument(a), pendingSource: uid() };
+    if (!(await saveDoc(edited)) || accountEpoch() !== epoch) return false;
     set((st) => {
-      const rest = <T>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== a.id)) as Record<string, T>;
+      const rest = <T>(m: Record<string, T>) =>
+        Object.fromEntries(
+          Object.entries(m).filter(([k]) => k !== a.id),
+        ) as Record<string, T>;
       return {
-        library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)),
+        library: st.library.map((x) =>
+          x.id === a.id
+            ? {
+                ...derivedDocumentMetadata(x),
+                pendingSource: edited.pendingSource,
+                words,
+                rev: (x.rev ?? 0) + 1,
+              }
+            : x,
+        ),
         highlights: rest(st.highlights),
         glosses: rest(st.glosses),
         briefs: rest(st.briefs),
@@ -570,6 +716,137 @@ export async function saveDoc(a: Article, owner: string | null = accountScope())
   } catch {
     return false;
   }
+}
+
+/** Bind only annotations created for this local body; historical marks are never rewritten. */
+export function bindPendingSource(
+  id: string,
+  pendingSource: string,
+  targetId: string,
+  revision: number,
+): void {
+  const st = useStore.getState();
+  const bind = <T extends RevisionAddress>(value: T): T => {
+    const next = { ...value, sourceRevision: revision };
+    delete next.pendingSource;
+    return next;
+  };
+  const arrays = <
+    T extends RevisionAddress & { id: string; articleId: string },
+  >(
+    values: Record<string, T[]>,
+  ): Record<string, T[]> => {
+    const pending = (values[id] ?? []).filter(
+      (value) => value.pendingSource === pendingSource,
+    );
+    if (!pending.length) return values;
+    const moved = pending.map((value) => ({
+      ...bind(value),
+      articleId: targetId,
+    }));
+    return {
+      ...values,
+      [id]: (values[id] ?? []).filter(
+        (value) => value.pendingSource !== pendingSource,
+      ),
+      [targetId]: [
+        ...(targetId === id
+          ? (values[id] ?? []).filter(
+              (value) => value.pendingSource !== pendingSource,
+            )
+          : (values[targetId] ?? [])),
+        ...moved,
+      ],
+    };
+  };
+  const single = <T extends RevisionAddress>(
+    values: Record<string, T>,
+  ): Record<string, T> => {
+    const value = values[id];
+    if (value?.pendingSource !== pendingSource) return values;
+    const next = { ...values };
+    delete next[id];
+    next[targetId] = bind(value);
+    return next;
+  };
+  const next: Persisted = {
+    library: st.library.map((item) => {
+      if (
+        item.id !== id ||
+        targetId !== id ||
+        item.pendingSource !== pendingSource
+      )
+        return item;
+      return bind(item);
+    }),
+    highlights: arrays(st.highlights),
+    glosses: arrays(st.glosses),
+    briefs: single(st.briefs),
+    progress: single(st.progress),
+  };
+  if (!persist(next))
+    throw new Error(
+      "Pending source annotations could not be saved. Sync paused; local data is retained for retry.",
+    );
+  const key = pendingReceiptKey(id, pendingSource);
+  if (!pendingReceipts.has(key))
+    pendingReceipts.set(key, { articleId: targetId, sourceRevision: revision });
+  useStore.setState(next);
+}
+
+/** Stamp only the exact uploaded cache value; a later local edit must never be replaced by its receipt. */
+export async function acknowledgeDocRevision(
+  uploaded: Article,
+  revision: number,
+  owner: string,
+): Promise<Article | null> {
+  const key = scopedKey(uploaded.id, owner),
+    expected = JSON.stringify(uploaded);
+  let unavailable: unknown;
+  try {
+    const db = await idb();
+    const result = await new Promise<{
+      found: boolean;
+      acknowledged: Article | null;
+    }>((resolve, reject) => {
+      const transaction = db.transaction(DOCS, "readwrite"),
+        store = transaction.objectStore(DOCS),
+        read = store.get(key);
+      let acknowledged: Article | null = null,
+        found = false;
+      read.onsuccess = () => {
+        found = Boolean(read.result);
+        if (found && JSON.stringify(read.result) === expected) {
+          acknowledged = { ...read.result, sourceRevision: revision };
+            delete acknowledged!.pendingSource;
+          store.put(acknowledged, key);
+        }
+      };
+      transaction.oncomplete = () => resolve({ found, acknowledged });
+      transaction.onabort = () =>
+        reject(
+          transaction.error ?? new Error("Source revision cache write failed."),
+        );
+      transaction.onerror = () => reject(transaction.error);
+    });
+    if (result.found) return result.acknowledged;
+  } catch (error) {
+    unavailable = error;
+  }
+  const raw = localStorage.getItem(scopedKey(DOC_PREFIX + uploaded.id, owner));
+  if (raw) {
+    const cached = JSON.parse(raw) as Article;
+    if (JSON.stringify(cached) !== expected) return null;
+    const acknowledged = { ...cached, sourceRevision: revision };
+    delete acknowledged.pendingSource;
+    localStorage.setItem(
+      scopedKey(DOC_PREFIX + uploaded.id, owner),
+      JSON.stringify(acknowledged),
+    );
+    return acknowledged;
+  }
+  if (unavailable) throw unavailable;
+  return null;
 }
 
 export async function loadDoc(id: string, owner: string | null = accountScope(), explicitLegacyAdoption = false): Promise<Article | null> {

@@ -1,46 +1,48 @@
-<p align="center">
-  <img alt="Sakamoto" src="public/sakamoto.svg">
-</p>
+<p align="center"><img alt="Sakamoto" src="public/sakamoto.svg"></p>
 
-<h1 align="center">Sakamoto</h1>
+# Sakamoto
 
-<p align="center">A reader for articles, chapters and PDFs: select any line, start typing, and an open model writes the answer in the margin beside it, citing paragraphs you can check</p>
+A private knowledge library for saved X posts, articles and documents. Read the original text, keep notes and highlights, search saved passages, and ask questions with citations that open the supporting saved source.
 
-## Tech stack
+## Application
 
-- Next.js 16 (App Router, Turbopack), React 19, Tailwind v4, Zustand. Local-first: texts live in IndexedDB, and glosses, highlights and settings in localStorage, all in the browser and all working signed out.
-- Optional accounts with Clerk. Signed in, your shelf, texts, highlights, notes, glosses and reading progress sync to Postgres on Neon (`lib/sync.ts`, `app/api/sync`); a text is fetched onto another device when it is opened there.
-- Your own notes on any highlight, in the margin beside the model's (`Lens.tsx`, `Margin.tsx`). A daily review on the home page brings back five of your highlights, spaced like flashcards (`lib/review.ts`); the shelf searches every highlight and note, and exports them all as Markdown files ready for Obsidian (`lib/export.ts`, `lib/zip.ts`).
-- The library (`/library`, `components/library/`) displays saved articles, documents and posts as cards or a list, with sorting and filters for topic, tag, content type and reading status. Titles can be edited and samples can be hidden per device. New texts are classified into one of 24 fixed topics with a few tags (`lib/shelve.ts`, `app/api/shelve`); texts from before are classified when the library opens (`lib/shelving.ts`).
-- Agents can save to the library through an MCP server at `/mcp` (`lib/mcp.ts`): Streamable HTTP, stateless, four tools (`save_articles`, `save_text`, `search_library`, `list_topics`). Each reader makes a token in the library under Connect an agent (`app/api/agent-tokens`, only its hash is stored in `agent_tokens`), sent as `Authorization: Bearer gls_...` or as the last part of the URL. Saved links go through the same importer as the site (`lib/fetch-article.ts`); `save_text` takes Markdown the agent read itself, for what Sakamoto can't fetch (X Articles and long posts, video transcripts, pages behind a login). Both are sorted and written to the reader's synced shelf, so they appear on the next sync. Up to 25 links a call, one text a call, and 1,000 saves a day.
-- Read aloud, off by default (Aa, then Listen): Cartesia Sonic 3 on Together, a passage at a time, fetched just ahead of the voice (`app/api/speak`, `components/reader/Listen.tsx`). It always uses the reader's own key.
-- Free use of the shared key is a dollar budget (`lib/quota.ts`): what answers and briefs actually cost, up to 10¢ a day signed out (by hashed IP) or 20¢ signed in, and $1,000 a day across everyone, kept in Postgres (`free_usage`).
-- Newsreader and Schibsted Grotesk, plus Literata and Atkinson Hyperlegible as optional reading faces; six themes, four pens and four highlighters from CSS variables, applied before first paint.
-- Together AI over raw SSE fetch: DeepSeek V4.1 Flash (Quick, about 0.5s to first token) and Kimi K3 (Deep, at low reasoning effort), allow-listed in `lib/models.ts`.
-- Web search with Exa (`lib/search.ts`, instant mode, about 0.5s): the model gets a `web_search` tool and decides when to look something up (a named person, organisation, work, or anything newer than the text); Fact-check always searches. On by default, the Web toggle turns it off. Results are cited as [1], [2] beside the text's own [¶n].
-- The whole text goes in the system prompt with `[¶n]` numbers, so follow-ups hit Together's prefix cache and answers cite paragraphs.
-- Anchors are block id plus character offsets, rendered as React marks; margin layout and leader lines in `components/reader/Margin.tsx`.
-- Import: links through `@mozilla/readability` on `linkedom` (with a private-address guard), keeping figures (by their original URL, loaded without a referrer) and data tables (which the model reads too); plus pasted text and `.txt`/`.md`. Posts and videos (X, Threads, Bluesky, YouTube and the like) are turned away with a pointer to Paste text (`notAnArticle` in `lib/fetch-article.ts`). Two bookmarklets in the library's Add panel open any page at `/?url=` (read now) or `/?save=` (shelve for later); the same panel takes a Pocket, Instapaper or Raindrop export and saves its links 100 at a time.
-- PDFs (`lib/pdf.ts`): LiteParse, Rust compiled to WebAssembly (`public/liteparse-2.15.1.wasm`, copied from `@llamaindex/liteparse-wasm`), reads the text layer in the browser, columns, headings, lists and tables, in milliseconds. Pages with no usable text (scans, garbled glyphs) are rendered and read by Qwen3.8 Flash on Together (`app/api/pdf-page`). Over 20 pages needs the reader's own key, since every question sends the whole text. The original PDF is kept in IndexedDB on that device. Pages whose layout looks hard (columns, tables, maths) are read again in the background by Qwen3.5-9B (`lib/upgrade.ts`, mode "layout" in `app/api/pdf-page`) and swapped in one at a time, while nothing cites their paragraphs yet. When columns, tables or maths still come out jumbled, "Read it more carefully" (`lib/careful.ts`, `app/api/pdf-careful`) reads the PDF again with LlamaParse's agentic tier, for readers with their own Together key, up to 200 pages a day each.
+Sakamoto is one Next.js application with Clerk authentication and Neon Postgres as its only server database. Neon stores source revisions, annotations, import relationships, durable processing jobs, full-text passages, pgvector embeddings and the cumulative processing ledger. Account-scoped browser storage caches reading data and local PDF originals; it is not a second server database. Public bundled samples and anonymous local reading remain available; private synchronization, agent connections and paid processing require an authenticated account.
 
-## Cloning & running
+- Google `gemini-embedding-2` supplies 768-dimensional retrieval vectors. Exact-word search remains available while indexing or embedding work is pending or paused.
+- TypeSafe `jev-latest` chooses from a finite taxonomy. Manual categories, titles and tags are preserved; Jev does not invent free-form tags.
+- OpenAI `gpt-6-luna` answers reader and library questions under the same durable budget. Library answers use saved evidence only. Source IDs, current revisions and saved addresses are checked; inspect the excerpts to assess substantive support.
+- Optional Exa lookup is limited to the existing reader Web/fact-check operation and requires its configured spending ceiling. It is not mixed into library evidence.
 
-1. Install: `npm install`
-2. Add keys to `.env.local` (see `.env.example`): `TOGETHER_API_KEY` (without one, answers are labelled demo output and readers can paste their own key in the app), `DATABASE_URL` from Neon, and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` from Clerk
-3. Create the tables: `npm run db:migrate` (safe to run again)
-4. Run: `npm run dev`, open http://localhost:3100, and paste a link (or press ⌘V anywhere), or open the library and shelve a few classics
-5. Read: select text and type to ask, `/` asks about the whole text, `j` and `k` walk paragraphs, `B` glosses the whole text, `F` is focus mode, `?` lists every key
-6. Check: `npm run lint && npm run build`, then deploy with `vercel --prod` (set the same variables, plus `NEXT_PUBLIC_SITE_URL=<your deployment origin>`, in the project first)
+Grok-assisted v1 accepts full bookmarked posts through authenticated MCP. Grok owns X access and the bookmark-fetch routine; Sakamoto owns persistence, deduplication, author-thread/context reading, directly linked article/PDF imports, classification, indexing and answers. There is no Birdclaw, SQLite, Redis or separate worker deployment. A daily processing cron advances material already received; it cannot wake Grok or fetch new bookmarks itself.
 
-## Roadmap
+The library offers cards/list, sorting and topic/tag/content-type filters. Reader notes, highlights, progress, previously generated answers and saved cover images remain readable. New speech, cover generation, PDF OCR and paid layout/careful parsing are unavailable; no replacement model is silently invoked. Local PDF text-layer import remains supported without a personal model key, up to 400 pages, with explicit incomplete coverage. Server linked-PDF processing retains its bounded text-layer extractor and page addresses; scanned/password-protected documents expose a recovery path for supplied text.
 
-- [ ] ship it as a browser extension that opens the same margin on any page
-- [ ] let a gloss compare two passages you pick at once
-- [ ] move the shared-key rate limit from memory to a store like Upstash so it holds across instances
-- Accounts are skipped on purpose for now: the reader should work the second you paste a link.
+## Run locally
 
-## Security
+1. Use the repository's Node/npm toolchain (locally verified with Node 20.20.2) and run `npm ci`.
+2. Populate ignored `.env.local` from `.env.example`. Set Neon and Clerk credentials; configure server-side Google, TypeSafe and OpenAI keys for their operations. Missing providers pause the corresponding paid work rather than return demo answers. No personal provider key belongs in the browser.
+3. Confirm that `DATABASE_URL` names the intended Neon project/branch before running `npm run db:migrate`. This applies recorded ordered migrations, including pgvector, without resetting existing source IDs or data. Never use an unknown database as a test target.
+4. Run `npm run dev` and open [localhost:3100](http://localhost:3100). Sign in for your private library. Read a bundled sample or import a link, pasted text, `.txt`, `.md` or readable PDF.
+5. Open Connect an agent to create a personal MCP token. Use `/mcp` with an Authorization Bearer header when supported. The setup panel offers an explicit URL-token compatibility option only for clients that require it; credential URLs must remain private and can appear in logs. Token creation/list/revocation requires the Clerk session and intended account, not an agent token.
 
-`TOGETHER_API_KEY` stays server side. A key a reader pastes lives in their browser's localStorage and is sent only with their own requests. Free use of the shared key is capped per reader per day in dollars, and in total, as above; reading aloud ($65 per million characters on Sonic 3) never uses it; link import refuses private, loopback and link-local addresses on every redirect hop.
+MCP supports structured bookmark batches/receipts, thread/source reading, received-work status/processing, direct source recovery, category/index scheduling, metadata/passage search and `ask_library`. `read_saved_source` retrieves the exact retained source separately from bounded retrieval excerpts. In Connect an agent, prepare the daily Grok prompt after entering the public HTTPS Sakamoto origin and routine time. Preparing a prompt does not enable or verify a Grok routine. Save per-item receipts and resume batches; an accepted batch is not proof of a complete bookmark archive.
 
-Samples, all public domain via Project Gutenberg: Huxley, "On a Piece of Chalk" (1868); Schopenhauer, "On Thinking for Oneself" (trans. T. Bailey Saunders); Thoreau, "Reading" from Walden (1854). Rebuild them with `scripts/build-samples.mjs`; dashes are normalized to plain punctuation.
+## Processing budget
+
+`SAKAMOTO_BUDGET_USD=10` is one cumulative deployment-wide cap with no monthly reset. Each paid call reserves a conservative maximum in Neon before dispatch. Reported usage settles the reservation; uncertain dispatched usage remains reserved. New paid work pauses when authorization is unavailable, leaving saved text, manual organization and available lexical search usable. Raising the configured cap is intentional; retries or redeploys do not reset the ledger.
+
+Inspect Processing budget in the app. Reconcile only independently verified receipts using `npm run budget:reconcile -- /absolute/receipt.json`; the receipt contract is in `scripts/reconcile-paid.ts`. This ledger controls application requests, not other uses of the same keys, Grok subscriptions or an exact external invoice total.
+
+## Verification and deployment
+
+Run `npm run lint`, `npm run build` and `git diff --check`. `lint` is TypeScript checking. Behavior tests require an explicitly owned isolated Postgres instance with pgvector and the `sakamoto_test` role: `SAKAMOTO_TEST_PG_SOCKET=/tmp/sakamoto-tests/socket npm test`. Each process creates its own schema; tests never fall back to `.env.local`/`DATABASE_URL`. Provider transports use deterministic fixtures; that does not establish actual provider or hosted acceptance.
+
+Vercel configuration enables Fluid compute and one daily secured processing cron (`0 5 * * *`, UTC). Existing route durations fit Hobby's documented Fluid limit; Hobby daily cron execution can occur within the scheduled hour. Verify actual project/runtime/account settings before release. See [Fluid compute](https://vercel.com/docs/fluid-compute), [function limits](https://vercel.com/docs/functions/limitations) and [Hobby cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+
+Before an authorized deployment, configure the intended Clerk application/domain, known Neon branch/migrations, server provider keys, unique `CRON_SECRET` and public HTTPS `NEXT_PUBLIC_SITE_URL`. Preserve `next.config.ts` PDF-worker JS/WASM tracing; the Node worker runs within the app. The cron authenticates its secret and processes bounded durable work. Deployment does not establish Grok connectivity: separately verify the public MCP origin, intended account, real mixed source delivery, daily routine and resumed backfill.
+
+Record the exact candidate and distinguish deterministic tests, actual account/provider/browser results and hosted/Grok results. Do not claim a recovered ~1,800-item collection from synthetic scale tests or partial receipts. Publication/deployment is a separate authorized action; prepare the reviewable release candidate first.
+
+Historical `scripts/pdf-eval/` and `scripts/image-eval/` tools retain their explicit optional legacy-provider prerequisites and evidence. They are not application runtime requirements and must not be run as ordinary verification.
+
+Public-domain samples: Huxley, “On a Piece of Chalk”; Schopenhauer, “On Thinking for Oneself”; Thoreau, “Reading” from Walden. Rebuild with `scripts/build-samples.mjs`.

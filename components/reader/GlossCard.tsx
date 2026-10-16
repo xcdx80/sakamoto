@@ -43,7 +43,7 @@ function Receipt({ t }: { t: Turn }) {
 }
 
 
-/** Free answers are spent: the way to keep going is the reader's own key, or, signed out, signing in for more. */
+/** Historical key-needed errors now point to the processing budget. */
 function KeyButton() {
   return (
     <span className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -52,7 +52,7 @@ function KeyButton() {
         onClick={openKeyMenu}
         className="inline-flex h-8 items-center rounded-full bg-ink px-3.5 text-[12.5px] font-medium text-bg transition-transform active:scale-[0.97]"
       >
-        Add your Together key
+        Processing budget
       </button>
       <Show when="signed-out">
         <SignInButton mode="modal">

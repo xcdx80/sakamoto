@@ -54,6 +54,8 @@ export type Article = {
   /** Durable text-layer provenance; binary bytes are never stored. */
   pdfSource?: {extractor: "liteparse-text-2.15.1" | "reader-supplied-text"; sha256?: string; status: "complete" | "partial" | "manual"; totalPages?: number; parsedPages?: number[]; missingPages?: number[]; reason?: string};
   post?: import("./bookmarks").PostSource;
+  /** Local edited body identity, resolved only by its exact upload receipt. Never sent to the server. */
+  pendingSource?: string;
   sourceRevision?: number;
   recoveredFrom?: {itemId:string;sourceRevision:number};
   id: string;
@@ -70,7 +72,7 @@ export type Article = {
   image?: string;
   /** Where it came from: the bundled shelf, a link, pasted text, or a file. */
   origin?: "sample" | "url" | "paste" | "file";
-  /** PDF pages that looked hard (columns, tables, maths) and wait to be read again by a vision model (lib/upgrade.ts). */
+  /** Historical pending layout work; retained for saved data compatibility, never automatically dispatched. */
   upgrade?: number[];
   addedAt?: number;
 };

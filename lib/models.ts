@@ -1,6 +1,6 @@
 /**
  * The model allow-list and wire types. Safe to import on the client: no keys,
- * no fetches. lib/together.ts does the network side.
+ * no fetches. Provider adapters own external I/O.
  */
 
 export type ModelEntry = {
@@ -13,7 +13,7 @@ export type ModelEntry = {
   outPerM: number;
 };
 
-/** Luna is the active reader model. Flash remains addressable for saved historical receipts and legacy optional operations during migration. */
+/** Luna is the active reader model. Flash remains addressable only for saved historical receipts. */
 export const MODELS = {
   luna: {
     id: "gpt-6-luna", label: "OpenAI Luna", short: "Luna",
@@ -24,7 +24,7 @@ export const MODELS = {
     id: "deepseek-ai/DeepSeek-V4.1-Flash",
     label: "DeepSeek V4.1 Flash",
     short: "Quick",
-    blurb: "Answers in about half a second. Best for most questions.",
+    blurb: "Historical saved answer model.",
     inPerM: 0.3,
     cachedPerM: 0.006,
     outPerM: 1.2,
@@ -70,3 +70,10 @@ export type StreamEvent =
   | { type: "usage"; usage: Usage }
   | { type: "done" }
   | { type: "error"; text: string };
+
+/** Neutral chat wire types shared by prompts and the selected answer adapter. */
+export type ToolCall = {id:string;type:"function";function:{name:string;arguments:string}};
+export type ChatMessage =
+  | {role:"system"|"user";content:string}
+  | {role:"assistant";content:string|null;tool_calls?:ToolCall[]}
+  | {role:"tool";content:string;tool_call_id:string};

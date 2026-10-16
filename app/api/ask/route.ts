@@ -6,7 +6,7 @@ import {
   type DocPayload,
   type ThreadPayload,
 } from "@/lib/prompts";
-import type { ChatMessage } from "@/lib/together";
+import type { ChatMessage } from "@/lib/models";
 import type { StreamEvent, Usage } from "@/lib/models";
 import { requestOwner } from "@/lib/owner";
 import {

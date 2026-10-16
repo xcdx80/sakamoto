@@ -5,7 +5,7 @@ import { accountEpoch, scopedKey } from "./account-scope";
 import { textToArticle, wordCount, type Article } from "./article";
 import { savePdf, saveDoc, useStore, type LibraryItem } from "./store";
 
-/** `needKey`: the import needs the reader's own model API key (a long PDF, or free use spent). `file`: the original, kept with a PDF. */
+/** `file` retains the original local PDF; legacy needKey is inert compatibility data. */
 export type ImportResult = { ok: true; article: Article; file?: Blob } | { ok: false; error: string; needKey?: boolean };
 
 const importedUnder = new WeakMap<Article, number>();
@@ -43,7 +43,7 @@ async function fromFile(file: File, onProgress?: (p: number, label?: string) => 
       try {
         return { ok: true, article: await pdfToArticle(file, onProgress), file };
       } catch (e) {
-        if (e instanceof PdfError) return { ok: false, error: e.message, needKey: e.needKey };
+        if (e instanceof PdfError) return { ok: false, error: e.message };
         throw e;
       }
     }

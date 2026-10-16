@@ -238,7 +238,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                     <Chip label="Numbers" icon={<Pilcrow size={14} />} on={settings.numbers} onChange={(v) => set({ numbers: v })} />
                     <Chip label="Map" icon={<MapIcon size={14} />} on={settings.rail} onChange={(v) => set({ rail: v })} />
                     <Chip label="Focus" icon={<Focus size={14} />} on={focusMode} onChange={(v) => setUI({ focusMode: v })} />
-                    <Chip label="Listen" icon={<Headphones size={14} />} on={settings.listen} onChange={(v) => set({ listen: v })} />
+                    <span className="px-3 py-2 text-[12px] text-ink-3" title="Reading aloud is unavailable. Saved text remains readable.">Listen unavailable</span>
                   </div>
                 </>
               )}

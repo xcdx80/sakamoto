@@ -1,6 +1,6 @@
 "use client";
 
-import { annotationMatchesSource, sameSourceRevision, revisionUrl } from "@/lib/source-revision";
+import { annotationMatchesSource, sameSourceRevision, sourceAddress, revisionUrl } from "@/lib/source-revision";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
@@ -201,8 +201,8 @@ function ReaderInner({ article }: { article: Article }) {
         if (span) add(b.id, { from: span[0], to: span[1], kind, id, color, ...(note && b.id === a.end.b ? { note } : {}) });
       }
     };
-    for (const h of highlights.filter((h) => (h.sourceRevision ?? 1) === (article.sourceRevision ?? 1))) place(h.anchor, "hl", h.id, h.color, Boolean(h.note));
-    for (const g of glosses.filter((g) => (g.sourceRevision ?? 1) === (article.sourceRevision ?? 1))) if (g.anchor) place(g.anchor, "gloss", g.id);
+    for (const h of highlights.filter((h) => sameSourceRevision(h, article))) place(h.anchor, "hl", h.id, h.color, Boolean(h.note));
+    for (const g of glosses.filter((g) => sameSourceRevision(g, article))) if (g.anchor) place(g.anchor, "gloss", g.id);
     if (pending) place(pending, "pending", "pending");
     return map;
   }, [glosses, highlights, pending, ix, article.blocks]);
@@ -273,7 +273,7 @@ function ReaderInner({ article }: { article: Article }) {
         if (!id2) return;
         const atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 40;
         const pct = window.scrollY < 160 ? 0 : atEnd ? 1 : ((ix.order.get(id2) ?? 0) + 1) / article.blocks.length;
-        setProgress(articleId, { block: id2, pct, at: Date.now(), sourceRevision: article.sourceRevision ?? 1 });
+        setProgress(articleId, { block: id2, pct, at: Date.now(), ...sourceAddress(article) });
       }, 800);
     };
     const on = () => {

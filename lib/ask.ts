@@ -2,6 +2,7 @@
 
 import { accountEpoch, accountScope, scopedKey } from "./account-scope";
 
+import { sourceAddress } from "./source-revision";
 import type { Action } from "./actions";
 import type { BriefData } from "./article";
 import { docPayload, type DocIndex } from "./doc";
@@ -11,16 +12,6 @@ import { MODELS } from "./models";
 
 function readerHeaders() {
   return { "Content-Type": "application/json", "X-Sakamoto-Owner": accountScope() ?? "anonymous", "Idempotency-Key": crypto.randomUUID() };
-}
-
-const KEY_STORAGE = "together:api-key";
-
-export function readApiKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
 }
 
 const controllers = new Map<string, AbortController>();
@@ -155,7 +146,7 @@ export function startGloss(
   const g: Gloss = {
     id: uid(),
     articleId: ix.article.id,
-    sourceRevision: ix.article.sourceRevision ?? 1,
+    ...sourceAddress(ix.article),
     anchor: opts.anchor,
     at: opts.at,
     action: opts.action,
@@ -197,7 +188,7 @@ export async function fetchBrief(ix: DocIndex) {
   const st = useStore.getState();
   const id = ix.article.id;
   const modelKey: ModelKey = "luna";
-  st.setBrief(id, { status: "loading", sourceRevision: ix.article.sourceRevision ?? 1 });
+  st.setBrief(id, { status: "loading", ...sourceAddress(ix.article) });
   try {
     const res = await fetch("/api/brief", {
       method: "POST",
@@ -209,10 +200,10 @@ export async function fetchBrief(ix: DocIndex) {
     const j = (await res.json()) as { brief?: BriefData; usage?: Usage; error?: string; code?: string };
     if (j.brief)
       accountEpoch() === epoch &&
-        useStore.getState().setBrief(id, { status: "ready", sourceRevision: ix.article.sourceRevision ?? 1, data: j.brief, usage: j.usage, modelKey, at: Date.now() });
-    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
+        useStore.getState().setBrief(id, { status: "ready", ...sourceAddress(ix.article), data: j.brief, usage: j.usage, modelKey, at: Date.now() });
+    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
   } catch (e) {
-    accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", error: `Connection lost: ${String(e)}` });
+    accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: `Connection lost: ${String(e)}` });
   }
 }
 
@@ -232,18 +223,9 @@ async function failure(res: Response): Promise<{ error: string; needKey: boolean
   }
 }
 
-/** Open the key menu in the top bar, from anywhere. */
+/** Open Processing budget; retain the existing event for saved clients. */
 export function openKeyMenu() {
   window.dispatchEvent(new Event("gloss:key"));
-}
-
-export async function validateKey(key: string): Promise<boolean> {
-  try {
-    const res = await fetch("/api/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
-    return ((await res.json()) as { ok?: boolean }).ok === true;
-  } catch {
-    return false;
-  }
 }
 
 /**

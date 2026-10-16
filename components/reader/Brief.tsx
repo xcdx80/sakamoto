@@ -53,7 +53,7 @@ export function Brief() {
         {brief.needKey && (
           <>
             <button type="button" onClick={openKeyMenu} className="font-medium text-ink underline decoration-rule-strong underline-offset-4">
-              Add your Together key
+              Processing budget
             </button>
             <Show when="signed-out">
               <SignInButton mode="modal">
