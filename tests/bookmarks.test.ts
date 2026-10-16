@@ -232,3 +232,36 @@ test("a preexisting browser-saved post is adopted by numeric identity without re
   await pushRows(owner, { articles: [{ id: source.id, article_id: source.id, data: {}, deleted: true, revision: row.revision }] });
   assert.equal((await call("save_bookmarks", { posts: [post("901")] })).structuredContent.results[0].status, "removed");
 });
+
+test("HTTP reading retains every short, heading-like and custom-title post as body text", async () => {
+  const { owner, call } = await account();
+  const cases = [
+    { ...post("10001", "hello"), title: "A supplied title" },
+    post("10002", "Opening thought\n\nThe rest of the source."),
+    { ...post("10003", "# An actual post heading\n\nThe source after its heading."), title: "Separate reader title" },
+    post("10004", "---"),
+  ];
+  const result = (await call("save_bookmarks", { posts: cases })).structuredContent;
+  for (let i = 0; i < cases.length; i++) {
+    assert.equal(result.results[i].status, "saved");
+    const doc = await articleDoc(owner, result.results[i].itemId);
+    assert.equal(doc.blocks.map((b: any) => b.runs.map((r: any) => r.text).join("")).join("\n\n"), cases[i].text);
+  }
+  const legacy = await call("save_text", { text: "A short legacy post", title: "Custom legacy title", url: "https://x.com/author/status/10005" });
+  const legacyDoc = await articleDoc(owner, legacy.structuredContent.itemId);
+  assert.equal(legacyDoc.blocks[0].runs[0].text, "A short legacy post");
+});
+
+test("malformed completeness claims are rejected without coercion or loss of valid sibling posts", async () => {
+  const { owner, call } = await account();
+  const result = (await call("save_bookmarks", { posts: [
+    { ...post("10101"), completeness: { status: ["complete"] } },
+    { ...post("10102"), completeness: { status: "complete", reason: 42 } },
+    { ...post("10103"), completeness: { status: "partial", reason: "x".repeat(2001) } },
+    { ...post("10104"), completeness: { status: "unknown", reason: "No source completeness check available" } },
+  ] })).structuredContent;
+  assert.deepEqual(result.results.map((r: any) => r.status), ["rejected", "rejected", "rejected", "incomplete"]);
+  const doc = await articleDoc(owner, result.results[3].itemId);
+  assert.equal(doc.post.completeness.status, "unknown");
+  assert.equal((await shelfOf(owner)).length, 1);
+});

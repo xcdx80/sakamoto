@@ -1,6 +1,6 @@
 /** Structured source intake. The authenticated caller supplies the owner, never the payload. */
 import { createHash } from "node:crypto";
-import { textToArticle, wordCount, type Article } from "./article";
+import { wordCount, type Article } from "./article";
 import { db } from "./db";
 
 export type PostSource = {
@@ -55,16 +55,15 @@ function sourceOf(raw: unknown, via: string, context = false): PostSource {
   const p = object(raw);
   only(p, context ? [...fields, "contextPosts"] : fields);
   if (p.contextPosts !== undefined && (!Array.isArray(p.contextPosts) || p.contextPosts.length > 8)) throw new Error("Send at most 8 parent or quote context posts with a bookmark.");
-  const id = postId(p.postId), url = webUrl(p.url), u = new URL(url);
-  const match = u.pathname.match(/^\/(?:[A-Za-z0-9_]+\/status|i\/web\/status)\/([1-9]\d*)\/?$/);
-  if (!["x.com", "twitter.com", "www.x.com", "www.twitter.com", "mobile.x.com", "mobile.twitter.com"].includes(u.hostname.toLowerCase()) || u.port || match?.[1] !== id) throw new Error("Post URL must identify the supplied X post ID.");
+  const id = postId(p.postId), url = webUrl(p.url);
+  if (xPostIdentity(url)?.postId !== id) throw new Error("Post URL must identify the supplied X post ID.");
   const author = object(p.author);
   only(author, ["name", "handle", "id"]);
   const name = string(author.name, "author.name", 200), handle = string(author.handle, "author.handle", 15);
   if (!/^[A-Za-z0-9_]+$/.test(handle)) throw new Error("Expected an X author handle without @.");
   const claim = p.completeness === undefined ? { status: "unknown" } : object(p.completeness);
   only(claim, ["status", "reason"]);
-  if (!["complete", "partial", "unknown"].includes(String(claim.status))) throw new Error("Completeness must be complete, partial or unknown; it remains agent-reported.");
+  if (typeof claim.status !== "string" || !["complete", "partial", "unknown"].includes(claim.status)) throw new Error("Completeness must be complete, partial or unknown; it remains agent-reported.");
   const links = p.links === undefined ? [] : p.links;
   if (!Array.isArray(links) || links.length > 50) throw new Error("Send at most 50 directly linked URLs per post.");
   return {
@@ -82,7 +81,9 @@ export type BookmarkReceipt = { title?: string; words?: number; completeness?: P
 const rejected = (raw: unknown, error: unknown): BookmarkReceipt => ({ receiptId: "input:" + createHash("sha256").update(JSON.stringify(raw)).digest("hex").slice(0, 24), status: "rejected", reason: error instanceof Error ? error.message : "Unable to save this post; retry it separately." });
 
 async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context"): Promise<BookmarkReceipt> {
-  const a: Article = { ...textToArticle(source.fullText, { origin: "paste" }), id: crypto.randomUUID(), title: source.title ?? source.fullText.trim().slice(0, 100), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
+  // A post has no inferred document title: every supplied character belongs to its body.
+  const blocks: Article["blocks"] = source.fullText.split(/\n\s*\n/).filter((text) => text.trim()).map((text, i) => ({ id: `b${i + 1}`, type: "p", runs: [{ text }] }));
+  const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? source.fullText.trim().slice(0, 100), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
   const processing: ProcessingState = { classification: "pending", indexing: "pending" };
   const item = { id: a.id, title: a.title, author: a.author, source: "X", sourceUrl: a.sourceUrl, origin: "paste", contentType: "post", words: wordCount(a), addedAt: Date.now(), addedBy: "agent", addedVia: source.provenance.via, processing, postId: source.postId };
   const rows = await db().query("select intake_bookmark($1,$2,$3,$4::jsonb,$5::jsonb,$6) as receipt", [owner, source.postId, source.url, JSON.stringify(item), JSON.stringify(a), role]);
