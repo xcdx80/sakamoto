@@ -9,25 +9,10 @@ create table processing_jobs (
  unique(user_id,source_id,source_revision,kind,target), foreign key(user_id,source_id) references articles(user_id,id)
 );
 create index processing_due on processing_jobs(user_id,next_attempt_at,id) where state in ('pending','retryable','running');
--- Decode only ASCII query-key escapes for tracker recognition; retain meaningful query encoding.
-create function sakamoto_query_key(raw text) returns text language plpgsql immutable as $$
-declare result text:=''; at integer:=1; code integer; token text;
-begin
- while at<=length(raw) loop
-  token:=substring(raw from at for 3);
-  if token ~ '^%[0-9a-fA-F]{2}$' then
-   code:=get_byte(decode(substring(token from 2),'hex'),0);
-   if code between 1 and 127 then result:=result||chr(code); else result:=result||token; end if;
-   at:=at+3;
-  else result:=result||substring(raw from at for 1); at:=at+1;
-  end if;
- end loop;
- return replace(result,'+',' ');
-end $$;
 -- Conservative canonical identity for stored source URLs as well as incoming aliases.
 -- Keep meaningful query values/encoding; never infer identity from page titles/tags.
 create function sakamoto_source_url(raw text) returns text language plpgsql immutable as $$
-declare parts text[]; authority text; path text; query text;
+declare parts text[]; authority text; path text; query text; parameter text; raw_key text; decoded_key text; at integer; code integer; token text; kept text[]:='{}';
 begin
  parts:=regexp_match(trim(raw),'^(https?)://([^/?#]+)([^?#]*)(?:\?([^#]*))?(?:#.*)?$','i');
  if parts is null or parts[2] like '%@%' then return null; end if;
@@ -36,10 +21,26 @@ begin
  else authority:=regexp_replace(authority,':80$',''); end if;
  path:=coalesce(nullif(parts[3],''),'/');
  if path<>'/' then path:=regexp_replace(path,'/$',''); end if;
- select string_agg(parameter,'&' order by split_part(parameter,'=',1) collate "C",ordinality) into query
- from unnest(string_to_array(coalesce(parts[4],''),'&')) with ordinality as params(parameter,ordinality)
- where parameter<>'' and sakamoto_query_key(split_part(parameter,'=',1)) !~* '^(utm_|ref$|ref_src$|s$|t$|fbclid$|gclid$|mc_)';
- return lower(parts[1])||'://'||authority||path||case when query is null then '' else '?'||query end;
+ -- Index builds restrict search_path. Keep tracker decoding self-contained, using only pg_catalog builtins.
+ for parameter in
+  select value from unnest(string_to_array(coalesce(parts[4],''),'&')) with ordinality as params(value,ordinality)
+  order by split_part(value,'=',1) collate "C",ordinality
+ loop
+  if parameter='' then continue; end if;
+  raw_key:=split_part(parameter,'=',1); decoded_key:=''; at:=1;
+  while at<=length(raw_key) loop
+   token:=substring(raw_key from at for 3);
+   if token ~ '^%[0-9a-fA-F]{2}$' then
+    code:=get_byte(decode(substring(token from 2),'hex'),0);
+    if code between 1 and 127 then decoded_key:=decoded_key||chr(code); else decoded_key:=decoded_key||token; end if;
+    at:=at+3;
+   else decoded_key:=decoded_key||substring(raw_key from at for 1); at:=at+1;
+   end if;
+  end loop;
+  if replace(decoded_key,'+',' ') !~* '^(utm_|ref$|ref_src$|s$|t$|fbclid$|gclid$|mc_)' then kept:=array_append(kept,parameter); end if;
+ end loop;
+ query:=array_to_string(kept,'&');
+ return lower(parts[1])||'://'||authority||path||case when query='' then '' else '?'||query end;
 end $$;
 create index articles_source_identity on articles(user_id,sakamoto_source_url(coalesce(data->>'sourceUrl',doc->>'sourceUrl')));
 create table source_aliases (
