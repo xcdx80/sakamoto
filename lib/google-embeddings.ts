@@ -16,6 +16,7 @@ export async function embedText(
   operationId: string,
   signal?: AbortSignal,
 ): Promise<number[]> {
+  signal?.throwIfAborted();
   if (
     (process.env.GOOGLE_EMBEDDING_MODEL &&
       process.env.GOOGLE_EMBEDDING_MODEL !== EMBEDDING_CONTRACT.model) ||
@@ -45,6 +46,11 @@ export async function embedText(
     serializedInput: body,
     maxOutputTokens: 0,
   });
+  // Cancellation while durable authorization waited is known to precede dispatch.
+  if (signal?.aborted) {
+    await releaseRejectedPaidWork(reservation);
+    signal.throwIfAborted();
+  }
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_CONTRACT.model}:embedContent`,
