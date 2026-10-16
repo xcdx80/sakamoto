@@ -409,12 +409,12 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
         <CopyBlock key={s.title} title={s.title} body={s.body} text={s.copy} />
       ))}
       <p className="text-[12px] text-ink-3">{prepared.connectionNotice}</p>
-      <CopyBlock title="Full-post sample and resumable backfill workflow" body="Run the mixed sample first, inspect saved text/IDs, then approve backfill. These instructions do not configure a connection or a routine." text={prepared.workflow} />
+      <CopyBlock title="Full-post sample and resumable backfill workflow" body="Verify the mixed sample first, then continue within your existing authorized backfill/account scope. These instructions do not configure a connection or a routine." text={prepared.workflow} />
       <details>
         <summary className="text-[13px]">Prepare the daily Grok routine</summary>
         <label className="mt-2 block text-[12px]">Daily time <input aria-label="Grok routine daily time" type="time" value={time} onChange={e=>setTime(e.target.value)} className="rounded border border-rule p-1" /></label>
         <label className="mt-2 block text-[12px]">Time zone <select aria-label="Grok routine time zone" value={timeZone} onChange={e=>setTimeZone(e.target.value)} className="rounded border border-rule p-1"><option>Europe/Lisbon</option><option>UTC</option><option>America/New_York</option><option>America/Los_Angeles</option></select></label>
-        <CopyBlock title="Prepared routine — not enabled" body="Only enable after a verified sample and your approval in Grok. Inspect its Test run, next run and history; Grok allowance is separate from Sakamoto’s budget." text={prepared.routine} />
+        <CopyBlock title="Prepared routine — not enabled" body="After the sample passes, enable only within your authorized routine/account scope; existing authorization applies. Inspect its Test run, next run and history; Grok allowance is separate from Sakamoto’s budget." text={prepared.routine} />
       </details>
       <p className="text-[12px] text-ink-3">Official Grok Bot guidance: {prepared.sources.map(source=><a key={source.url} className="mr-2 underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}. An unavailable account, expired X login or missing routine feature needs attention in Grok; Sakamoto cannot schedule source fetching.</p>
     </div>

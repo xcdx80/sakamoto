@@ -8,6 +8,7 @@
  * (your-site/mcp/gls_...) for clients that only take a URL.
  */
 
+import { readSavedSource } from "./saved-source";
 import { bookmarkWorkflow } from "./bookmark-workflow";
 import { bookmarkDeliveryStatus, DELIVERY_SCHEMA } from "./bookmark-deliveries";
 import { supplyLinkedText } from "./linked-text";
@@ -60,6 +61,7 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  {name:"read_saved_source",title:"Read an exact saved post source",description:"Read the complete stored structured X post/context record for source comparison: fullText, attribution, IDs/URLs/relationships and agent-reported completeness. Optional revision pins retained text of an active item. Owner-scoped, no annotations or credentials; missing/deleted items are not_found. Nonpost sources are unsupported; oversized legacy records return too_large without truncation. Max2MB serialized result; read one source per MCP request.",inputSchema:{type:"object",properties:{itemId:{type:"string",minLength:1,maxLength:200},revision:{type:"integer",minimum:1,maximum:2147483647}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_workflow",title:"Prepare the Grok bookmark workflow",description:"Read exact-schema sample, bounded backfill and daily routine instructions. Preparation does not connect Grok or enable a routine. Requires a reachable public HTTPS origin and the owner’s authenticated X access.",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_delivery_status",title:"Bookmark delivery and backfill progress",description:"Verified saved-source and receipt counts, last delivery/contact, bounded delivery history and current processing totals. Source coverage stays agent-reported. Optional runId/batchId retrieves compact per-item receipts for a lost response.",inputSchema:{type:"object",properties:{runId:{type:"string",maxLength:100},batchId:{type:"string",maxLength:100},after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"report_bookmark_run",title:"Report a source-side pause or empty check",description:"Record an agent-reported blocked, no-data or exhausted check without inventing saved content. This does not verify complete upstream coverage or schedule Grok.",inputSchema:DELIVERY_SCHEMA,annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
@@ -203,6 +205,10 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
   const { userId, label } = who;
   if (!allow(`mcp:${userId}`, 60, 60_000)) return fail(first.id, -32002, "Too many requests. Wait a minute, then try again.", 429);
 
+  // A full source is already bounded individually. Reject multi-message source reads before
+  // running any tools, preventing JSON-RPC fanout from exceeding the hosted response limit.
+  if (batch && msgs.length > 1 && msgs.some(m => m.method === "tools/call" && m.params?.name === "read_saved_source")) return fail(first.id,-32600,"Read one saved source per MCP request to stay within response limits.",400);
+
   // Notifications get no answer; with nothing to answer, the reply is an empty 202.
   const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label, req.signal)))).filter((a) => a !== null);
   if (!answers.length) return new Response(null, { status: 202, headers: CORS });
@@ -231,6 +237,7 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "read_saved_source") return ok(toolResult("Exact saved source comparison.",await readSavedSource(userId,args)));
         if (name === "ask_library") { const result=await askLibrary(userId,answerOptions(args),signal); return ok(toolResult(libraryAnswerText(result),result)); }
         if (name === "supply_link_text") { const result = await supplyLinkedText(userId,args); return ok(result ? toolResult("Saved reader-supplied linked text.",result) : toolError("This source is unavailable, changed or not awaiting text recovery.")); }
         if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
