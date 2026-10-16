@@ -9,10 +9,61 @@ create table processing_jobs (
  unique(user_id,source_id,source_revision,kind,target), foreign key(user_id,source_id) references articles(user_id,id)
 );
 create index processing_due on processing_jobs(user_id,next_attempt_at,id) where state in ('pending','retryable','running');
+-- Conservative canonical identity for stored source URLs as well as incoming aliases.
+-- Keep meaningful query values/encoding; never infer identity from page titles/tags.
+create function sakamoto_source_url(raw text) returns text language plpgsql immutable as $$
+declare parts text[]; authority text; path text; query text; parameter text; raw_key text; decoded_key text; at integer; code integer; token text; kept text[]:='{}';
+begin
+ parts:=regexp_match(trim(raw),'^(https?)://([^/?#]+)([^?#]*)(?:\?([^#]*))?(?:#.*)?$','i');
+ if parts is null or parts[2] like '%@%' then return null; end if;
+ authority:=regexp_replace(lower(parts[2]),'^www\.','');
+ if lower(parts[1])='https' then authority:=regexp_replace(authority,':443$','');
+ else authority:=regexp_replace(authority,':80$',''); end if;
+ path:=coalesce(nullif(parts[3],''),'/');
+ if path<>'/' then path:=regexp_replace(path,'/$',''); end if;
+ -- Index builds restrict search_path. Keep tracker decoding self-contained, using only pg_catalog builtins.
+ for parameter in
+  select value from unnest(string_to_array(coalesce(parts[4],''),'&')) with ordinality as params(value,ordinality)
+  order by split_part(value,'=',1) collate "C",ordinality
+ loop
+  if parameter='' then continue; end if;
+  raw_key:=split_part(parameter,'=',1); decoded_key:=''; at:=1;
+  while at<=length(raw_key) loop
+   token:=substring(raw_key from at for 3);
+   if token ~ '^%[0-9a-fA-F]{2}$' then
+    code:=get_byte(decode(substring(token from 2),'hex'),0);
+    if code between 1 and 127 then decoded_key:=decoded_key||chr(code); else decoded_key:=decoded_key||token; end if;
+    at:=at+3;
+   else decoded_key:=decoded_key||substring(raw_key from at for 1); at:=at+1;
+   end if;
+  end loop;
+  if replace(decoded_key,'+',' ') !~* '^(utm_|ref$|ref_src$|s$|t$|fbclid$|gclid$|mc_)' then kept:=array_append(kept,parameter); end if;
+ end loop;
+ query:=array_to_string(kept,'&');
+ return lower(parts[1])||'://'||authority||path||case when query='' then '' else '?'||query end;
+end $$;
+create index articles_source_identity on articles(user_id,sakamoto_source_url(coalesce(data->>'sourceUrl',doc->>'sourceUrl')));
 create table source_aliases (
  user_id text not null, url text not null, article_id text not null,
  primary key(user_id,url), foreign key(user_id,article_id) references articles(user_id,id)
 );
+-- Existing reader identities, including removals, predate the job engine. A tombstone wins.
+insert into source_aliases(user_id,url,article_id)
+ select distinct on (user_id,url) user_id,url,id from
+ (select user_id,id,deleted,updated_at,sakamoto_source_url(coalesce(data->>'sourceUrl',doc->>'sourceUrl')) as url from articles) known
+ where url is not null order by user_id,url,deleted desc,updated_at,id;
+create function retain_source_alias() returns trigger language plpgsql as $$
+declare canonical text;
+begin
+ canonical:=sakamoto_source_url(coalesce(new.data->>'sourceUrl',new.doc->>'sourceUrl'));
+ if canonical is not null then
+  insert into source_aliases(user_id,url,article_id) values(new.user_id,canonical,new.id)
+  on conflict(user_id,url) do update set article_id=excluded.article_id
+  where new.deleted and not exists(select 1 from articles a where a.user_id=source_aliases.user_id and a.id=source_aliases.article_id and a.deleted);
+ end if;
+ return new;
+end $$;
+create trigger articles_source_alias after insert or update on articles for each row execute function retain_source_alias();
 create table linked_sources (
  user_id text not null, source_id text not null, source_revision integer not null, url text not null, article_id text not null,
  primary key(user_id,source_id,source_revision,url), foreign key(user_id,source_id) references articles(user_id,id),
@@ -69,18 +120,23 @@ begin
  if not found then return false; end if;
  select * into source from articles where user_id=p_owner and id=j.source_id for update;
  select * into j from processing_jobs where user_id=p_owner and id=p_job for update;
+ -- Application time may predate a lock wait. Never grant a lease beyond the database's current clock.
+ p_now:=greatest(p_now,clock_timestamp());
  if j.state<>'running' or j.lease_token is distinct from p_token or j.lease_expires_at<=p_now
     or source.deleted or source.source_revision<>j.source_revision then return false; end if;
  if p_doc is not null then
-  select article_id into v_target from source_aliases where user_id=p_owner and url=any(p_aliases) order by array_position(p_aliases,url) limit 1;
-  if v_target is null then
-   select id into v_target from articles where user_id=p_owner and data->>'sourceUrl'=any(p_aliases) order by id limit 1;
-  end if;
+  p_aliases:=array(select distinct sakamoto_source_url(alias) from unnest(p_aliases) alias where sakamoto_source_url(alias) is not null);
+  select a.id into v_target from articles a where a.user_id=p_owner and
+   (sakamoto_source_url(coalesce(a.data->>'sourceUrl',a.doc->>'sourceUrl'))=any(p_aliases)
+    or exists(select 1 from source_aliases aliases where aliases.user_id=p_owner and aliases.article_id=a.id and aliases.url=any(p_aliases)))
+   order by a.deleted desc,exists(select 1 from source_aliases aliases where aliases.user_id=p_owner and aliases.article_id=a.id and aliases.url=any(p_aliases)) desc,a.updated_at,a.id limit 1;
   if v_target is null then
    v_target:=p_data->>'id';
    insert into articles(user_id,id,article_id,data,doc) values(p_owner,v_target,v_target,p_data,p_doc);
   end if;
-  insert into source_aliases(user_id,url,article_id) select p_owner,unnest(p_aliases),v_target on conflict do nothing;
+  insert into source_aliases(user_id,url,article_id) select p_owner,unnest(p_aliases),v_target
+   on conflict(user_id,url) do update set article_id=excluded.article_id
+   where exists(select 1 from articles a where a.user_id=p_owner and a.id=v_target and a.deleted);
   if exists(select 1 from articles where user_id=p_owner and id=v_target and deleted) then
    p_state:='terminal';p_error:='Linked item was removed; it will not be resurrected.';
   else

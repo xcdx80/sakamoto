@@ -560,3 +560,189 @@ test("a bounded operation checkpoints completed links and the next request resum
   assert.equal((await a.call("search_library", {})).results.length, 3);
   configureProcessing({});
 });
+
+test("existing canonical URL variants reuse the original item and respect removed identities", async () => {
+  const { GET: pull, POST: push } = await import("../app/api/sync/route");
+  const { GET: read } = await import("../app/api/articles/[id]/route");
+  for (const sourceUrl of [
+    "https://www.example.com/essay?utm_source=old",
+    "https://WWW.Example.COM:443/essay?%75tm_source=old#bookmark",
+  ])
+    for (const removed of [false, true]) {
+      const a = await account(),
+        id = "existing-" + crypto.randomUUID();
+      const doc: import("../lib/article").Article = {
+        id,
+        title: "Original saved article",
+        origin: "url",
+        contentType: "article",
+        sourceUrl,
+        blocks: [
+          {
+            id: "b1",
+            type: "p",
+            runs: [{ text: "Original source with annotations." }],
+          },
+        ],
+      };
+      const result = await push(
+        a.request("/api/sync", {
+          changes: {
+            articles: [
+              {
+                id,
+                articleId: id,
+                data: {
+                  id,
+                  title: "My manual title",
+                  sourceUrl: doc.sourceUrl,
+                  contentType: "article",
+                  tags: ["kept"],
+                },
+                doc,
+                revision: 0,
+                sourceRevision: 1,
+                changedFields: ["title", "tags"],
+              },
+            ],
+            highlights: [
+              {
+                id: "existing-note",
+                articleId: id,
+                data: { note: "Keep my annotation", sourceRevision: 1 },
+                revision: 0,
+              },
+            ],
+          },
+        }),
+      );
+      assert.equal(result.status, 200);
+      if (removed) {
+        const row = (
+          await (await pull(a.request("/api/sync"))).json()
+        ).changes.articles.at(-1);
+        await push(
+          a.request("/api/sync", {
+            changes: {
+              articles: [
+                {
+                  id,
+                  articleId: id,
+                  data: row.data,
+                  deleted: true,
+                  revision: row.revision,
+                },
+              ],
+            },
+          }),
+        );
+      }
+      await a.call("save_bookmarks", {
+        posts: [post(removed ? "611" : "610", ["https://example.com/essay"])],
+      });
+      configureProcessing({
+        fetchArticle: async () => ({
+          ok: true,
+          article: {
+            ...doc,
+            id: "replacement-" + crypto.randomUUID(),
+            title: "Remote title",
+            sourceUrl: "https://example.com/essay",
+          },
+        }),
+      });
+      const processed = await a.call("process_library", { limit: 1 });
+      const job = processed.jobs[0];
+      assert.equal(job.resultItemId, id);
+      assert.equal(job.state, removed ? "terminal" : "complete");
+      const shelf = (await a.call("search_library", {})).results;
+      assert.equal(shelf.length, removed ? 1 : 2);
+      if (!removed) {
+        assert.equal(
+          shelf.find((s: any) => s.itemId === id).title,
+          "My manual title",
+        );
+        const saved = (
+          await (
+            await read(a.request("/api/articles/" + id), {
+              params: Promise.resolve({ id }),
+            })
+          ).json()
+        ).doc;
+        assert.equal(
+          saved.blocks[0].runs[0].text,
+          "Original source with annotations.",
+        );
+      }
+      const state = (await (await pull(a.request("/api/sync"))).json()).changes;
+      assert.equal(state.highlights.at(-1).data.note, "Keep my annotation");
+    }
+  configureProcessing({});
+});
+
+test("publication rechecks real lease expiry after waiting for its transaction lock", async () => {
+  const a = await account();
+  await a.call("save_bookmarks", {
+    posts: [post("612", ["https://example.com/lease-lock"])],
+  });
+  let release!: (v: any) => void, started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  configureProcessing({
+    fetchArticle: async () => {
+      started();
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  });
+  const processing = a.call("process_library", { limit: 1 });
+  await Promise.race([
+    ready,
+    processing.then(() => {
+      throw new Error("No claim.");
+    }),
+  ]);
+  const connection = await pool.connect();
+  try {
+    await connection.query("begin");
+    await connection.query("select pg_advisory_xact_lock(72621002)");
+    // External database failure fixture: shorten this owned fixture lease, then hold the publication lock past it.
+    await connection.query(
+      "update processing_jobs set lease_expires_at=clock_timestamp()+interval '150 milliseconds' where user_id=$1",
+      [a.owner],
+    );
+    release({
+      ok: true,
+      article: {
+        id: "expired-lock-worker",
+        title: "Must not publish",
+        sourceUrl: "https://example.com/lease-lock",
+        blocks: [{ id: "b1", type: "p", runs: [{ text: "Obsolete lease." }] }],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await connection.query("commit");
+  } finally {
+    await connection.query("rollback");
+    connection.release();
+  }
+  await processing;
+  assert.equal((await a.call("search_library", {})).results.length, 1);
+  configureProcessing({
+    fetchArticle: async () => ({
+      ok: true,
+      article: {
+        id: "recovered-lock-worker",
+        title: "Recovered",
+        sourceUrl: "https://example.com/lease-lock",
+        blocks: [{ id: "b1", type: "p", runs: [{ text: "Current lease." }] }],
+      },
+    }),
+  });
+  const recovered = await a.call("process_library", { limit: 1 });
+  assert.equal(recovered.jobs[0].attempts, 2);
+  assert.equal(recovered.jobs[0].resultItemId, "recovered-lock-worker");
+  configureProcessing({});
+});

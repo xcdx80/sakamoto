@@ -29,6 +29,7 @@ import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
 import { LinkedDiscoveries } from "./LinkedDiscoveries";
 import { TopBar } from "./TopBar";
+import { ThreadReading } from "./ThreadReading";
 
 export function Reader({ id, initial }: { id: string; initial: Article | null }) {
   const [article, setArticle] = useState<Article | null>(initial);
@@ -547,6 +548,7 @@ function ReaderInner({ article }: { article: Article }) {
                 </div>
               </header>
 
+              <ThreadReading itemId={article.id} sourceRevision={article.sourceRevision} enabled={Boolean(article.post)}>
               <div ref={setArticleEl} className="prose-read" onClick={onTextClick} onMouseOver={onTextOver} onMouseLeave={() => setUI({ hoverGloss: null })}>
                 {article.blocks.map((b) => (
                   <Block
@@ -565,6 +567,8 @@ function ReaderInner({ article }: { article: Article }) {
                   />
                 ))}
               </div>
+
+              </ThreadReading>
 
               <footer className="focus-hide mt-16 border-t border-rule pt-10 text-[13.5px] leading-relaxed text-ink-3">
                 <p aria-hidden className="mb-8 text-center font-serif text-[26px] leading-none text-[var(--rubric)]">
