@@ -8,6 +8,8 @@
  * (your-site/mcp/gls_...) for clients that only take a URL.
  */
 
+import { bookmarkWorkflow } from "./bookmark-workflow";
+import { bookmarkDeliveryStatus, DELIVERY_SCHEMA } from "./bookmark-deliveries";
 import { supplyLinkedText } from "./linked-text";
 import { processLibrary, processingStatus } from "./processing";
 import { searchEvidence,searchOptions,scheduleSearchRebuild } from "./retrieval";
@@ -33,7 +35,7 @@ const PER_DAY = 1000;
 const SITE = SITE_URL;
 
 const INSTRUCTIONS = `Sakamoto is the reader's private library. Save full X bookmarked posts with save_bookmarks: one post ID, original URL, full text and author per source. Preserve individual parent/quote identities in optional contextPosts. Completeness is an agent-reported claim, never independent X verification. Intake makes no paid model call; classification and indexing may remain pending. Use bounded batches of at most 25 posts and 2 MB, keep every receipt and resume with the next batch. Up to 60 MCP requests/minute; after a rate-limit response, wait a minute and replay the unacknowledged batch. A receipt confirms only that delivery, never the complete bookmark history. Removed posts stay removed until restore_bookmarks is explicitly requested by the reader. Absence or unbookmarking never removes a Sakamoto item.
-Use save_articles for directly linked web articles. Legacy save_text remains available for text, transcripts and sources you read yourself.`;
+Call bookmark_workflow for exact source, sample, backfill and routine instructions; bookmark_delivery_status gives durable receipts and verified counts, separate from agent-reported source totals. Optional save_bookmarks delivery identifies a resumable run/batch. report_bookmark_run records no-data or blocked checks. Direct links in accepted posts are processed automatically; do not separately call save_articles for those discoveries. Use save_articles for separately requested web articles. Legacy save_text remains available for text, transcripts and sources you read yourself.`;
 
 const POST_SCHEMA = {
   type: "object",
@@ -56,6 +58,9 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  {name:"bookmark_workflow",title:"Prepare the Grok bookmark workflow",description:"Read exact-schema sample, bounded backfill and daily routine instructions. Preparation does not connect Grok or enable a routine. Requires a reachable public HTTPS origin and the owner’s authenticated X access.",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
+  {name:"bookmark_delivery_status",title:"Bookmark delivery and backfill progress",description:"Verified saved-source and receipt counts, last delivery/contact, bounded delivery history and current processing totals. Source coverage stays agent-reported. Optional runId/batchId retrieves compact per-item receipts for a lost response.",inputSchema:{type:"object",properties:{runId:{type:"string",maxLength:100},batchId:{type:"string",maxLength:100},after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
+  {name:"report_bookmark_run",title:"Report a source-side pause or empty check",description:"Record an agent-reported blocked, no-data or exhausted check without inventing saved content. This does not verify complete upstream coverage or schedule Grok.",inputSchema:DELIVERY_SCHEMA,annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
   {name:"supply_link_text",title:"Supply extracted text for a failed linked source",description:"Deliberately recover a retained unsupported linked PDF using its processing job ID. Saves reader-supplied text and discovery links without claiming verified PDF pages. Existing saved text is never replaced.",inputSchema:{type:"object",properties:{jobId:{type:"string",pattern:"^[0-9]+$"},text:{type:"string",minLength:1,maxLength:1000000},title:{type:"string",maxLength:500}},required:["jobId","text"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
  {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
@@ -70,7 +75,7 @@ const TOOLS = [
   {
     name: "save_bookmarks", title: "Save full bookmarked X posts",
     description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
-    inputSchema: { type: "object", properties: { posts: { type: "array", minItems: 1, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." } } } } }, required: ["posts"], additionalProperties: false },
+    inputSchema: { type: "object", properties: { delivery: DELIVERY_SCHEMA, posts: { type: "array", minItems: 1, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." }, threadPosts: {type:"array",maxItems:8,items:POST_SCHEMA,description:"Connected same-author descendants, retained as context rather than individually bookmarked. Bounded batches may resume through saved same-author ancestry."} } } } }, required: ["posts"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -228,6 +233,9 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
         if (name === "processing_status") return ok(toolResult("Received material processing status.", await processingStatus(userId, args)));
         if (name === "restore_bookmarks") { const result = await restoreBookmarks(userId, args); return ok(toolResult("Explicit bookmark restore receipts.", result)); }
+        if (name === "bookmark_workflow") { if (Object.keys(args).length) return ok(toolError("No workflow options are accepted.")); return ok(toolResult("Prepared Grok workflow; live connection and routine are unverified.",bookmarkWorkflow(SITE))); }
+        if (name === "bookmark_delivery_status") return ok(toolResult("Bookmark delivery progress.", await bookmarkDeliveryStatus(userId,args)));
+        if (name === "report_bookmark_run") { if (args.status === "more") return ok(toolError("A more report must deliver its posts through save_bookmarks.")); return ok(toolResult("Agent-reported source check recorded.",await importBookmarks(userId,{posts:[],delivery:args},label))); }
         if (name === "save_bookmarks") { const result = await importBookmarks(userId, args, label); return ok(toolResult("Bookmark batch accepted; classification and indexing are pending.", result)); }
         if (name === "save_articles") return ok(await saveArticles(userId, args, label));
         if (name === "save_text") return ok(await saveText(userId, args, label));

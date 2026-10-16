@@ -15,6 +15,7 @@ import { watchShelf, retrySync } from "@/lib/sync";
 import { AddButton, AddPanel, type AddTab } from "./AddPanel";
 import { Arrivals, type Wave } from "./Arrivals";
 import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
+import { BookmarkDelivery } from "./BookmarkDelivery";
 import { Processing } from "./Processing";
 import { EvidenceSearch } from "./EvidenceSearch";
 import { Starter } from "./Starter";
@@ -158,7 +159,7 @@ export function Library() {
         <TopBar here="library" onLibrary={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
       </div>
       <main className="mx-auto w-full max-w-[1180px] px-4 pb-32 sm:px-8">
-        {account && <Processing key={account} owner={account} version={library.length} />}
+        {account && <><BookmarkDelivery key={"delivery:"+account} owner={account} version={library.length} /><Processing key={account} owner={account} version={library.length} /></>}
         {syncNotice && <p role="status" className="mx-auto max-w-6xl px-6 py-4 text-sm">{syncNotice} <button className="underline" onClick={()=>useStore.getState().setUI({syncNotice:null})}>Dismiss</button></p>}
         {syncError && (
           <p role="alert" className="mx-auto max-w-6xl px-6 py-4 text-sm">

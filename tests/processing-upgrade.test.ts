@@ -6,6 +6,7 @@ import type { PoolClient } from "pg";
 import { pool } from "./postgres";
 import { configureDatabase, createToken } from "../lib/db";
 import { applyMigrations } from "../scripts/migrations.mjs";
+import { legacyBookmark } from "./legacy-bookmark-fixture";
 import { makeToken } from "../lib/agent";
 import { handle } from "../lib/mcp";
 import { configureProcessing } from "../lib/processing";
@@ -174,17 +175,11 @@ test("a populated pre-processing library upgrades atomically, reindexes, and reu
       },
     }),
   );
-  await call("save_bookmarks", {
-    posts: [
-      {
-        postId: "2001",
-        url: "https://x.com/a/status/2001",
-        text: "A post with retained links.",
-        author: { name: "A", handle: "a" },
-        observedAt: "2026-10-16T10:00:00Z",
-        links: ["https://example.com/active", "https://example.com/removed"],
-      },
-    ],
+  // Seed the historical deployed SQL contract; current intake also requires migration011.
+  await legacyBookmark(connection,owner,{
+    postId:"2001",url:"https://x.com/a/status/2001",text:"A post with retained links.",
+    author:{name:"A",handle:"a"},observedAt:"2026-10-16T10:00:00Z",
+    links:["https://example.com/active","https://example.com/removed"],
   });
   // Public migration runner must upgrade populated rows and record006 in its normal atomic transaction.
   await applyMigrations(migrations);

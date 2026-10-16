@@ -11,7 +11,7 @@ import {
   pullRows,
 } from "../lib/db";
 import { applyMigrations } from "../scripts/migrations.mjs";
-import { importBookmarks } from "../lib/bookmarks";
+import { legacyBookmark } from "./legacy-bookmark-fixture";
 import { searchEvidence } from "../lib/retrieval";
 import { processLibrary, processingStatus } from "../lib/processing";
 let connection: PoolClient;
@@ -100,21 +100,11 @@ test("populated pre009 libraries upgrade and backfill lexical and durable semant
     ],
   });
   await save("different-reader", "secret", "Astronomy other owner secret.");
-  const receipt = await importBookmarks(
-    "upgrade-reader",
-    {
-      posts: [
-        {
-          postId: "990091",
-          url: "https://x.com/reader/status/990091",
-          text: "Astronomy post preserves the whole source.",
-          author: { name: "Reader", handle: "reader" },
-          observedAt: "2026-10-16T12:00:00Z",
-        },
-      ],
-    },
-    "Upgrade fixture",
-  );
+  // Pre009 history predates the current delivery ledger; seed its then-existing intake contract.
+  const receipt = await legacyBookmark(connection,"upgrade-reader",{
+    postId:"990091",url:"https://x.com/reader/status/990091",text:"Astronomy post preserves the whole source.",
+    author:{name:"Reader",handle:"reader"},observedAt:"2026-10-16T12:00:00Z",
+  });
   assert.equal(receipt.results[0].status, "incomplete");
   assert.equal(
     (await processingStatus("upgrade-reader")).jobs.filter(

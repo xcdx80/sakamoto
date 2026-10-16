@@ -2,6 +2,8 @@
 import { createHash } from "node:crypto";
 import { wordCount, type Article } from "./article";
 import { db } from "./db";
+import { threadSourceSummaries } from "./thread-storage";
+import { beginDelivery, finishDelivery } from "./bookmark-deliveries";
 
 export type PostSource = {
   postId: string;
@@ -53,8 +55,9 @@ function webUrl(v: unknown): string {
 }
 function sourceOf(raw: unknown, via: string, context = false): PostSource {
   const p = object(raw);
-  only(p, context ? [...fields, "contextPosts"] : fields);
+  only(p, context ? [...fields, "contextPosts", "threadPosts"] : fields);
   if (p.contextPosts !== undefined && (!Array.isArray(p.contextPosts) || p.contextPosts.length > 8)) throw new Error("Send at most 8 parent or quote context posts with a bookmark.");
+  if (p.threadPosts !== undefined && (!Array.isArray(p.threadPosts) || p.threadPosts.length > 8)) throw new Error("Send at most 8 connected author-thread descendants with a bookmark.");
   const id = postId(p.postId), url = webUrl(p.url);
   if (xPostIdentity(url)?.postId !== id) throw new Error("Post URL must identify the supplied X post ID.");
   const author = object(p.author);
@@ -77,7 +80,7 @@ function sourceOf(raw: unknown, via: string, context = false): PostSource {
   };
 }
 
-export type BookmarkReceipt = { title?: string; words?: number; completeness?: PostSource["completeness"]; receiptId: string; postId?: string; itemId?: string; sourceRevision?: number; status: "saved" | "incomplete" | "duplicate" | "removed" | "rejected"; reason?: string; processing?: ProcessingState; contextResults?: BookmarkReceipt[] };
+export type BookmarkReceipt = { title?: string; words?: number; completeness?: PostSource["completeness"]; receiptId: string; postId?: string; itemId?: string; sourceRevision?: number; status: "saved" | "incomplete" | "duplicate" | "removed" | "rejected"; reason?: string; processing?: ProcessingState; contextResults?: BookmarkReceipt[]; threadResults?: BookmarkReceipt[] };
 const rejected = (raw: unknown, error: unknown): BookmarkReceipt => ({ receiptId: "input:" + createHash("sha256").update(JSON.stringify(raw)).digest("hex").slice(0, 24), status: "rejected", reason: error instanceof Error ? error.message : "Unable to save this post; retry it separately." });
 
 async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context"): Promise<BookmarkReceipt> {
@@ -90,18 +93,58 @@ async function persistSource(owner: string, source: PostSource, role: "bookmark"
   return { receiptId: "x:" + source.postId, postId: source.postId, ...rows[0].receipt };
 }
 
+/** Only context-role descendants connected to the actual saved bookmark author are admitted.
+ * Saved ancestry is bounded by the reader's 100-post depth and 1000 relationship observations.
+ */
+async function saveThreadPosts(owner:string, root:PostSource, raw:unknown[], via:string, removed:boolean) {
+  const parsed=raw.map(value=>{try{return sourceOf(value,via);}catch{return null;}});
+  const stored=new Map((await threadSourceSummaries(owner,[root.postId,...parsed.flatMap(p=>p?[p.postId]:[])])).map(p=>[p.post_id,p]));
+  const author=stored.get(root.postId)?.author;
+  const parents=parsed.flatMap(p=>p?.replyToPostId?[p.replyToPostId]:[]);
+  const known=author?await db().query(`with recursive walk(origin,post_id,depth,path) as (
+    select p.post_id,p.post_id,0,array[p.post_id] from post_sources p join articles a on a.user_id=p.user_id and a.id=p.article_id
+    where p.user_id=$1 and p.post_id=any($2::text[]) and not a.deleted
+      and case when a.doc#>>'{post,author,id}' is not null and $3::text is not null then a.doc#>>'{post,author,id}'=$3 else lower(a.doc#>>'{post,author,handle}')=lower($4) end
+    union all
+    select w.origin,p.post_id,w.depth+1,w.path||p.post_id from walk w join post_relationships r on r.user_id=$1 and r.post_id=w.post_id and r.kind='reply'
+    join post_sources p on p.user_id=$1 and p.post_id=r.target_post_id join articles a on a.user_id=p.user_id and a.id=p.article_id
+    where w.depth<100 and not p.post_id=any(w.path) and not a.deleted
+      and case when a.doc#>>'{post,author,id}' is not null and $3::text is not null then a.doc#>>'{post,author,id}'=$3 else lower(a.doc#>>'{post,author,handle}')=lower($4) end
+  ) select origin,post_id from walk limit 1000`,[owner,parents,author.id??null,author.handle]):[];
+  const connected=new Set([root.postId,...known.filter(r=>r.post_id===root.postId).map(r=>r.origin)]);
+  const same=(p:PostSource)=>{
+    const existing=stored.get(p.postId),candidate=existing?.author??p.author;
+    return author&&!existing?.deleted&&(!existing||existing.structured)&&candidate&&(author.id&&candidate.id?author.id===candidate.id:author.handle.toLowerCase()===candidate.handle.toLowerCase())&&(author.id&&p.author.id?author.id===p.author.id:author.handle.toLowerCase()===p.author.handle.toLowerCase());
+  };
+  let changed=true;
+  while(changed){changed=false;for(const p of parsed)if(p&&p.postId!==root.postId&&same(p)&&p.replyToPostId&&connected.has(p.replyToPostId)&&!connected.has(p.postId)){connected.add(p.postId);changed=true;}}
+  const receipts:BookmarkReceipt[]=[],sources:PostSource[]=[];
+  for(let i=0;i<raw.length;i++)try{
+    const p=sourceOf(raw[i],via);
+    if(removed||p.postId===root.postId||!same(p)||!connected.has(p.postId))throw new Error('Thread context must be a connected same-author descendant of the active saved bookmark. Missing, disconnected, cyclic or over-limit ancestry stays unsaved; report the gap.');
+    const r=await persistSource(owner,p,'context');receipts.push(r);
+    if(r.status!=='removed')sources.push(p);
+  }catch(error){receipts.push(rejected(raw[i],error));}
+  return {receipts,sources};
+}
+
 export async function importBookmarks(owner: string, args: Record<string, unknown>, via: string) {
-  only(args, ["posts"]);
-  if (!Array.isArray(args.posts) || !args.posts.length || args.posts.length > MAX_POSTS) throw new Error("Send 1 to 25 posts per batch. Resume with the next batch after receiving receipts.");
+  only(args, ["posts", "delivery"]);
+  if (!Array.isArray(args.posts) || (!args.posts.length && args.delivery === undefined) || args.posts.length > MAX_POSTS) throw new Error("Send 1 to 25 posts per batch. Resume with the next batch after receiving receipts.");
   if (Buffer.byteLength(JSON.stringify(args), "utf8") > MAX_BATCH_BYTES) throw new Error("Batch exceeds 2 MB; send smaller batches and resume after the returned receipts.");
+  const delivery = await beginDelivery(owner, args.posts, via, args.delivery);
+  if ("replay" in delivery) return delivery.replay;
   const results: BookmarkReceipt[] = [];
   for (const raw of args.posts) {
     try {
       const source = sourceOf(raw, via, true);
       const receipt = await persistSource(owner, source, "bookmark");
+      const threadInputs = object(raw).threadPosts as unknown[] | undefined;
+      const thread = threadInputs?.length ? await saveThreadPosts(owner,source,threadInputs,via,receipt.status === "removed") : null;
+      if (thread) receipt.threadResults = thread.receipts;
       const contexts = object(raw).contextPosts as unknown[] | undefined;
       if (contexts?.length) {
-        const reachable = new Set([source.replyToPostId, source.quotedPostId].filter(Boolean));
+        const reachable = new Set([source.replyToPostId, source.quotedPostId, ...(thread?.sources.flatMap(p=>[p.replyToPostId,p.quotedPostId]) ?? [])].filter(Boolean));
         const parsed = contexts.map((c) => { try { return sourceOf(c, via); } catch { return null; } });
         // Only supplied necessary ancestors/quotes are preserved, never unrelated replies or a crawl.
         let changed = true;
@@ -123,7 +166,7 @@ export async function importBookmarks(owner: string, args: Record<string, unknow
       results.push(receipt);
     } catch (error) { results.push(rejected(raw, error)); }
   }
-  return { results, deliveryComplete: false, resume: "Keep each receipt, retry rejected transient failures, and send the next bounded batch. This receipt confirms only the supplied posts, not your complete X bookmark history." };
+  return finishDelivery(owner, delivery, { results, deliveryComplete: false, resume: "Keep each receipt, retry rejected transient failures, and send the next bounded batch. This receipt confirms only the supplied posts, not your complete X bookmark history." });
 }
 
 /** Owner-scoped saved sources for thread/read modules. Context keeps its own item and citation identity. */
