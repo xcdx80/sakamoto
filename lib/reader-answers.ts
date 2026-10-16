@@ -39,6 +39,11 @@ export async function* runReaderAttempt(
   prepared: Awaited<ReturnType<typeof prepareReaderAttempt>>,
   signal: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
+  // Authorization may have waited on the budget row. No transport has started yet.
+  if (signal.aborted) {
+    await releaseRejectedPaidWork(prepared.reservation);
+    signal.throwIfAborted();
+  }
   let finalized = false;
   try {
     let receipt: Extract<StreamEvent, { type: "usage" }> | undefined;

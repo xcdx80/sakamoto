@@ -12,6 +12,8 @@ import { bookmarkWorkflow } from "./bookmark-workflow";
 import { bookmarkDeliveryStatus, DELIVERY_SCHEMA } from "./bookmark-deliveries";
 import { supplyLinkedText } from "./linked-text";
 import { processLibrary, processingStatus } from "./processing";
+import { answerOptions, askLibrary } from "./library-answer";
+import { libraryAnswerText } from "./library-answer-format";
 import { searchEvidence,searchOptions,scheduleSearchRebuild } from "./retrieval";
 import { hashToken, looksLikeToken } from "./agent";
 import { importBookmarks, restoreBookmarks, xPostIdentity } from "./bookmarks";
@@ -61,6 +63,7 @@ const TOOLS = [
   {name:"bookmark_workflow",title:"Prepare the Grok bookmark workflow",description:"Read exact-schema sample, bounded backfill and daily routine instructions. Preparation does not connect Grok or enable a routine. Requires a reachable public HTTPS origin and the owner’s authenticated X access.",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_delivery_status",title:"Bookmark delivery and backfill progress",description:"Verified saved-source and receipt counts, last delivery/contact, bounded delivery history and current processing totals. Source coverage stays agent-reported. Optional runId/batchId retrieves compact per-item receipts for a lost response.",inputSchema:{type:"object",properties:{runId:{type:"string",maxLength:100},batchId:{type:"string",maxLength:100},after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"report_bookmark_run",title:"Report a source-side pause or empty check",description:"Record an agent-reported blocked, no-data or exhausted check without inventing saved content. This does not verify complete upstream coverage or schedule Grok.",inputSchema:DELIVERY_SCHEMA,annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
+  {name:"ask_library",title:"Ask the saved library",description:"Answer a question using saved passages only, with checked source revision/block/page/post references and supporting excerpts. Uses guarded Luna and optional Google query embedding under the shared cumulative budget. No external web search. Returns honest no_evidence, insufficient, partial, paused, failed or stale states. A valid reference is not a guarantee that a generated claim is supported; inspect excerpts.",inputSchema:{type:"object",properties:{query:{type:"string",maxLength:1000},contentType:{type:"string",enum:["article","document","post"]},topic:{type:"string",enum:TOPICS.map(t=>t.key)},tags:{type:"array",items:{type:"string"},maxItems:20},semantic:{type:"boolean",default:true}},required:["query"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"supply_link_text",title:"Supply extracted text for a failed linked source",description:"Deliberately recover a retained unsupported linked PDF using its processing job ID. Saves reader-supplied text and discovery links without claiming verified PDF pages. Existing saved text is never replaced.",inputSchema:{type:"object",properties:{jobId:{type:"string",pattern:"^[0-9]+$"},text:{type:"string",minLength:1,maxLength:1000000},title:{type:"string",maxLength:500}},required:["jobId","text"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
  {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
@@ -201,12 +204,12 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
   if (!allow(`mcp:${userId}`, 60, 60_000)) return fail(first.id, -32002, "Too many requests. Wait a minute, then try again.", 429);
 
   // Notifications get no answer; with nothing to answer, the reply is an empty 202.
-  const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label)))).filter((a) => a !== null);
+  const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label, req.signal)))).filter((a) => a !== null);
   if (!answers.length) return new Response(null, { status: 202, headers: CORS });
   return json(batch ? answers : answers[0]);
 }
 
-async function answer(msg: Rpc, userId: string, label: string): Promise<object | null> {
+async function answer(msg: Rpc, userId: string, label: string, signal: AbortSignal): Promise<object | null> {
   if (msg.id === undefined || msg.method?.startsWith("notifications/")) return null;
   const ok = (result: unknown) => ({ jsonrpc: "2.0", id: msg.id, result });
   const err = (code: number, message: string) => ({ jsonrpc: "2.0", id: msg.id ?? null, error: { code, message } });
@@ -228,6 +231,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "ask_library") { const result=await askLibrary(userId,answerOptions(args),signal); return ok(toolResult(libraryAnswerText(result),result)); }
         if (name === "supply_link_text") { const result = await supplyLinkedText(userId,args); return ok(result ? toolResult("Saved reader-supplied linked text.",result) : toolError("This source is unavailable, changed or not awaiting text recovery.")); }
         if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
@@ -240,7 +244,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
         if (name === "save_articles") return ok(await saveArticles(userId, args, label));
         if (name === "save_text") return ok(await saveText(userId, args, label));
         if (name === "reindex_library") return ok(toolResult("Search rebuild scheduling.",await scheduleSearchRebuild(userId,args)));
-        if (name === "search_saved_passages") { const result=await searchEvidence(userId,searchOptions(args)); return ok(toolResult("Saved source evidence.",result)); }
+        if (name === "search_saved_passages") { const result=await searchEvidence(userId,searchOptions(args),signal); return ok(toolResult("Saved source evidence.",result)); }
         if (name === "search_library") return ok(await searchLibrary(userId, args));
         if (name === "list_topics") return ok(await listTopics(userId));
         return err(-32602, `Unknown tool: ${name}`);

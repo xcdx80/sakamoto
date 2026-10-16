@@ -1,5 +1,9 @@
 import { PaidWorkError } from "./paid-work";
 import { db } from "./db";
+import {
+  ELIGIBLE_SAVED_PASSAGES_SQL,
+  evidenceFilterParameters,
+} from "./evidence-store";
 import { isContentType, type ContentType } from "./article";
 import { isTopic } from "./library";
 import { EMBEDDING_CONTRACT, INDEX_CONTRACT } from "./retrieval-contract";
@@ -18,6 +22,15 @@ export type Evidence = {
   itemId: string;
   sourceRevision: number;
   title: string;
+  author?: string;
+  coverage?: {
+    status: string;
+    reason?: string;
+    verification?: "agent_reported";
+    totalPages?: number;
+    parsedPages?: number[];
+    missingPages?: number[];
+  };
   originalUrl?: string;
   contentType: ContentType;
   excerpt: string;
@@ -74,7 +87,9 @@ export function searchOptions(raw: Record<string, unknown>): SearchOptions {
 export async function searchEvidence(
   owner: string,
   raw: SearchOptions,
+  signal?: AbortSignal,
 ): Promise<EvidenceSearch> {
+  signal?.throwIfAborted();
   const opts = searchOptions(raw as unknown as Record<string, unknown>);
   let vector: number[] | null = null;
   let semanticError: string | undefined;
@@ -82,8 +97,8 @@ export async function searchEvidence(
     opts.semantic === false ? "disabled" : "pending";
   if (opts.semantic !== false) {
     const available = await db().query(
-      `select 1 from passage_indexes i join articles a on a.user_id=i.user_id and a.id=i.source_id and a.source_revision=i.source_revision and not a.deleted join saved_passages p on p.user_id=i.user_id and p.source_id=i.source_id and p.source_revision=i.source_revision where i.user_id=$1 and i.contract=$2 limit 1`,
-      [owner, INDEX_CONTRACT],
+      `with eligible as (${ELIGIBLE_SAVED_PASSAGES_SQL}) select 1 from eligible p join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id and i.source_revision=p.source_revision and i.contract=$5 limit 1`,
+      [...evidenceFilterParameters(owner, opts), INDEX_CONTRACT],
     );
     if (available.length)
       try {
@@ -91,9 +106,11 @@ export async function searchEvidence(
           owner,
           "task: search result | query: " + opts.query,
           "search:" + crypto.randomUUID(),
+          signal,
         );
         semanticStatus = "available";
       } catch (error) {
+        signal?.throwIfAborted();
         semanticStatus = "paused";
         semanticError =
           error instanceof PaidWorkError
@@ -101,35 +118,28 @@ export async function searchEvidence(
             : "Semantic search is temporarily unavailable.";
       }
   }
+  signal?.throwIfAborted();
   const rows = await db().query(
-    `with eligible as (
- select p.*,a.data,coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl') as original_url,
- coalesce(a.data->>'contentType',a.doc->>'contentType',case when sakamoto_x_post_id(coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl')) is not null then 'post' when coalesce(a.doc->>'origin','') in ('file','paste') or coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl','') ~* '\\.pdf([?#].*)?$' then 'document' else 'article' end) as content_type,
- ts_rank_cd(p.lexical,websearch_to_tsquery('simple',$2)) as lexical_score,
- p.lexical @@ websearch_to_tsquery('simple',$2) as matched,
+    `with current_sources as (${ELIGIBLE_SAVED_PASSAGES_SQL}), eligible as (
+ select p.*,ts_rank_cd(p.lexical,websearch_to_tsquery('simple',$5)) as lexical_score,
+ p.lexical @@ websearch_to_tsquery('simple',$5) as matched,
  case when i.contract=$7 then e.embedding <=> $8::public.vector else null end as distance
- from saved_passages p join articles a on a.user_id=p.user_id and a.id=p.source_id and a.source_revision=p.source_revision and not a.deleted
+ from current_sources p
  left join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id and i.source_revision=p.source_revision and i.contract=$7
  left join passage_embeddings e on e.user_id=p.user_id and e.contract=i.contract and e.content_fingerprint=p.content_fingerprint
- where p.user_id=$1
- and ($3::text is null or coalesce(a.data->>'contentType',a.doc->>'contentType',case when sakamoto_x_post_id(coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl')) is not null then 'post' when coalesce(a.doc->>'origin','') in ('file','paste') or coalesce(a.doc->>'sourceUrl',a.data->>'sourceUrl','') ~* '\\.pdf([?#].*)?$' then 'document' else 'article' end)=$3)
- and ($4::text is null or coalesce(a.data->>'topic','unsorted')=$4)
- and coalesce(a.data->'tags','[]') @> $5::jsonb
  ), lexical as (select source_id,ordinal,row_number() over(order by lexical_score desc,source_id,ordinal) as r from eligible where matched),
  semantic as (select source_id,ordinal,row_number() over(order by distance,source_id,ordinal) as r from eligible where distance is not null),
  ranked as (select e.*,coalesce(1.0/l.r,0)+coalesce(1.0/s.r,0) as rank from eligible e left join lexical l using(source_id,ordinal) left join semantic s using(source_id,ordinal) where l.r is not null or s.r is not null)
  select * from ranked order by rank desc,matched desc,source_id,ordinal limit $6`,
     [
-      owner,
+      ...evidenceFilterParameters(owner, opts),
       opts.query,
-      opts.contentType ?? null,
-      opts.topic ?? null,
-      JSON.stringify(opts.tags ?? []),
       opts.limit ?? 20,
       INDEX_CONTRACT,
       vector ? JSON.stringify(vector) : null,
     ],
   );
+  signal?.throwIfAborted();
   return {
     mode: vector ? "hybrid" : "lexical",
     semanticStatus,
@@ -139,6 +149,10 @@ export async function searchEvidence(
       itemId: r.source_id,
       sourceRevision: r.source_revision,
       title: r.data.title ?? "Untitled",
+      ...(typeof r.data.author === "string" ? { author: r.data.author } : {}),
+      ...((r.post_coverage ?? r.pdf_coverage)
+        ? { coverage: r.post_coverage ?? r.pdf_coverage }
+        : {}),
       originalUrl: r.original_url,
       contentType: r.content_type,
       excerpt: r.text,

@@ -18,6 +18,7 @@ import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
 import { BookmarkDelivery } from "./BookmarkDelivery";
 import { Processing } from "./Processing";
 import { EvidenceSearch } from "./EvidenceSearch";
+import { LibraryAnswer } from "./LibraryAnswer";
 import { Starter } from "./Starter";
 
 // Preserve existing device history while the product is renamed.
@@ -251,6 +252,8 @@ export function Library() {
             {TAGS.map((t) => <Chip key={t.key} on={status === t.key} onClick={() => setStatus(status === t.key ? null : t.key)}>{t.label}</Chip>)}
           </div>
         </section>
+
+        {account && <LibraryAnswer key={account} owner={account} filters={{...(contentType?{contentType}:{}),...(only?{topic:only}:{}),...(tag?{tags:[tag]}:{})}} />}
 
         {account && q.trim() && <EvidenceSearch owner={account} options={{query:q,...(contentType?{contentType}:{}),...(only?{topic:only}:{}),...(tag?{tags:[tag]}:{})}} />}
 

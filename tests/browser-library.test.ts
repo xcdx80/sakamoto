@@ -134,3 +134,18 @@ test("accepted posts remain readable in grid/list filters while pending processi
     assert.match(html, /Indexing pending/);
   }
 });
+
+test("library answer transport binds the intended account and discards an answer received after account switching",async()=>{
+  const {askSavedLibrary}=await import("../lib/library-answer-client");
+  store.useStore.getState().activateAccount("answer-client-a");
+  let release!: (response:Response)=>void;
+  globalThis.fetch=async(_url,init)=>{
+    assert.equal(new Headers(init?.headers).get("X-Sakamoto-Owner"),"answer-client-a");
+    assert.deepEqual(JSON.parse(String(init?.body)),{query:"How do I calibrate?",contentType:"document",tags:["stars"]});
+    return new Promise<Response>(resolve=>{release=resolve;});
+  };
+  const pending=askSavedLibrary({query:"How do I calibrate?",contentType:"document",tags:["stars"]});
+  store.useStore.getState().activateAccount("answer-client-b");
+  release(Response.json({status:"answered",claims:[],citations:[],gaps:[],notice:"private a",retrieval:{}}));
+  await assert.rejects(pending,/Account changed/);
+});
