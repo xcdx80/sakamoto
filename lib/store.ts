@@ -1,5 +1,6 @@
 "use client";
 
+import { READER_METADATA_FIELDS, type ReaderMetadataField } from "./library-ownership";
 import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-scope";
 import { create } from "zustand";
 import type { Action } from "./actions";
@@ -50,9 +51,7 @@ export type Review = { due: number; step: number; last: number; off?: boolean };
 export type Highlight = { sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
 
 export type BriefState = { sourceRevision?: number } & (
-  | { status: "loading" }
-  | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number }
-  | { status: "error"; error: string; needKey?: boolean }
+  { status: "loading" } | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number } | { status: "error"; error: string; needKey?: boolean }
 );
 
 export type { Settings } from "./settings";
@@ -70,7 +69,8 @@ export type LibraryItem = {
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
   sourceRevision?: number;
-  recoveredFrom?: {itemId:string;sourceRevision:number};
+  recoveredFrom?: { itemId: string; sourceRevision: number };
+  manualFields?: ReaderMetadataField[];
   /* The library: where it is shelved, and what it looks like there. */
   /** One of the library's topics (lib/library.ts); missing until it has been sorted. */
   topic?: string;
@@ -154,7 +154,7 @@ type State = Persisted &
     setProgress: (articleId: string, p: Progress) => void;
     addToLibrary: (a: Article, words: number, extra?: Partial<LibraryItem>) => void;
     /** Change a shelf entry's library fields: its topic, tags, cover, favourite. */
-    shelve: (id: string, patch: Partial<LibraryItem>) => void;
+    shelve: (id: string, patch: Partial<LibraryItem>, options?: { automatic?: boolean }) => void;
     removeFromLibrary: (id: string) => void;
     replaceText: (a: Article, words: number) => Promise<boolean>;
     updateText: (a: Article, words: number) => Promise<boolean>;
@@ -409,7 +409,16 @@ export const useStore = create<State>((set, get) => ({
       return { library: [item, ...st.library.filter((x) => x.id !== a.id)] };
     }),
 
-  shelve: (id, patch) => set((st) => ({ library: st.library.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+  shelve: (id, patch, options) =>
+    set((st) => ({
+      library: st.library.map((x) => {
+        if (x.id !== id) return x;
+        const manualFields = options?.automatic
+          ? x.manualFields
+          : [...new Set([...(x.manualFields ?? []), ...READER_METADATA_FIELDS.filter((field) => Object.hasOwn(patch, field))])];
+        return { ...x, ...patch, ...(manualFields ? { manualFields } : {}) };
+      }),
+    })),
 
   removeFromLibrary: (id) => {
     void dropDoc(id);
@@ -487,14 +496,21 @@ export const useStore = create<State>((set, get) => ({
     }),
 }));
 
-/* Debounced persistence. Streaming updates land many times a second, so the
-   write waits for a pause rather than serializing on every token. */
-function persist(st: Persisted) {
+/* Account snapshots persist synchronously so identity changes never move pending writes between scopes. */
+function persist(st: Persisted): boolean {
   const { glosses, highlights, briefs, progress, library } = st;
   try {
     localStorage.setItem(localSnapshotKey(), JSON.stringify({ glosses, highlights, briefs, progress, library }));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
+/** Require discoverable metadata to be durable before source-conflict invalidation. */
+export function checkpointLibrary(): boolean {
+  return persist(useStore.getState());
+}
+
 if (typeof window !== "undefined") {
   useStore.subscribe((st, prev) => {
     if (!st.hydrated || st.scope !== prev.scope) return;
@@ -527,15 +543,16 @@ function idb(): Promise<IDBDatabase> {
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, store = DOCS): Promise<T> {
   const db = await idb();
   return new Promise((resolve, reject) => {
-    const transaction=db.transaction(store,mode);
-    const req=fn(transaction.objectStore(store));
-    let result:T;
-    req.onsuccess=()=> {result=req.result;};
-    req.onerror=()=>reject(req.error);
-    transaction.oncomplete=()=>resolve(result);
-    transaction.onabort=()=>reject(transaction.error??new Error("Browser storage transaction aborted."));
-    transaction.onerror=()=>reject(transaction.error);
-
+    const transaction = db.transaction(store, mode);
+    const req = fn(transaction.objectStore(store));
+    let result: T;
+    req.onsuccess = () => {
+      result = req.result;
+    };
+    req.onerror = () => reject(req.error);
+    transaction.oncomplete = () => resolve(result);
+    transaction.onabort = () => reject(transaction.error ?? new Error("Browser storage transaction aborted."));
+    transaction.onerror = () => reject(transaction.error);
   });
 }
 
@@ -577,7 +594,9 @@ export async function loadDoc(id: string, owner: string | null = accountScope(),
 async function migrateDocs() {
   let ids: string[] = [];
   try {
-    ids = Object.keys(localStorage).filter((k) => k.startsWith(DOC_PREFIX)).map((k) => k.slice(DOC_PREFIX.length));
+    ids = Object.keys(localStorage)
+      .filter((k) => k.startsWith(DOC_PREFIX))
+      .map((k) => k.slice(DOC_PREFIX.length));
   } catch {}
   for (const id of ids) await loadDoc(id);
 }
@@ -605,9 +624,9 @@ export async function loadPdf(id: string): Promise<Blob | null> {
 
 /** Forget this device's copy of a text (not its PDF): it changed elsewhere and is fetched again on open. */
 export async function forgetDoc(id: string, owner: string | null = accountScope()) {
-  const key = scopedKey(id,owner);
+  const key = scopedKey(id, owner);
   try {
-    localStorage.removeItem(scopedKey(DOC_PREFIX + id,owner));
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id, owner));
   } catch {}
   try {
     await tx("readwrite", (s) => s.delete(key));

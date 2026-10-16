@@ -26,7 +26,17 @@ export const COLLECTIONS = ["articles", "highlights", "glosses", "briefs", "prog
 export type Collection = (typeof COLLECTIONS)[number];
 export const isCollection = (v: unknown): v is Collection => typeof v === "string" && (COLLECTIONS as readonly string[]).includes(v);
 
-export type PushRow = { id: string; article_id: string; data: unknown; deleted: boolean; doc?: unknown; revision?: number; sourceRevision?: number; changedFields?: string[] };
+export type PushRow = {
+  id: string;
+  article_id: string;
+  data: unknown;
+  deleted: boolean;
+  doc?: unknown;
+  revision?: number;
+  sourceRevision?: number;
+  changedFields?: string[];
+  manualFields?: string[];
+};
 export type PullRow = { id: string; articleId: string; data: any; deleted: boolean; revision: number; sourceRevision?: number };
 export type SyncPage = { now: string; cursor: string; hasMore: boolean; changes: Record<Collection, PullRow[]> };
 const cursorOf = (after: string, until?: string) => Buffer.from(JSON.stringify({ after, until })).toString("base64url");
@@ -45,12 +55,12 @@ export async function pullRows(userId: string, cursor = "", limit = 100): Promis
     }
   }
   if (!until) until = String((await db().query("select coalesce(max(sequence),0)::text as watermark from sync_changes"))[0].watermark);
-  const rows = await db().query("select * from sync_changes where user_id=$1 and sequence>$2::bigint and sequence<=$3::bigint order by sequence limit $4", [
-    userId,
-    after,
-    until,
-    Math.max(1, Math.min(100, limit)) + 1,
-  ]);
+  const rows = await db().query(
+    `select changes.*,a.manual_fields from sync_changes changes left join articles a
+    on changes.collection='articles' and a.user_id=changes.user_id and a.id=changes.id
+    where changes.user_id=$1 and changes.sequence>$2::bigint and changes.sequence<=$3::bigint order by changes.sequence limit $4`,
+    [userId, after, until, Math.max(1, Math.min(100, limit)) + 1],
+  );
   const changes: SyncPage["changes"] = { articles: [], highlights: [], glosses: [], briefs: [], progress: [] };
   let bytes = 0,
     consumed = 0;
@@ -60,7 +70,7 @@ export async function pullRows(userId: string, cursor = "", limit = 100): Promis
     changes[r.collection as Collection].push({
       id: r.id,
       articleId: r.article_id,
-      data: r.deleted ? null : { ...r.data, ...(r.collection === "articles" ? { sourceRevision: r.source_revision } : {}) },
+      data: r.deleted ? null : { ...r.data, ...(r.collection === "articles" ? { sourceRevision: r.source_revision, manualFields: Object.keys(r.manual_fields ?? {}) } : {}) },
       deleted: r.deleted,
       revision: r.revision,
       ...(r.source_revision ? { sourceRevision: r.source_revision } : {}),
@@ -83,7 +93,7 @@ export async function pushRows(userId: string, changes: Partial<Record<Collectio
     for (const r of rows ?? []) {
       const article = table === "articles";
       const metadata = READER_METADATA_FIELDS;
-      const fields = (r.changedFields ?? metadata).filter((k) => metadata.some(field=>field===k));
+      const fields = (r.manualFields ?? r.changedFields ?? metadata).filter((k) => metadata.some((field) => field === k));
       const result = await db().query(
         `insert into ${table}(user_id,id,article_id,data,deleted${article ? ",doc,manual_fields" : ""})
         select $1,$2,$3,$4::jsonb,$5${article ? ", $7::jsonb, $8::jsonb" : ""} where $6=0 or exists(select 1 from ${table} where user_id=$1 and id=$2)
@@ -154,7 +164,12 @@ export async function createToken(userId: string, id: string, hash: string, labe
 
 export async function listTokens(userId: string): Promise<AgentToken[]> {
   const rows = await db().query("select id, label, created_at, last_used_at from agent_tokens where user_id = $1 and not revoked order by created_at desc", [userId]);
-  return rows.map((r) => ({ id: String(r.id), label: String(r.label), createdAt: new Date(r.created_at).toISOString(), lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null }));
+  return rows.map((r) => ({
+    id: String(r.id),
+    label: String(r.label),
+    createdAt: new Date(r.created_at).toISOString(),
+    lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
+  }));
 }
 
 export async function revokeToken(userId: string, id: string): Promise<boolean> {

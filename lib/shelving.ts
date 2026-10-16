@@ -53,12 +53,12 @@ export async function shelveText(a: Text): Promise<void> {
     const cur = st.library.find((x) => x.id === a.id);
     if (!cur) return;
     const patch: Partial<LibraryItem> = {};
-    if (!cur.topic) {
+    if (!cur.topic && !cur.manualFields?.includes("topic")) {
       patch.topic = s.topic;
       patch.scene = s.scene;
     }
-    if (!cur.tags?.length && cur.tags === initialTags) patch.tags = s.tags.length ? s.tags : undefined;
-    if (Object.keys(patch).length) st.shelve(a.id, patch);
+    if (!cur.manualFields?.includes("tags") && !cur.tags?.length && cur.tags === initialTags) patch.tags = s.tags.length ? s.tags : undefined;
+    if (Object.keys(patch).length) st.shelve(a.id, patch, { automatic: true });
   } catch {
     // Unsorted is a fine place to wait.
   } finally {

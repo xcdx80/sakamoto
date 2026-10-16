@@ -32,7 +32,17 @@ type Collection = (typeof COLLECTIONS)[number];
 type Entity = { articleId: string; data: unknown; key: string };
 type Snapshot = { entities: Record<Collection, Map<string, Entity>>; busy: Set<string> };
 type Baseline = { since: string | null; seen: Record<Collection, Record<string, [key: string, articleId: string, revision?: number, sourceRevision?: number]>> };
-type OutRow = { id: string; articleId: string; data: unknown; deleted?: boolean; doc?: Article; revision?: number; sourceRevision?: number; changedFields?: string[] };
+type OutRow = {
+  id: string;
+  articleId: string;
+  data: unknown;
+  deleted?: boolean;
+  doc?: Article;
+  revision?: number;
+  sourceRevision?: number;
+  changedFields?: string[];
+  manualFields?: string[];
+};
 
 /** Pushes are split to stay well under the 4.5MB request cap. */
 const BATCH_BYTES = 1_500_000;
@@ -131,7 +141,15 @@ export function startSync(userId: string) {
         const changedFields = [...new Set([...Object.keys(e.data as object), ...Object.keys(before)])].filter(
           (k) => stable((e.data as Record<string, unknown>)[k]) !== stable(before[k]),
         );
-        const row: OutRow = { id, articleId: e.articleId, data: e.data, revision: previous?.[2] ?? 0, sourceRevision: previous?.[3] ?? 1, changedFields };
+        const row: OutRow = {
+          id,
+          articleId: e.articleId,
+          data: e.data,
+          revision: previous?.[2] ?? 0,
+          sourceRevision: previous?.[3] ?? 1,
+          changedFields,
+          manualFields: (e.data as { manualFields?: string[] }).manualFields ?? [],
+        };
         // A text goes up with its first shelf entry, and again when it is replaced (its rev changes).
         // Samples ship with the app.
         if (c === "articles" && (e.data as { origin?: string }).origin !== "sample" && (!previous || (e.data as { rev?: number }).rev !== before.rev)) {
@@ -202,10 +220,28 @@ export function startSync(userId: string) {
         const prior = base.seen.articles[row.id],
           pending = local.entities.articles.get(row.id);
         if (prior?.[3] !== row.sourceRevision) {
-          if (prior && pending && (pending.data as { rev?: number }).rev !== JSON.parse(prior[0]).rev && !row.deleted) {
+          let unknownCollision = false;
+          if (!prior && pending) {
+            const cached = await loadDoc(row.id, userId);
+            if (!current()) return;
+            if (cached) {
+              const response = await fetch(`/api/articles/${encodeURIComponent(row.id)}`, { headers: { "X-Sakamoto-Owner": userId } });
+              if (!current()) return;
+              if (!response.ok && response.status !== 404) throw new OfflineSourceConflictError();
+              const remote = response.ok ? ((await response.json()) as { doc: Article }).doc : null;
+              if (!current()) return;
+              const withoutRevision = (doc: Article) => {
+                const value = { ...doc };
+                delete value.sourceRevision;
+                return value;
+              };
+              unknownCollision = !remote || stable(withoutRevision(cached)) !== stable(withoutRevision(remote));
+            }
+          }
+          if (pending && (unknownCollision || (prior && (pending.data as { rev?: number }).rev !== JSON.parse(prior[0]).rev))) {
             const title = await preserveOfflineSource(row.id, userId);
             if (!current()) return;
-            useStore.getState().setUI({ syncNotice: `A newer source arrived. Your offline copy is saved separately as “${title}”.` });
+            useStore.getState().setUI({ syncNotice: `The saved source changed. Your offline copy is saved separately as “${title}”.` });
           }
           await forgetDoc(row.id, userId);
         }
@@ -231,6 +267,10 @@ export function startSync(userId: string) {
             want = pending.data as Record<string, unknown>;
           const manual = READER_METADATA_FIELDS;
           const patch = Object.fromEntries(manual.filter((k) => stable(want[k]) !== stable(was[k])).map((k) => [k, want[k]]));
+          const localManual = Array.isArray(want.manualFields) ? want.manualFields : [];
+          const remoteFields=(r.data as {manualFields?:string[]}).manualFields;
+          const remoteManual = Array.isArray(remoteFields) ? remoteFields : [];
+          patch.manualFields = READER_METADATA_FIELDS.filter((field) => localManual.includes(field) || remoteManual.includes(field));
           if (prior[3] === r.sourceRevision && want.rev !== was.rev) {
             patch.rev = want.rev;
             patch.words = want.words;

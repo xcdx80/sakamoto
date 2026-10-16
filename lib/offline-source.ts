@@ -1,5 +1,5 @@
 import { accountEpoch, accountScope } from "./account-scope";
-import { loadDoc, saveDoc, uid, useStore } from "./store";
+import { checkpointLibrary, loadDoc, saveDoc, uid, useStore } from "./store";
 import type { Article } from "./article";
 
 export class OfflineSourceConflictError extends Error {
@@ -30,5 +30,9 @@ export async function preserveOfflineSource(id: string, owner: string): Promise<
   delete copy.sourceUrl;
   if (!(await saveDoc(copy, owner)) || !current()) throw new OfflineSourceConflictError();
   useStore.getState().addToLibrary(copy, item.words, { tags: item.tags, favorite: item.favorite, topic: item.topic, recoveredFrom });
+  if (!checkpointLibrary() || !current()) {
+    if (current()) useStore.getState().removeFromLibrary(copy.id);
+    throw new OfflineSourceConflictError();
+  }
   return copy.title;
 }

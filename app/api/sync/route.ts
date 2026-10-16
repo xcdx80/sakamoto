@@ -8,7 +8,17 @@ const MAX_BODY = 4_400_000;
 const MAX_ROWS = 100;
 const MAX_DATA = 256_000;
 
-type InRow = { id: string; articleId: string; data: unknown; deleted?: boolean; doc?: unknown; revision?: number; sourceRevision?: number; changedFields?: string[] };
+type InRow = {
+  id: string;
+  articleId: string;
+  data: unknown;
+  deleted?: boolean;
+  doc?: unknown;
+  revision?: number;
+  sourceRevision?: number;
+  changedFields?: string[];
+  manualFields?: string[];
+};
 
 /**
  * Pull: every row of the signed-in reader's that changed since `since`,
@@ -51,6 +61,7 @@ export async function POST(req: Request) {
       revision: Number.isSafeInteger(r.revision) ? r.revision : 0,
       sourceRevision: Number.isSafeInteger(r.sourceRevision) ? r.sourceRevision : 1,
       changedFields: Array.isArray(r.changedFields) ? r.changedFields.filter((k) => typeof k === "string") : undefined,
+      manualFields: Array.isArray(r.manualFields) ? r.manualFields.filter((k) => typeof k === "string") : undefined,
       ...(table === "articles" ? { doc: r.deleted ? null : (r.doc ?? null) } : {}),
     }));
     count += changes[table].length;

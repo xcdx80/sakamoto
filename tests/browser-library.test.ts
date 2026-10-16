@@ -115,3 +115,15 @@ test("a pending classification preserves manual tags independently from an unset
   assert.deepEqual(store.useStore.getState().library[0].tags, ["my manual tag"]);
   assert.equal(store.useStore.getState().library[0].topic, "science");
 });
+
+test("explicitly empty manual tags stay empty through later automatic classification", async () => {
+  const { shelveText } = await import("../lib/shelving");
+  store.useStore.getState().activateAccount("cleared-manual-category");
+  const article = { id: "manual-empty", title: "Empty tags", origin: "paste" as const, blocks: [] };
+  store.useStore.getState().addToLibrary(article, 2);
+  store.useStore.getState().shelve(article.id, { tags: [] });
+  globalThis.fetch = async () => Response.json({ topic: "science", tags: ["automatic"], scene: "A desk" });
+  await shelveText(article);
+  assert.deepEqual(store.useStore.getState().library[0].tags, []);
+  assert.equal(store.useStore.getState().library[0].topic, "science");
+});
