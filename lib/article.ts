@@ -51,6 +51,7 @@ export type Block = {
 };
 
 export type Article = {
+  sourceRevision?: number;
   id: string;
   title: string;
   author?: string;

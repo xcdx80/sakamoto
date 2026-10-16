@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 /**
  * The library's sorting, from the browser: each new text goes to /api/shelve
  * once, in the background, and comes back with a topic, tags and a scene for
@@ -20,6 +22,7 @@ let resting = false;
 type Text = Pick<Article, "id" | "title" | "author" | "source" | "dek"> & { blocks?: Article["blocks"] };
 
 export async function shelveText(a: Text): Promise<void> {
+  const epoch = accountEpoch();
   if (resting || inflight.has(a.id)) return;
   inflight.add(a.id);
   try {
@@ -37,6 +40,7 @@ export async function shelveText(a: Text): Promise<void> {
     }
     if (!res.ok) return;
     const s = (await res.json()) as Shelving;
+    if (accountEpoch() !== epoch) return;
     const st = useStore.getState();
     const cur = st.library.find((x) => x.id === a.id);
     if (!cur || cur.topic) return;
@@ -52,13 +56,14 @@ let backfilling = false;
 
 /** Sort what was shelved before the library existed: two at a time, a few dozen a visit. */
 export async function backfill(items: LibraryItem[], limit = 40): Promise<void> {
+  const epoch = accountEpoch();
   if (backfilling || resting) return;
   const todo = items.filter((x) => !x.topic && x.origin !== "sample").slice(0, limit);
   if (!todo.length) return;
   backfilling = true;
   try {
     const next = async () => {
-      for (let x = todo.shift(); x && !resting; x = todo.shift()) {
+      for (let x = todo.shift(); x && !resting && accountEpoch() === epoch; x = todo.shift()) {
         const doc = await loadDoc(x.id).catch(() => null);
         await shelveText(doc ?? { id: x.id, title: x.title, author: x.author, source: x.source, dek: x.dek });
         await new Promise((r) => setTimeout(r, 400));

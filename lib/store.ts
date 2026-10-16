@@ -1,5 +1,6 @@
 "use client";
 
+import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-scope";
 import { create } from "zustand";
 import type { Action } from "./actions";
 import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
@@ -27,6 +28,7 @@ export type Turn = {
 };
 
 export type Gloss = {
+  sourceRevision?: number;
   id: string;
   articleId: string;
   /** Anchored to a selection... */
@@ -45,12 +47,13 @@ export type Gloss = {
  */
 export type Review = { due: number; step: number; last: number; off?: boolean };
 
-export type Highlight = { id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
+export type Highlight = { sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
 
-export type BriefState =
+export type BriefState = { sourceRevision?: number } & (
   | { status: "loading" }
   | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number }
-  | { status: "error"; error: string; needKey?: boolean };
+  | { status: "error"; error: string; needKey?: boolean }
+);
 
 export type { Settings } from "./settings";
 
@@ -66,6 +69,7 @@ export type LibraryItem = {
   addedAt: number;
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
+  sourceRevision?: number;
   /* The library: where it is shelved, and what it looks like there. */
   /** One of the library's topics (lib/library.ts); missing until it has been sorted. */
   topic?: string;
@@ -88,10 +92,10 @@ export type LibraryItem = {
   addedVia?: string;
 };
 
-export type Progress = { block: string; pct: number; at: number };
+export type Progress = { sourceRevision?: number; block: string; pct: number; at: number };
 
 /** A row from the account, as the sync route sends it. `data` is null on a tombstone. */
-export type RemoteRow<T> = { id: string; articleId: string; data: T | null; deleted: boolean };
+export type RemoteRow<T> = { id: string; articleId: string; data: T | null; deleted: boolean; revision?: number; sourceRevision?: number };
 export type RemoteChanges = {
   articles?: RemoteRow<LibraryItem>[];
   highlights?: RemoteRow<Highlight>[];
@@ -109,6 +113,7 @@ type Persisted = {
 };
 
 type UI = {
+  syncError: string | null;
   hydrated: boolean;
   activeGloss: string | null;
   hoverGloss: string | null;
@@ -129,6 +134,10 @@ type UI = {
 
 type State = Persisted &
   UI & {
+    scope: string | null | undefined;
+    activateAccount: (owner: string | null) => void;
+    adoptAnonymous: () => Promise<void>;
+    anonymousCount: () => number;
     settings: Settings;
     hydrate: () => void;
     setSettings: (s: Partial<Settings>) => void;
@@ -152,7 +161,45 @@ type State = Persisted &
 
 const KEY = "gloss:v1";
 const DOC_PREFIX = "gloss:doc:";
-
+const ANONYMOUS_KEY = "sakamoto:anonymous:v2";
+function hasLegacyAccountSync(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) if (localStorage.key(i)?.startsWith("gloss:sync:")) return true;
+  } catch {}
+  return false;
+}
+function localSnapshotKey() {
+  return accountScope() ? scopedKey(KEY) : ANONYMOUS_KEY;
+}
+function readAnonymous(): Partial<Persisted> {
+  try {
+    const current = localStorage.getItem(ANONYMOUS_KEY);
+    if (current) return JSON.parse(current);
+    // Old versions mixed signed-in and anonymous content. Keep an uncertain cache quarantined for explicit adoption.
+    if (hasLegacyAccountSync()) return {};
+    return JSON.parse(localStorage.getItem(KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function adoptionSnapshot(): Partial<Persisted> {
+  const current = readAnonymous();
+  if (!hasLegacyAccountSync()) return current;
+  try {
+    const legacy = JSON.parse(localStorage.getItem(KEY) || "{}") as Partial<Persisted>;
+    return {
+      ...legacy,
+      ...current,
+      library: [...(legacy.library ?? []).filter((x) => !current.library?.some((y) => y.id === x.id)), ...(current.library ?? [])],
+      highlights: { ...legacy.highlights, ...current.highlights },
+      glosses: { ...legacy.glosses, ...current.glosses },
+      briefs: { ...legacy.briefs, ...current.briefs },
+      progress: { ...legacy.progress, ...current.progress },
+    };
+  } catch {
+    return current;
+  }
+}
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -162,6 +209,8 @@ export const useStore = create<State>((set, get) => ({
   briefs: {},
   progress: {},
   library: [],
+  syncError: null,
+  scope: undefined,
   settings: DEFAULT_SETTINGS,
   hydrated: false,
   activeGloss: null,
@@ -177,12 +226,62 @@ export const useStore = create<State>((set, get) => ({
   pending: null,
   shelf: null,
 
+  activateAccount: (owner) => {
+    if (get().scope === owner) return;
+    if (get().hydrated) persist(get());
+    selectAccount(owner);
+    set({
+      scope: owner,
+      syncError: null,
+      hydrated: false,
+      library: [],
+      highlights: {},
+      glosses: {},
+      briefs: {},
+      progress: {},
+      activeGloss: null,
+      activeHighlight: null,
+      pending: null,
+    });
+    get().hydrate();
+  },
+  anonymousCount: () => {
+    return adoptionSnapshot().library?.length ?? 0;
+  },
+  adoptAnonymous: async () => {
+    const owner = accountScope();
+    if (!owner) return;
+    let old: Partial<Persisted> = {};
+    old = adoptionSnapshot();
+    for (const item of old.library ?? []) {
+      const doc = await loadDoc(item.id, null, true);
+      if (accountScope() !== owner) return;
+      if (doc && !get().library.some((x) => x.id === item.id)) await saveDoc(doc, owner);
+    }
+    if (accountScope() !== owner) return;
+    const current = get();
+    const arrays = <T extends { id: string }>(older: Record<string, T[]>, newer: Record<string, T[]>) =>
+      Object.fromEntries(
+        [...new Set([...Object.keys(older), ...Object.keys(newer)])].map((id) => [
+          id,
+          [...(older[id] ?? []).filter((x) => !(newer[id] ?? []).some((y) => x.id === y.id)), ...(newer[id] ?? [])],
+        ]),
+      );
+    set({
+      library: [...(old.library ?? []).filter((x) => !current.library.some((y) => y.id === x.id)), ...current.library],
+      highlights: arrays(old.highlights ?? {}, current.highlights),
+      glosses: arrays(old.glosses ?? {}, current.glosses),
+      briefs: { ...old.briefs, ...current.briefs },
+      progress: { ...old.progress, ...current.progress },
+    });
+    persist(get());
+  },
   hydrate: () => {
     if (get().hydrated) return;
     let data: Partial<Persisted> = {};
     let settings: Partial<Settings> = {};
     try {
-      data = JSON.parse(localStorage.getItem(KEY) || "{}");
+      data = accountScope() ? JSON.parse(localStorage.getItem(localSnapshotKey()) || "{}") : readAnonymous();
       settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     } catch {}
     // A reload mid-answer leaves a dangling stream: mark it, never spin forever.
@@ -223,7 +322,10 @@ export const useStore = create<State>((set, get) => ({
 
   addGloss: (g) =>
     set((st) => ({
-      glosses: { ...st.glosses, [g.articleId]: [...(st.glosses[g.articleId] ?? []), g] },
+      glosses: {
+        ...st.glosses,
+        [g.articleId]: [...(st.glosses[g.articleId] ?? []), { ...g, sourceRevision: g.sourceRevision ?? st.library.find((x) => x.id === g.articleId)?.sourceRevision ?? 1 }],
+      },
       activeGloss: g.id,
       enteringGloss: g.id,
     })),
@@ -241,7 +343,13 @@ export const useStore = create<State>((set, get) => ({
     })),
 
   addHighlight: (h) => {
-    set((st) => ({ highlights: { ...st.highlights, [h.articleId]: [...(st.highlights[h.articleId] ?? []), h] }, enteringHighlight: h.id }));
+    set((st) => ({
+      highlights: {
+        ...st.highlights,
+        [h.articleId]: [...(st.highlights[h.articleId] ?? []), { ...h, sourceRevision: h.sourceRevision ?? st.library.find((x) => x.id === h.articleId)?.sourceRevision ?? 1 }],
+      },
+      enteringHighlight: h.id,
+    }));
     setTimeout(() => get().enteringHighlight === h.id && set({ enteringHighlight: null }), 700);
   },
 
@@ -259,7 +367,7 @@ export const useStore = create<State>((set, get) => ({
   setBrief: (articleId, b) =>
     set((st) => {
       const briefs = { ...st.briefs };
-      if (b) briefs[articleId] = b;
+      if (b) briefs[articleId] = { ...b, sourceRevision: b.sourceRevision ?? st.library.find((x) => x.id === articleId)?.sourceRevision ?? 1 };
       else delete briefs[articleId];
       return { briefs };
     }),
@@ -269,7 +377,7 @@ export const useStore = create<State>((set, get) => ({
       // The first time a text is read to the end, the library notes when.
       const done = p.pct >= 1 && st.library.some((x) => x.id === articleId && !x.finishedAt);
       return {
-        progress: { ...st.progress, [articleId]: p },
+        progress: { ...st.progress, [articleId]: { ...p, sourceRevision: p.sourceRevision ?? st.library.find((x) => x.id === articleId)?.sourceRevision ?? 1 } },
         ...(done ? { library: st.library.map((x) => (x.id === articleId ? { ...x, finishedAt: p.at } : x)) } : {}),
       };
     }),
@@ -307,7 +415,8 @@ export const useStore = create<State>((set, get) => ({
   // Part of a text read again (a page swapped in by lib/upgrade.ts) where no mark is anchored:
   // the marks stay. The rev bump makes sync send the text again.
   updateText: async (a, words) => {
-    if (!(await saveDoc(a))) return false;
+    const epoch = accountEpoch();
+    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
     set((st) => ({ library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)) }));
     return true;
   },
@@ -315,9 +424,10 @@ export const useStore = create<State>((set, get) => ({
   // A new reading of the same text. Every mark is anchored to a block id and offset in the old
   // text, so highlights, glosses and the whole-text gloss go with it; the caller asks first.
   replaceText: async (a, words) => {
-    if (!(await saveDoc(a))) return false;
+    const epoch = accountEpoch();
+    if (!(await saveDoc(a)) || accountEpoch() !== epoch) return false;
     set((st) => {
-      const rest = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== a.id)) as Record<string, T>;
+      const rest = <T>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== a.id)) as Record<string, T>;
       return {
         library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)),
         highlights: rest(st.highlights),
@@ -353,7 +463,7 @@ export const useStore = create<State>((set, get) => ({
         return next;
       };
 
-      const byArticle = <T,>(cur: Record<string, T>, rows: RemoteRow<T>[] = []) => {
+      const byArticle = <T>(cur: Record<string, T>, rows: RemoteRow<T>[] = []) => {
         if (!rows.length) return cur;
         const next = { ...cur };
         for (const r of rows) {
@@ -375,25 +485,16 @@ export const useStore = create<State>((set, get) => ({
 
 /* Debounced persistence. Streaming updates land many times a second, so the
    write waits for a pause rather than serializing on every token. */
+function persist(st: Persisted) {
+  const { glosses, highlights, briefs, progress, library } = st;
+  try {
+    localStorage.setItem(localSnapshotKey(), JSON.stringify({ glosses, highlights, briefs, progress, library }));
+  } catch {}
+}
 if (typeof window !== "undefined") {
-  let t: ReturnType<typeof setTimeout> | null = null;
   useStore.subscribe((st, prev) => {
-    if (!st.hydrated) return;
-    if (
-      st.glosses === prev.glosses &&
-      st.highlights === prev.highlights &&
-      st.briefs === prev.briefs &&
-      st.progress === prev.progress &&
-      st.library === prev.library
-    )
-      return;
-    if (t) clearTimeout(t);
-    t = setTimeout(() => {
-      const { glosses, highlights, briefs, progress, library } = useStore.getState();
-      try {
-        localStorage.setItem(KEY, JSON.stringify({ glosses, highlights, briefs, progress, library }));
-      } catch {}
-    }, 400);
+    if (!st.hydrated || st.scope !== prev.scope) return;
+    if (st.library !== prev.library || st.glosses !== prev.glosses || st.highlights !== prev.highlights || st.briefs !== prev.briefs || st.progress !== prev.progress) persist(st);
   });
 }
 
@@ -428,34 +529,35 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
   });
 }
 
-export async function saveDoc(a: Article): Promise<boolean> {
+export async function saveDoc(a: Article, owner: string | null = accountScope()): Promise<boolean> {
   try {
-    await tx("readwrite", (s) => s.put(a, a.id));
+    await tx("readwrite", (s) => s.put(a, scopedKey(a.id, owner)));
     return true;
   } catch {}
   // No IndexedDB (some private windows): the old, smaller home still works.
   try {
-    localStorage.setItem(DOC_PREFIX + a.id, JSON.stringify(a));
+    localStorage.setItem(scopedKey(DOC_PREFIX + a.id, owner), JSON.stringify(a));
     return true;
   } catch {
     return false;
   }
 }
 
-export async function loadDoc(id: string): Promise<Article | null> {
+export async function loadDoc(id: string, owner: string | null = accountScope(), explicitLegacyAdoption = false): Promise<Article | null> {
+  if (owner === null && hasLegacyAccountSync() && !explicitLegacyAdoption && !readAnonymous().library?.some((x) => x.id === id)) return null;
   try {
-    const a = await tx<Article | undefined>("readonly", (s) => s.get(id));
+    const a = await tx<Article | undefined>("readonly", (s) => s.get(scopedKey(id, owner)));
     if (a) return a;
   } catch {}
   let legacy: Article | null = null;
   try {
-    const raw = localStorage.getItem(DOC_PREFIX + id);
+    const raw = localStorage.getItem(scopedKey(DOC_PREFIX + id, owner));
     legacy = raw ? (JSON.parse(raw) as Article) : null;
   } catch {}
   if (legacy) {
     try {
-      await tx("readwrite", (s) => s.put(legacy, id));
-      localStorage.removeItem(DOC_PREFIX + id);
+      await tx("readwrite", (s) => s.put(legacy, scopedKey(id, owner)));
+      localStorage.removeItem(scopedKey(DOC_PREFIX + id, owner));
     } catch {}
   }
   return legacy;
@@ -472,8 +574,9 @@ async function migrateDocs() {
 
 /** Keep an imported PDF's original file, by its article id. */
 export async function savePdf(id: string, file: Blob): Promise<boolean> {
+  const key = scopedKey(id);
   try {
-    await tx("readwrite", (s) => s.put(file, id), FILES);
+    await tx("readwrite", (s) => s.put(file, key), FILES);
     return true;
   } catch {
     return false;
@@ -482,8 +585,9 @@ export async function savePdf(id: string, file: Blob): Promise<boolean> {
 
 /** The original PDF behind an article, when this browser imported it. */
 export async function loadPdf(id: string): Promise<Blob | null> {
+  const key = scopedKey(id);
   try {
-    return (await tx<Blob | undefined>("readonly", (s) => s.get(id), FILES)) ?? null;
+    return (await tx<Blob | undefined>("readonly", (s) => s.get(key), FILES)) ?? null;
   } catch {
     return null;
   }
@@ -491,21 +595,23 @@ export async function loadPdf(id: string): Promise<Blob | null> {
 
 /** Forget this device's copy of a text (not its PDF): it changed elsewhere and is fetched again on open. */
 export async function forgetDoc(id: string) {
+  const key = scopedKey(id);
   try {
-    localStorage.removeItem(DOC_PREFIX + id);
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id));
   } catch {}
   try {
-    await tx("readwrite", (s) => s.delete(id));
+    await tx("readwrite", (s) => s.delete(key));
   } catch {}
 }
 
 async function dropDoc(id: string) {
+  const key = scopedKey(id);
   try {
-    localStorage.removeItem(DOC_PREFIX + id);
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id));
   } catch {}
   try {
-    await tx("readwrite", (s) => s.delete(id));
-    await tx("readwrite", (s) => s.delete(id), FILES);
+    await tx("readwrite", (s) => s.delete(key));
+    await tx("readwrite", (s) => s.delete(key), FILES);
   } catch {}
 }
 

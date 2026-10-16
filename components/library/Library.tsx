@@ -1,4 +1,5 @@
 "use client";
+import { scopedKey } from "@/lib/account-scope";
 
 import { useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import { hideSample, useLibraryPrefs } from "@/lib/library-prefs";
 import { applySettings } from "@/lib/settings";
 import { backfill } from "@/lib/shelving";
 import { useStore } from "@/lib/store";
-import { watchShelf } from "@/lib/sync";
+import { watchShelf, retrySync } from "@/lib/sync";
 import { AddButton, AddPanel, type AddTab } from "./AddPanel";
 import { Arrivals, type Wave } from "./Arrivals";
 import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
@@ -22,6 +23,11 @@ const SEEN_KEY = "gloss:library-seen";
 
 export function Library() {
   const { user, isSignedIn } = useUser();
+  const syncError = useStore((s) => s.syncError);
+  const account = useStore((s) => s.scope);
+  const adopt = useStore((s) => s.adoptAnonymous);
+  const [adopted, setAdopted] = useState(false);
+  const anonymousCount = useStore.getState().anonymousCount();
   const hydrate = useStore((s) => s.hydrate);
   const hydrated = useStore((s) => s.hydrated);
   const library = useStore((s) => s.library);
@@ -48,8 +54,8 @@ export function Library() {
     hydrate();
     applySettings(useStore.getState().settings);
     try {
-      setLastSeen(Number(localStorage.getItem(SEEN_KEY)) || 0);
-      localStorage.setItem(SEEN_KEY, String(Date.now()));
+      setLastSeen(Number(localStorage.getItem(scopedKey(SEEN_KEY))) || 0);
+      localStorage.setItem(scopedKey(SEEN_KEY), String(Date.now()));
     } catch {}
   }, [hydrate]);
 
@@ -155,6 +161,26 @@ export function Library() {
         <TopBar here="library" onLibrary={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
       </div>
       <main className="mx-auto w-full max-w-[1180px] px-4 pb-32 sm:px-8">
+        {syncError && (
+          <p role="alert" className="mx-auto max-w-6xl px-6 py-4 text-sm">
+            {syncError}{" "}
+            <button onClick={retrySync} className="underline">
+              Retry sync
+            </button>
+          </p>
+        )}
+        {account && anonymousCount > 0 && !adopted && (
+          <aside className="mx-auto max-w-6xl px-6 py-4" aria-label="Anonymous library">
+            <p>{anonymousCount} items remain saved on this device outside your account.</p>
+            <button className="underline" onClick={() => void adopt().then(() => setAdopted(true))}>
+              Copy anonymous library into this account
+            </button>
+            <button className="ml-4 underline" onClick={() => setAdopted(true)}>
+              Keep separate
+            </button>
+          </aside>
+        )}
+
         <section className="lib-hero">
           <div className="lib-hero-row">
             <div className="min-w-0">

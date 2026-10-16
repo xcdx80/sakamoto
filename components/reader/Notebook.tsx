@@ -1,5 +1,6 @@
 "use client";
 
+import { annotationMatchesSource, sameSourceRevision, revisionUrl } from "@/lib/source-revision";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { Check, Copy, Download, Trash2, X } from "lucide-react";
@@ -205,10 +206,15 @@ function GlossEntry({ g }: { g: Gloss }) {
   const { ix, jumpToBlock } = useReader();
   const setUI = useStore((s) => s.setUI);
   const removeGloss = useStore((s) => s.removeGloss);
+  const archived = !annotationMatchesSource(g, ix.article);
   const blockId = g.anchor?.start.b ?? g.at;
-  const n = blockId ? ix.numbers.get(blockId) : undefined;
+  const n = !archived && blockId ? ix.numbers.get(blockId) : undefined;
   const label = !g.anchor ? "Whole text" : g.action === "ask" ? undefined : ACTIONS[g.action].label;
   const go = () => {
+    if (archived) {
+      if (!sameSourceRevision(g, ix.article)) window.location.assign(revisionUrl(g.articleId, g.sourceRevision));
+      return;
+    }
     setUI({ activeGloss: g.id, ...(covers() ? { notebookOpen: false } : {}) });
     if (blockId) jumpToBlock(blockId);
   };
@@ -216,7 +222,11 @@ function GlossEntry({ g }: { g: Gloss }) {
   return (
     <article className="group relative rounded-[14px] border border-rule bg-bg px-4 pb-4 pt-3.5 transition-colors hover:border-rule-strong">
       <button type="button" onClick={go} className="block w-full pr-7 text-left">
-        <Meta n={n} label={label} at={g.createdAt} />
+        <Meta
+          n={n}
+          label={archived ? (sameSourceRevision(g, ix.article) ? "Saved passage unavailable" : `Earlier source revision ${g.sourceRevision ?? 1}`) : label}
+          at={g.createdAt}
+        />
         {g.anchor && (
           <span className="mt-2.5 line-clamp-2 border-l-2 border-[var(--rubric-line)] pl-3 font-serif text-[15px] leading-[1.45] text-ink-3 transition-colors group-hover:text-ink-2">
             {g.anchor.quote}
@@ -232,10 +242,10 @@ function GlossEntry({ g }: { g: Gloss }) {
               <p className="font-serif text-[16.5px] leading-[1.35] text-ink [font-variation-settings:'opsz'_24]">{p.q}</p>
             </div>
             <div className="mt-2 grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-2">
-              <span aria-hidden className="text-[11.5px] font-semibold leading-none text-ink-4">A</span>
-              <div className="min-w-0">
-                <AnswerBody t={p.a} />
-              </div>
+              <span aria-hidden className="text-[11.5px] font-semibold leading-none text-ink-4">
+                A
+              </span>
+              <div className="min-w-0">{archived ? <p className="whitespace-pre-wrap text-sm">{p.a?.content}</p> : <AnswerBody t={p.a} />}</div>
             </div>
           </div>
         ))}
@@ -295,6 +305,7 @@ function Clamp({ watch, children }: { watch: string; children: ReactNode }) {
 
 function HighlightEntry({ h }: { h: Highlight }) {
   const { ix, jumpToBlock } = useReader();
+  const archived = !annotationMatchesSource(h, ix.article);
   const removeHighlight = useStore((s) => s.removeHighlight);
   const setUI = useStore((s) => s.setUI);
   return (
@@ -302,12 +313,20 @@ function HighlightEntry({ h }: { h: Highlight }) {
       <button
         type="button"
         onClick={() => {
+          if (archived) {
+            if (!sameSourceRevision(h, ix.article)) window.location.assign(revisionUrl(h.articleId, h.sourceRevision));
+            return;
+          }
           if (covers()) setUI({ notebookOpen: false });
           jumpToBlock(h.anchor.start.b);
         }}
         className="block w-full pr-7 text-left"
       >
-        <Meta n={ix.numbers.get(h.anchor.start.b)} label={h.note ? "Note" : "Highlight"} at={h.createdAt} />
+        <Meta
+          n={archived ? undefined : ix.numbers.get(h.anchor.start.b)}
+          label={archived ? (sameSourceRevision(h, ix.article) ? "Saved passage unavailable" : `Earlier source revision ${h.sourceRevision ?? 1}`) : h.note ? "Note" : "Highlight"}
+          at={h.createdAt}
+        />
         <span className="mt-2.5 block font-serif text-[15.5px] leading-[1.5] text-ink">
           <mark className="m-hl text-inherit" data-c={h.color && h.color !== "yellow" ? h.color : undefined}>
             {h.anchor.quote}

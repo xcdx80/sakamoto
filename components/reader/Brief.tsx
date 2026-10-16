@@ -1,5 +1,6 @@
 "use client";
 
+import { sameSourceRevision } from "@/lib/source-revision";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ChevronDown, RotateCcw } from "lucide-react";
@@ -16,7 +17,8 @@ import { fmtCost, useReader } from "./context";
  */
 export function Brief() {
   const { ix, jumpTo } = useReader();
-  const brief = useStore((s) => s.briefs[ix.article.id]);
+  const savedBrief = useStore((s) => s.briefs[ix.article.id]);
+  const brief = savedBrief && sameSourceRevision(savedBrief, ix.article) ? savedBrief : undefined;
   const open = useStore((s) => s.briefOpen);
   const setUI = useStore((s) => s.setUI);
   const hydrated = useStore((s) => s.hydrated);

@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 /**
  * "Read it more carefully": the PDF behind a text, read again by LlamaParse
  * through /api/pdf-careful, for layouts the free reader gets wrong (columns,
@@ -16,6 +18,7 @@ export type CarefulResult = { ok: true; article: Article } | { ok: false; error:
 const same = (a: string, b: string) => a.replace(/\W+/g, "").toLowerCase() === b.replace(/\W+/g, "").toLowerCase();
 
 export async function readCarefully(shown: Article, signal?: AbortSignal): Promise<CarefulResult> {
+  const epoch = accountEpoch();
   // The reader shows a display copy; the new reading builds on the stored original.
   const article = (await loadDoc(shown.id)) ?? shown;
   const pdf = await loadPdf(article.id);
@@ -46,6 +49,7 @@ export async function readCarefully(shown: Article, signal?: AbortSignal): Promi
   // Ids from separate pages would collide; number them again in reading order.
   blocks = blocks.map((b, i) => ({ ...b, id: `b${i + 1}` }));
 
+  if (accountEpoch() !== epoch) return { ok: false, error: "Account changed. Try again." };
   const next: Article = { ...article, blocks };
   if (!(await useStore.getState().replaceText(next, wordCount(next)))) return { ok: false, error: "This browser's storage is full. The text is unchanged." };
   window.dispatchEvent(new CustomEvent("gloss:text-replaced", { detail: next }));
