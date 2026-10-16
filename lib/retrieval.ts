@@ -28,7 +28,7 @@ export type Evidence = {
     reason?: string;
     verification?: "agent_reported";
     totalPages?: number;
-    parsedPages?: number;
+    parsedPages?: number[];
     missingPages?: number[];
   };
   originalUrl?: string;
