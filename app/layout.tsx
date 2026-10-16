@@ -4,7 +4,7 @@ import { BOOT_SCRIPT } from "@/lib/settings";
 import "./globals.css";
 import { Tooltips } from "@/components/ui/Tooltips";
 import { ClerkProvider } from "@clerk/nextjs";
-import { SyncAgent } from "@/components/account/SyncAgent";
+import { AccountLibrary } from "@/components/account/SyncAgent";
 import { OG_IMAGE, SITE_URL } from "@/lib/brand";
 
 const serif = Newsreader({
@@ -82,8 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ClerkProvider appearance={CLERK_APPEARANCE}>
-          {children}
-          <SyncAgent />
+          <AccountLibrary>{children}</AccountLibrary>
         </ClerkProvider>
         <Tooltips />
       </body>

@@ -51,6 +51,8 @@ export type Block = {
 };
 
 export type Article = {
+  sourceRevision?: number;
+  recoveredFrom?: {itemId:string;sourceRevision:number};
   id: string;
   title: string;
   author?: string;

@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 /**
  * Hard PDF pages, read again in the background. The import shows LiteParse's
  * reading at once; pages whose layout looked hard (columns, tables, maths)
@@ -79,14 +81,16 @@ const runs = new Map<string, { listeners: Set<(p: UpgradeProgress) => void>; las
 
 /** Reads this text's pending pages (once, however often it is called) and reports progress until unsubscribed. */
 export function startUpgrade(id: string, listener: (p: UpgradeProgress) => void): () => void {
-  const existing = runs.get(id);
+  const epoch = accountEpoch(),
+    runKey = scopedKey(id);
+  const existing = runs.get(runKey);
   if (existing) {
     existing.listeners.add(listener);
     listener(existing.last);
     return () => existing.listeners.delete(listener);
   }
   const run = { listeners: new Set([listener]), last: { done: 0, total: 0, active: false } as UpgradeProgress };
-  runs.set(id, run);
+  runs.set(runKey, run);
   const onProgress = (p: UpgradeProgress) => {
     run.last = p;
     for (const l of run.listeners) l(p);
@@ -99,7 +103,7 @@ export function startUpgrade(id: string, listener: (p: UpgradeProgress) => void)
     try {
       const first = await loadDoc(id);
       const pending = first?.upgrade ?? [];
-      if (!first || !pending.length || frozen(id)) return;
+      if (accountEpoch() !== epoch || !first || !pending.length || frozen(id)) return;
       const pdf = await loadPdf(id);
       // Another device has the text but not the file: nothing to read from.
       if (!pdf) return;
@@ -108,7 +112,7 @@ export function startUpgrade(id: string, listener: (p: UpgradeProgress) => void)
       total = pending.length;
       onProgress({ done, total, active: true });
 
-      for (let i = 0; i < pending.length && !stopped; i += AT_ONCE) {
+      for (let i = 0; i < pending.length && !stopped && accountEpoch() === epoch; i += AT_ONCE) {
         const group = pending.slice(i, i + AT_ONCE);
         let shots: { pageNum: number; image: string }[] = [];
         try {
@@ -127,15 +131,15 @@ export function startUpgrade(id: string, listener: (p: UpgradeProgress) => void)
             } catch {
               return { page: s.pageNum, markdown: undefined, spent: false };
             }
-          })
+          }),
         );
 
         for (const r of readings) {
           // Free use spent: keep the text layer and the list, and try again another day.
           if (r.spent) stopped = true;
-          if (stopped) break;
+          if (stopped || accountEpoch() !== epoch) break;
           const doc = await loadDoc(id);
-          if (!doc || frozen(id)) return;
+          if (accountEpoch() !== epoch || !doc || frozen(id)) return;
           const rest = (doc.upgrade ?? []).filter((p) => p !== r.page);
           const old = doc.blocks.filter((b) => b.page === r.page);
           let next = r.markdown ? markdownBlocks(htmlTablesToMarkdown(r.markdown)) : [];
@@ -157,7 +161,7 @@ export function startUpgrade(id: string, listener: (p: UpgradeProgress) => void)
       }
     } finally {
       onProgress({ done, total, active: false });
-      runs.delete(id);
+      runs.delete(runKey);
     }
   })();
 

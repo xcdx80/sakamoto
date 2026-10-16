@@ -3,11 +3,16 @@
  * to manage in serverless functions. Server-side only.
  */
 
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { READER_METADATA_FIELDS } from "./library-ownership";
+import { neon } from "@neondatabase/serverless";
 
-let client: NeonQueryFunction<false, false> | null = null;
-
-export function db() {
+export type SqlAdapter = { query: (text: string, params?: unknown[]) => Promise<Record<string, any>[]> };
+let client: SqlAdapter | null = null;
+/** External SQL adapter substitution for isolated integration environments. Never reads another database implicitly. */
+export function configureDatabase(adapter: SqlAdapter) {
+  client = adapter;
+}
+export function db(): SqlAdapter {
   if (!client) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set.");
@@ -21,55 +26,117 @@ export const COLLECTIONS = ["articles", "highlights", "glosses", "briefs", "prog
 export type Collection = (typeof COLLECTIONS)[number];
 export const isCollection = (v: unknown): v is Collection => typeof v === "string" && (COLLECTIONS as readonly string[]).includes(v);
 
-export type PushRow = { id: string; article_id: string; data: unknown; deleted: boolean; doc?: unknown };
-export type PullRow = { id: string; articleId: string; data: unknown; deleted: boolean };
+export type PushRow = {
+  id: string;
+  article_id: string;
+  data: unknown;
+  deleted: boolean;
+  doc?: unknown;
+  revision?: number;
+  sourceRevision?: number;
+  changedFields?: string[];
+  manualFields?: string[];
+};
+export type PullRow = { id: string; articleId: string; data: any; deleted: boolean; revision: number; sourceRevision?: number };
+export type SyncPage = { now: string; cursor: string; hasMore: boolean; changes: Record<Collection, PullRow[]> };
+const cursorOf = (after: string, until?: string) => Buffer.from(JSON.stringify({ after, until })).toString("base64url");
 
-/** Rows changed since `since` in every collection, tombstones included, plus the server clock to pull from next time. */
-export async function pullRows(userId: string, since: string): Promise<{ now: string; changes: Record<Collection, PullRow[]> }> {
-  const sql = db();
-  const [clock, ...results] = await sql.transaction([
-    sql.query("select now() as now"),
-    ...COLLECTIONS.map((t) =>
-      sql.query(`select id, article_id, data, deleted from ${t} where user_id = $1 and updated_at > $2 order by updated_at`, [userId, since])
-    ),
-  ]);
-  const changes = Object.fromEntries(
-    COLLECTIONS.map((t, i) => [
-      t,
-      (results[i] as Record<string, unknown>[]).map((r) => ({ id: String(r.id), articleId: String(r.article_id), data: r.deleted ? null : r.data, deleted: Boolean(r.deleted) })),
-    ])
-  ) as Record<Collection, PullRow[]>;
-  return { now: new Date((clock as { now: string }[])[0].now).toISOString(), changes };
+/** Immutable change-log pages with a fixed upper watermark. Timestamps from older clients safely restart a full pull. */
+export async function pullRows(userId: string, cursor = "", limit = 100): Promise<SyncPage> {
+  let after = "0",
+    until: string | undefined;
+  if (cursor) {
+    try {
+      const c = JSON.parse(Buffer.from(cursor, "base64url").toString());
+      if (/^\d+$/.test(c.after)) after = c.after;
+      if (/^\d+$/.test(c.until)) until = c.until;
+    } catch {
+      /* legacy clock: replay */
+    }
+  }
+  if (!until) until = String((await db().query("select coalesce(max(sequence),0)::text as watermark from sync_changes"))[0].watermark);
+  const rows = await db().query(
+    `select changes.*,a.manual_fields from sync_changes changes left join articles a
+    on changes.collection='articles' and a.user_id=changes.user_id and a.id=changes.id
+    where changes.user_id=$1 and changes.sequence>$2::bigint and changes.sequence<=$3::bigint order by changes.sequence limit $4`,
+    [userId, after, until, Math.max(1, Math.min(100, limit)) + 1],
+  );
+  const changes: SyncPage["changes"] = { articles: [], highlights: [], glosses: [], briefs: [], progress: [] };
+  let bytes = 0,
+    consumed = 0;
+  for (const r of rows) {
+    const size = JSON.stringify(r.data).length;
+    if (consumed >= Math.max(1, Math.min(100, limit)) || (consumed > 0 && bytes + size > 1_000_000)) break;
+    changes[r.collection as Collection].push({
+      id: r.id,
+      articleId: r.article_id,
+      data: r.deleted ? null : { ...r.data, ...(r.collection === "articles" ? { sourceRevision: r.source_revision, manualFields: Object.keys(r.manual_fields ?? {}) } : {}) },
+      deleted: r.deleted,
+      revision: r.revision,
+      ...(r.source_revision ? { sourceRevision: r.source_revision } : {}),
+    });
+    after = String(r.sequence);
+    bytes += size;
+    consumed++;
+  }
+  const hasMore = consumed < rows.length;
+  const next = cursorOf(hasMore ? after : until, hasMore ? until : undefined);
+  return { now: next, cursor: next, hasMore, changes };
 }
 
-/** Upsert every collection's rows in one transaction. The server stamps the time, so the latest write wins. */
-export async function pushRows(userId: string, changes: Partial<Record<Collection, PushRow[]>>): Promise<void> {
-  const sql = db();
-  const queries = Object.entries(changes)
-    .filter(([t, rows]) => isCollection(t) && rows?.length)
-    .map(([t, rows]) => sql.query(upsert(t as Collection), [userId, JSON.stringify(rows)]));
-  // A text taken off the shelf takes its painted cover with it.
-  const gone = (changes.articles ?? []).filter((r) => r.deleted).map((r) => r.id);
-  if (gone.length) queries.push(sql.query("delete from covers where user_id = $1 and id = any($2::text[])", [userId, gone]));
-  if (queries.length) await sql.transaction(queries);
+/** Compare-and-swap per entity; rejected snapshots are returned explicitly, never silently made authoritative. */
+export async function pushRows(userId: string, changes: Partial<Record<Collection, PushRow[]>>) {
+  const accepted: { collection: Collection; id: string; revision: number; sourceRevision?: number }[] = [];
+  const conflicts: { collection: Collection; id: string; reason: string }[] = [];
+  for (const [table, rows] of Object.entries(changes)) {
+    if (!isCollection(table)) continue;
+    for (const r of rows ?? []) {
+      const article = table === "articles";
+      const metadata = READER_METADATA_FIELDS;
+      const fields = (r.manualFields ?? r.changedFields ?? metadata).filter((k) => metadata.some((field) => field === k));
+      const result = await db().query(
+        `insert into ${table}(user_id,id,article_id,data,deleted${article ? ",doc,manual_fields" : ""})
+        select $1,$2,$3,$4::jsonb,$5${article ? ", $7::jsonb, $8::jsonb" : ""} where $6=0 or exists(select 1 from ${table} where user_id=$1 and id=$2)
+        on conflict(user_id,id) do update set data=excluded.data, deleted=excluded.deleted${
+          article
+            ? `,
+          doc=case when excluded.deleted then ${table}.doc else coalesce(excluded.doc,${table}.doc) end,
+          manual_fields=${table}.manual_fields || excluded.manual_fields`
+            : ""
+        }
+        where ${table}.revision=$6 ${article ? "and ($7::jsonb is null or articles.source_revision=$9)" : ""}
+        returning revision${article ? ",source_revision" : ""}`,
+        article
+          ? [
+              userId,
+              r.id,
+              r.article_id,
+              JSON.stringify(r.data),
+              r.deleted,
+              r.revision ?? 0,
+              r.doc ? JSON.stringify(r.doc) : null,
+              JSON.stringify(Object.fromEntries(fields.map((k) => [k, true]))),
+              r.sourceRevision ?? 1,
+            ]
+          : [userId, r.id, r.article_id, JSON.stringify(r.data), r.deleted, r.revision ?? 0],
+      );
+      if (result.length) accepted.push({ collection: table, id: r.id, revision: result[0].revision, ...(article ? { sourceRevision: result[0].source_revision } : {}) });
+      else conflicts.push({ collection: table, id: r.id, reason: "revision_conflict" });
+    }
+  }
+  return { accepted, conflicts };
 }
 
-/** One article's full text. */
-export async function articleDoc(userId: string, id: string): Promise<unknown | null> {
-  const rows = await db().query("select doc from articles where user_id = $1 and id = $2 and not deleted and doc is not null", [userId, id]);
-  return rows.length ? rows[0].doc : null;
-}
-
-/** One statement per table: unpack the JSON array of rows and upsert them all. An article pushed without its text keeps the stored one. */
-function upsert(table: Collection): string {
-  const isArticles = table === "articles";
-  return `insert into ${table} (user_id, id, article_id, data, deleted, updated_at${isArticles ? ", doc" : ""})
-    select $1, r.id, r.article_id, r.data, r.deleted, now()${isArticles ? ", r.doc" : ""}
-    from jsonb_to_recordset($2::jsonb) as r(id text, article_id text, data jsonb, deleted boolean${isArticles ? ", doc jsonb" : ""})
-    on conflict (user_id, id) do update set
-      article_id = excluded.article_id, data = excluded.data, deleted = excluded.deleted, updated_at = now()${
-        isArticles ? ", doc = case when excluded.deleted then null else coalesce(excluded.doc, articles.doc) end" : ""
-      }`;
+/** A source revision remains addressable for annotations created against older text. */
+export async function articleDoc(userId: string, id: string, revision?: number): Promise<unknown | null> {
+  const rows = revision
+    ? await db().query(
+        `select doc from article_revisions where user_id=$1 and article_id=$2 and source_revision=$3
+    union all select doc from articles where user_id=$1 and id=$2 and source_revision=$3 and not deleted and doc is not null limit 1`,
+        [userId, id, revision],
+      )
+    : await db().query("select doc,source_revision from articles where user_id=$1 and id=$2 and not deleted and doc is not null", [userId, id]);
+  return rows.length ? { ...rows[0].doc, sourceRevision: revision ?? rows[0].source_revision } : null;
 }
 
 /* ---------- painted covers ---------- */
@@ -78,7 +145,7 @@ export async function saveCover(userId: string, id: string, jpeg: Uint8Array): P
   await db().query(
     `insert into covers (user_id, id, jpeg) values ($1, $2, $3)
      on conflict (user_id, id) do update set jpeg = excluded.jpeg, created_at = now()`,
-    [userId, id, Buffer.from(jpeg).toString("base64")]
+    [userId, id, Buffer.from(jpeg).toString("base64")],
   );
 }
 
@@ -97,7 +164,12 @@ export async function createToken(userId: string, id: string, hash: string, labe
 
 export async function listTokens(userId: string): Promise<AgentToken[]> {
   const rows = await db().query("select id, label, created_at, last_used_at from agent_tokens where user_id = $1 and not revoked order by created_at desc", [userId]);
-  return rows.map((r) => ({ id: String(r.id), label: String(r.label), createdAt: new Date(r.created_at).toISOString(), lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null }));
+  return rows.map((r) => ({
+    id: String(r.id),
+    label: String(r.label),
+    createdAt: new Date(r.created_at).toISOString(),
+    lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
+  }));
 }
 
 export async function revokeToken(userId: string, id: string): Promise<boolean> {
@@ -116,21 +188,37 @@ export async function tokenUser(hash: string): Promise<{ userId: string; label: 
 export type ShelfRow = { id: string; data: Record<string, unknown>; pct: number };
 
 /** Every text on a reader's shelf, with how far they've read. */
-export async function shelfOf(userId: string): Promise<ShelfRow[]> {
+export async function shelfPageOf(userId: string, after = "", limit = 100): Promise<{ items: ShelfRow[]; next: string | null }> {
+  const bound = Math.max(1, Math.min(100, limit));
   const rows = await db().query(
-    `select a.id, a.data, p.data as progress from articles a
-     left join progress p on p.user_id = a.user_id and p.id = a.id and not p.deleted
-     where a.user_id = $1 and not a.deleted order by a.updated_at desc`,
-    [userId]
+    `select a.id,a.data,p.data as progress from articles a
+    left join progress p on p.user_id=a.user_id and p.id=a.id and not p.deleted
+    where a.user_id=$1 and not a.deleted and a.id>$2 order by a.id limit $3`,
+    [userId, after, bound + 1],
   );
-  return rows.map((r) => ({ id: String(r.id), data: (r.data ?? {}) as Record<string, unknown>, pct: Number((r.progress as { pct?: number } | null)?.pct ?? 0) }));
+  const page = rows.slice(0, bound);
+  return { items: page.map((r) => ({ id: String(r.id), data: r.data ?? {}, pct: Number(r.progress?.pct ?? 0) })), next: rows.length > bound ? String(page.at(-1)!.id) : null };
+}
+/** Legacy tools aggregate bounded database pages; their public result limits remain unchanged. */
+export async function shelfOf(userId: string): Promise<ShelfRow[]> {
+  const result: ShelfRow[] = [];
+  let cursor = "";
+  do {
+    const page = await shelfPageOf(userId, cursor);
+    result.push(...page.items);
+    if (!page.next) break;
+    cursor = page.next;
+  } while (cursor);
+  return result.sort((a, b) => Number(b.data.addedAt ?? 0) - Number(a.data.addedAt ?? 0));
 }
 
 /** Put one imported text on a reader's shelf, as their browser would: the next sync brings it down. */
-export async function shelveForUser(userId: string, item: { id: string }, doc: unknown): Promise<void> {
+export async function shelveForUser(userId: string, item: { id: string; [key: string]: unknown }, doc: unknown): Promise<void> {
   await db().query(
-    `insert into articles (user_id, id, article_id, data, doc, deleted, updated_at) values ($1, $2, $2, $3, $4, false, now())
-     on conflict (user_id, id) do update set data = excluded.data, doc = excluded.doc, deleted = false, updated_at = now()`,
-    [userId, item.id, JSON.stringify(item), JSON.stringify(doc)]
+    `insert into articles(user_id,id,article_id,data,doc) values($1,$2,$2,$3::jsonb,$4::jsonb)
+     on conflict(user_id,id) do update set
+       data=(excluded.data - array(select jsonb_object_keys(articles.manual_fields))) || (select coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb) from jsonb_each(articles.data) e where articles.manual_fields ? e.key),
+       doc=excluded.doc where not articles.deleted`,
+    [userId, item.id, JSON.stringify(item), JSON.stringify(doc)],
   );
 }

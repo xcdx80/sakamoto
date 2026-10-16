@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 import type { Action } from "./actions";
 import type { BriefData } from "./article";
 import { docPayload, type DocIndex } from "./doc";
@@ -37,6 +39,7 @@ function lastAssistant(g: Gloss, fn: (t: Turn) => Turn): Gloss {
 
 /** Streams the newest assistant turn of a gloss from /api/ask. */
 async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
+  const epoch = accountEpoch();
   const st = useStore.getState();
   const articleId = ix.article.id;
   const g = (st.glosses[articleId] ?? []).find((x) => x.id === glossId);
@@ -54,7 +57,7 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
 
   const ctrl = new AbortController();
   controllers.set(glossId, ctrl);
-  const update = (fn: (t: Turn) => Turn) => useStore.getState().updateGloss(articleId, glossId, (x) => lastAssistant(x, fn));
+  const update = (fn: (t: Turn) => Turn) => accountEpoch() === epoch && useStore.getState().updateGloss(articleId, glossId, (x) => lastAssistant(x, fn));
 
   try {
     const apiKey = readApiKey();
@@ -144,6 +147,7 @@ export function startGloss(
   const g: Gloss = {
     id: uid(),
     articleId: ix.article.id,
+    sourceRevision: ix.article.sourceRevision ?? 1,
     anchor: opts.anchor,
     at: opts.at,
     action: opts.action,
@@ -181,10 +185,11 @@ export function retry(ix: DocIndex, glossId: string, modelKey?: ModelKey) {
 }
 
 export async function fetchBrief(ix: DocIndex) {
+  const epoch = accountEpoch();
   const st = useStore.getState();
   const id = ix.article.id;
   const modelKey = modelOf(st.settings.model);
-  st.setBrief(id, { status: "loading" });
+  st.setBrief(id, { status: "loading", sourceRevision: ix.article.sourceRevision ?? 1 });
   try {
     const apiKey = readApiKey();
     const res = await fetch("/api/brief", {
@@ -194,10 +199,12 @@ export async function fetchBrief(ix: DocIndex) {
     });
     noteFree(res);
     const j = (await res.json()) as { brief?: BriefData; usage?: Usage; error?: string; code?: string };
-    if (j.brief) useStore.getState().setBrief(id, { status: "ready", data: j.brief, usage: j.usage, modelKey, at: Date.now() });
-    else useStore.getState().setBrief(id, { status: "error", error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
+    if (j.brief)
+      accountEpoch() === epoch &&
+        useStore.getState().setBrief(id, { status: "ready", sourceRevision: ix.article.sourceRevision ?? 1, data: j.brief, usage: j.usage, modelKey, at: Date.now() });
+    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
   } catch (e) {
-    useStore.getState().setBrief(id, { status: "error", error: `Connection lost: ${String(e)}` });
+    accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", error: `Connection lost: ${String(e)}` });
   }
 }
 

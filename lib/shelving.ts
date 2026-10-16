@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 /**
  * The library's sorting, from the browser: each new text goes to /api/shelve
  * once, in the background, and comes back with a topic, tags and a scene for
@@ -20,13 +22,22 @@ let resting = false;
 type Text = Pick<Article, "id" | "title" | "author" | "source" | "dek"> & { blocks?: Article["blocks"] };
 
 export async function shelveText(a: Text): Promise<void> {
+  const epoch = accountEpoch();
   if (resting || inflight.has(a.id)) return;
+  const initialTags = useStore.getState().library.find((x) => x.id === a.id)?.tags;
   inflight.add(a.id);
   try {
     const res = await fetch("/api/shelve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: a.title, author: a.author, source: a.source, dek: a.dek, excerpt: a.blocks ? excerptOf(a.blocks) : undefined, apiKey: readApiKey() || undefined }),
+      body: JSON.stringify({
+        title: a.title,
+        author: a.author,
+        source: a.source,
+        dek: a.dek,
+        excerpt: a.blocks ? excerptOf(a.blocks) : undefined,
+        apiKey: readApiKey() || undefined,
+      }),
     });
     if (res.status === 429 || res.status === 401) {
       const j = (await res.json().catch(() => ({}))) as { code?: string };
@@ -37,10 +48,17 @@ export async function shelveText(a: Text): Promise<void> {
     }
     if (!res.ok) return;
     const s = (await res.json()) as Shelving;
+    if (accountEpoch() !== epoch) return;
     const st = useStore.getState();
     const cur = st.library.find((x) => x.id === a.id);
-    if (!cur || cur.topic) return;
-    st.shelve(a.id, { topic: s.topic, tags: s.tags.length ? s.tags : undefined, scene: s.scene });
+    if (!cur) return;
+    const patch: Partial<LibraryItem> = {};
+    if (!cur.topic && !cur.manualFields?.includes("topic")) {
+      patch.topic = s.topic;
+      patch.scene = s.scene;
+    }
+    if (!cur.manualFields?.includes("tags") && !cur.tags?.length && cur.tags === initialTags) patch.tags = s.tags.length ? s.tags : undefined;
+    if (Object.keys(patch).length) st.shelve(a.id, patch, { automatic: true });
   } catch {
     // Unsorted is a fine place to wait.
   } finally {
@@ -52,13 +70,14 @@ let backfilling = false;
 
 /** Sort what was shelved before the library existed: two at a time, a few dozen a visit. */
 export async function backfill(items: LibraryItem[], limit = 40): Promise<void> {
+  const epoch = accountEpoch();
   if (backfilling || resting) return;
   const todo = items.filter((x) => !x.topic && x.origin !== "sample").slice(0, limit);
   if (!todo.length) return;
   backfilling = true;
   try {
     const next = async () => {
-      for (let x = todo.shift(); x && !resting; x = todo.shift()) {
+      for (let x = todo.shift(); x && !resting && accountEpoch() === epoch; x = todo.shift()) {
         const doc = await loadDoc(x.id).catch(() => null);
         await shelveText(doc ?? { id: x.id, title: x.title, author: x.author, source: x.source, dek: x.dek });
         await new Promise((r) => setTimeout(r, 400));

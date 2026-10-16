@@ -1,5 +1,7 @@
 "use client";
 
+import { accountEpoch, scopedKey } from "./account-scope";
+
 import { textToArticle, wordCount, type Article } from "./article";
 import { shelveText } from "./shelving";
 import { savePdf, saveDoc, useStore, type LibraryItem } from "./store";
@@ -7,8 +9,18 @@ import { savePdf, saveDoc, useStore, type LibraryItem } from "./store";
 /** `needKey`: the import needs the reader's own model API key (a long PDF, or free use spent). `file`: the original, kept with a PDF. */
 export type ImportResult = { ok: true; article: Article; file?: Blob } | { ok: false; error: string; needKey?: boolean };
 
+const importedUnder = new WeakMap<Article, number>();
+async function trackImport(run: () => Promise<ImportResult>): Promise<ImportResult> {
+  const epoch = accountEpoch();
+  const result = await run();
+  if (result.ok) importedUnder.set(result.article, epoch);
+  return result;
+}
+export const importFromUrl = (...args: Parameters<typeof fromUrl>) => trackImport(() => fromUrl(...args));
+export const importFromFile = (...args: Parameters<typeof fromFile>) => trackImport(() => fromFile(...args));
+
 /** A link to a PDF is fetched by the server and read here, as if the file had been dropped. */
-export async function importFromUrl(raw: string, onProgress?: (p: number, label?: string) => void): Promise<ImportResult> {
+async function fromUrl(raw: string, onProgress?: (p: number, label?: string) => void): Promise<ImportResult> {
   try {
     const res = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: raw.trim(), pdf: true }) });
     if (res.ok && res.headers.get("content-type")?.includes("application/pdf")) {
@@ -24,7 +36,7 @@ export async function importFromUrl(raw: string, onProgress?: (p: number, label?
   }
 }
 
-export async function importFromFile(file: File, onProgress?: (p: number, label?: string) => void): Promise<ImportResult> {
+async function fromFile(file: File, onProgress?: (p: number, label?: string) => void): Promise<ImportResult> {
   const name = file.name.toLowerCase();
   try {
     if (name.endsWith(".pdf") || file.type === "application/pdf") {
@@ -59,10 +71,14 @@ export function importFromText(text: string): ImportResult {
  * `extra`: shelf fields known already, like a starter classic's topic and cover.
  */
 export async function keep(a: Article, file?: Blob, extra?: Partial<LibraryItem>): Promise<string | null> {
+  const epoch = importedUnder.get(a) ?? accountEpoch();
+  if (accountEpoch() !== epoch) return "Account changed. Import again in the current account.";
   if (!a.blocks.length) return "There was no readable text in that.";
   if (!(await saveDoc(a))) return "This browser's storage is full. Remove something from your shelf and try again.";
+  if (accountEpoch() !== epoch) return "Account changed. Import again in the current account.";
   // The original is a nicety for reading it again; the text is what matters, so a failure here is quiet.
   if (file) await savePdf(a.id, file);
+  if (accountEpoch() !== epoch) return "Account changed. Import again in the current account.";
   useStore.getState().addToLibrary(a, wordCount(a), extra);
   if (!extra?.topic) void shelveText(a);
   return null;

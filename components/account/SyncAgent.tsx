@@ -5,14 +5,24 @@ import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { startSync } from "@/lib/sync";
 
-/** Runs account sync while someone is signed in. Renders nothing. */
-export function SyncAgent() {
-  const { isLoaded, isSignedIn, userId } = useAuth();
+/** Unmount private views while authentication changes, before another identity can render cached text. */
+export function AccountLibrary({ children }: { children: React.ReactNode }) {
+  const { isLoaded, userId } = useAuth();
+  const scope = useStore((s) => s.scope);
+  const owner = userId ?? null;
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !userId) return;
-    useStore.getState().hydrate();
+    if (isLoaded) useStore.getState().activateAccount(owner);
+  }, [isLoaded, owner]);
+  useEffect(() => {
+    if (!isLoaded || !userId || scope !== userId) return;
     const s = startSync(userId);
     return () => s.stop();
-  }, [isLoaded, isSignedIn, userId]);
-  return null;
+  }, [isLoaded, userId, scope]);
+  if (!isLoaded || scope !== owner)
+    return (
+      <main aria-busy="true" className="p-8">
+        Loading your library…
+      </main>
+    );
+  return children;
 }

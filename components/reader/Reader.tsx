@@ -1,5 +1,6 @@
 "use client";
 
+import { annotationMatchesSource, sameSourceRevision, revisionUrl } from "@/lib/source-revision";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
@@ -33,6 +34,7 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
   const [missing, setMissing] = useState(false);
   const hydrate = useStore((s) => s.hydrate);
   // A text renamed on the shelf keeps its new name here too.
+  const sourceRevision = useStore((s) => s.library.find((x) => x.id === id)?.sourceRevision);
   const renamed = useStore((s) => s.library.find((x) => x.id === id)?.title);
   const shown = useMemo(() => (article ? displayArticle(renamed && renamed !== article.title ? { ...article, title: renamed } : article) : null), [article, renamed]);
 
@@ -41,11 +43,10 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
     applySettings(useStore.getState().settings);
     if (!initial) {
       // Not on this device: it may be in the reader's account, fetched now that it is opened.
-      void loadDoc(id)
-        .then((a) => a ?? fetchText(id))
-        .then((a) => (a ? setArticle(a) : setMissing(true)));
+      const requested = Number(new URLSearchParams(window.location.search).get("revision")) || undefined;
+      void (requested ? Promise.resolve(null) : loadDoc(id)).then((a) => a ?? fetchText(id, requested)).then((a) => (a ? setArticle(a) : setMissing(true)));
     }
-  }, [hydrate, id, initial]);
+  }, [hydrate, id, initial, sourceRevision]);
 
   // The text was read again (more carefully, or a page in the background): show the new reading in
   // place. Scroll anchoring alone did not hold when a page above the reader was swapped, so the
@@ -57,7 +58,7 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
       if (next?.id !== id) return;
       const survives = new Set(next.blocks.map((b) => b.id));
       const el = Array.from(document.querySelectorAll<HTMLElement>(".prose-read [data-block]")).find(
-        (x) => x.getBoundingClientRect().bottom > 0 && survives.has(x.dataset.block ?? "")
+        (x) => x.getBoundingClientRect().bottom > 0 && survives.has(x.dataset.block ?? ""),
       );
       keep.current = el ? { id: el.dataset.block!, top: el.getBoundingClientRect().top } : null;
       setArticle(next);
@@ -117,8 +118,10 @@ function ReaderInner({ article }: { article: Article }) {
   const [openHl, setOpenHl] = useState<OpenHighlight | null>(null);
   const [toast, setToast] = useState<null | { kind: "resume"; n: number } | { kind: "hint" }>(null);
 
-  const glosses = useGlosses(articleId);
-  const highlights = useHighlights(articleId);
+  const allGlosses = useGlosses(articleId);
+  const allHighlights = useHighlights(articleId);
+  const glosses = useMemo(() => allGlosses.filter((x) => annotationMatchesSource(x, article)), [allGlosses, article]);
+  const highlights = useMemo(() => allHighlights.filter((x) => annotationMatchesSource(x, article)), [allHighlights, article]);
   const activeGloss = useStore((s) => s.activeGloss);
   const hoverGloss = useStore((s) => s.hoverGloss);
   const activeHighlight = useStore((s) => s.activeHighlight);
@@ -174,7 +177,7 @@ function ReaderInner({ article }: { article: Article }) {
         peekTimer.current = setTimeout(() => setPeekState({ n, rect }), 220);
       },
     }),
-    [ix, jumpToBlock]
+    [ix, jumpToBlock],
   );
 
   /* ---------------- marks per block ---------------- */
@@ -195,12 +198,13 @@ function ReaderInner({ article }: { article: Article }) {
         if (span) add(b.id, { from: span[0], to: span[1], kind, id, color, ...(note && b.id === a.end.b ? { note } : {}) });
       }
     };
-    for (const h of highlights) place(h.anchor, "hl", h.id, h.color, Boolean(h.note));
-    for (const g of glosses) if (g.anchor) place(g.anchor, "gloss", g.id);
+    for (const h of highlights.filter((h) => (h.sourceRevision ?? 1) === (article.sourceRevision ?? 1))) place(h.anchor, "hl", h.id, h.color, Boolean(h.note));
+    for (const g of glosses.filter((g) => (g.sourceRevision ?? 1) === (article.sourceRevision ?? 1))) if (g.anchor) place(g.anchor, "gloss", g.id);
     if (pending) place(pending, "pending", "pending");
     return map;
   }, [glosses, highlights, pending, ix, article.blocks]);
 
+  const archivedCount = allHighlights.length + allGlosses.length - highlights.length - glosses.length;
   const notes = useMemo(() => highlights.filter((h) => h.note), [highlights]);
   const openNote = useCallback((h: { id: string; anchor: Anchor }) => setOpenHl({ id: h.id, anchor: h.anchor, at: Date.now(), note: true }), []);
   const atBlocks = useMemo(() => new Set(glosses.filter((g) => !g.anchor && g.at).map((g) => g.at!)), [glosses]);
@@ -212,7 +216,7 @@ function ReaderInner({ article }: { article: Article }) {
       setUI({ cursor: blockId });
       selectBlock(blockId);
     },
-    [setUI]
+    [setUI],
   );
 
   /* ---------------- reading position ---------------- */
@@ -266,7 +270,7 @@ function ReaderInner({ article }: { article: Article }) {
         if (!id2) return;
         const atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 40;
         const pct = window.scrollY < 160 ? 0 : atEnd ? 1 : ((ix.order.get(id2) ?? 0) + 1) / article.blocks.length;
-        setProgress(articleId, { block: id2, pct, at: Date.now() });
+        setProgress(articleId, { block: id2, pct, at: Date.now(), sourceRevision: article.sourceRevision ?? 1 });
       }, 800);
     };
     const on = () => {
@@ -291,8 +295,12 @@ function ReaderInner({ article }: { article: Article }) {
     // Opened from a link to one highlight (the home page's daily one): go there, not to where you left off.
     const hlId = new URLSearchParams(window.location.search).get("hl");
     const hl = hlId ? (useStore.getState().highlights[articleId] ?? []).find((h) => h.id === hlId) : undefined;
+    if (hl && !sameSourceRevision(hl, article)) {
+      window.location.assign(`${revisionUrl(articleId, hl.sourceRevision)}&hl=${encodeURIComponent(hl.id)}`);
+      return;
+    }
     if (hlId) window.history.replaceState(null, "", window.location.pathname);
-    if (hl) {
+    if (hl && annotationMatchesSource(hl, article)) {
       requestAnimationFrame(() => {
         jumpToBlock(hl.anchor.start.b, { flash: false });
         setUI({ activeHighlight: hl.id });
@@ -301,7 +309,7 @@ function ReaderInner({ article }: { article: Article }) {
     }
     const p = useStore.getState().progress[articleId];
     const n = p ? ix.numbers.get(p.block) : undefined;
-    if (p && n && n > 2 && p.pct < 0.98) {
+    if (p && sameSourceRevision(p, article) && n && n > 2 && p.pct < 0.98) {
       requestAnimationFrame(() => {
         const el = blockEl(p.block);
         if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.28, behavior: "instant" });
@@ -372,7 +380,7 @@ function ReaderInner({ article }: { article: Article }) {
   useEffect(() => {
     const paraIds = article.blocks.filter((b) => ix.numbers.has(b.id)).map((b) => b.id);
     const orderedGlosses = () =>
-      [...useStore.getState().glosses[articleId] ?? []].sort((a, b) => {
+      [...(useStore.getState().glosses[articleId] ?? [])].sort((a, b) => {
         const pa = ix.order.get(a.anchor?.start.b ?? a.at ?? "") ?? 0;
         const pb = ix.order.get(b.anchor?.start.b ?? b.at ?? "") ?? 0;
         return pa - pb || (a.anchor?.start.o ?? 0) - (b.anchor?.start.o ?? 0);
@@ -477,7 +485,12 @@ function ReaderInner({ article }: { article: Article }) {
     <ReaderContext.Provider value={api}>
       <title>{`${article.title} | Sakamoto`}</title>
       <div className={`${focusMode ? "focus-mode" : ""} ${showNumbers ? "" : "hide-nums"} ${notebookOpen ? "nb-open" : ""}`}>
-        <TopBar currentN={current ? ix.numbers.get(current) ?? null : null} pastTitle={pastTitle} listenFrom={askAnchor} />
+        {archivedCount > 0 && (
+          <p role="status" className="mx-auto max-w-xl px-6 py-4 text-sm text-ink-3">
+            {archivedCount} saved annotations refer to an earlier or unavailable passage. They remain in your notebook and are not attached to this text.
+          </p>
+        )}
+        <TopBar currentN={current ? (ix.numbers.get(current) ?? null) : null} pastTitle={pastTitle} listenFrom={askAnchor} />
 
         <main className="relative z-[1] px-4 pb-10 pt-[calc(var(--topbar-h)+64px)] sm:px-6">
           <div className="reader-grid">
@@ -630,7 +643,7 @@ function GlossSheet() {
   const active = useStore((s) => s.activeGloss);
   const notebookOpen = useStore((s) => s.notebookOpen);
   const setUI = useStore((s) => s.setUI);
-  const g = glosses.find((x) => x.id === active);
+  const g = glosses.find((x) => x.id === active && annotationMatchesSource(x, ix.article));
   if (!g || notebookOpen) return null;
   return (
     <div
