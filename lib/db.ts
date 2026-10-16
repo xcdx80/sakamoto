@@ -3,6 +3,7 @@
  * to manage in serverless functions. Server-side only.
  */
 
+import { READER_METADATA_FIELDS } from "./library-ownership";
 import { neon } from "@neondatabase/serverless";
 
 export type SqlAdapter = { query: (text: string, params?: unknown[]) => Promise<Record<string, any>[]> };
@@ -81,8 +82,8 @@ export async function pushRows(userId: string, changes: Partial<Record<Collectio
     if (!isCollection(table)) continue;
     for (const r of rows ?? []) {
       const article = table === "articles";
-      const metadata = ["title", "topic", "tags", "favorite", "finishedAt", "cover"];
-      const fields = (r.changedFields ?? metadata).filter((k) => metadata.includes(k));
+      const metadata = READER_METADATA_FIELDS;
+      const fields = (r.changedFields ?? metadata).filter((k) => metadata.some(field=>field===k));
       const result = await db().query(
         `insert into ${table}(user_id,id,article_id,data,deleted${article ? ",doc,manual_fields" : ""})
         select $1,$2,$3,$4::jsonb,$5${article ? ", $7::jsonb, $8::jsonb" : ""} where $6=0 or exists(select 1 from ${table} where user_id=$1 and id=$2)

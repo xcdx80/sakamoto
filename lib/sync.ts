@@ -19,6 +19,7 @@
  * seconds, so what an agent saves arrives while you look.
  */
 
+import { READER_METADATA_FIELDS } from "./library-ownership";
 import { accountEpoch, accountScope } from "./account-scope";
 import { forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
 import type { Article } from "./article";
@@ -195,7 +196,7 @@ export function startSync(userId: string) {
       const local = snapshot();
       // Rebase pending field edits onto the latest server metadata. Source text is never replayed over a newer revision.
       for (const row of changes.articles ?? []) {
-        if (base.seen.articles[row.id]?.[3] !== row.sourceRevision) await forgetDoc(row.id);
+        if (base.seen.articles[row.id]?.[3] !== row.sourceRevision) await forgetDoc(row.id,userId);
       }
       if (!current()) return;
       const rebased: RemoteChanges = {};
@@ -216,7 +217,7 @@ export function startSync(userId: string) {
           if (c !== "articles") return { ...r, data: pending.data };
           const was = JSON.parse(prior[0]),
             want = pending.data as Record<string, unknown>;
-          const manual = ["title", "topic", "tags", "favorite", "finishedAt", "cover"];
+          const manual = READER_METADATA_FIELDS;
           const patch = Object.fromEntries(manual.filter((k) => stable(want[k]) !== stable(was[k])).map((k) => [k, want[k]]));
           return { ...r, data: { ...r.data, ...patch } };
         });

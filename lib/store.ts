@@ -594,10 +594,10 @@ export async function loadPdf(id: string): Promise<Blob | null> {
 }
 
 /** Forget this device's copy of a text (not its PDF): it changed elsewhere and is fetched again on open. */
-export async function forgetDoc(id: string) {
-  const key = scopedKey(id);
+export async function forgetDoc(id: string, owner: string | null = accountScope()) {
+  const key = scopedKey(id,owner);
   try {
-    localStorage.removeItem(scopedKey(DOC_PREFIX + id));
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id,owner));
   } catch {}
   try {
     await tx("readwrite", (s) => s.delete(key));

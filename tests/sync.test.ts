@@ -49,3 +49,39 @@ test("browser receives server imports, rebases only its pending manual edits, an
   useStore.getState().activateAccount("different-owner");
   assert.equal(useStore.getState().library.length, 0);
 });
+
+test("an account switch during source-cache invalidation cannot delete the next account cache", async () => {
+  const { useStore, saveDoc, loadDoc } = await import("../lib/store");
+  const { startSync } = await import("../lib/sync");
+  const owner = "invalidate-" + crypto.randomUUID(),
+    nextOwner = "next-" + crypto.randomUUID(),
+    token = makeToken();
+  await createToken(owner, token.id, token.hash, "Invalidation fixture");
+  for (const id of ["first", "second"]) await shelveForUser(owner, { id, title: "A " + id }, { id, title: "A " + id, blocks: [] });
+  useStore.getState().activateAccount(nextOwner);
+  for (const id of ["first", "second"]) await saveDoc({ id, title: "B " + id, blocks: [] });
+  useStore.getState().activateAccount(owner);
+  globalThis.fetch = async (url, init) => {
+    const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
+    return init?.method === "POST" ? POST(req) : GET(req);
+  };
+  const originalDelete = IDBObjectStore.prototype.delete;
+  let switched = false;
+  IDBObjectStore.prototype.delete = function (key: IDBValidKey | IDBKeyRange) {
+    const request = originalDelete.call(this, key);
+    if (String(key).includes(owner) && String(key).endsWith(":first")) {
+      switched = true;
+      useStore.getState().activateAccount(nextOwner);
+    }
+    return request;
+  };
+  const sync = startSync(owner);
+  try {
+    await waitFor(() => switched);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((await loadDoc("second"))?.title, "B second");
+  } finally {
+    sync.stop();
+    IDBObjectStore.prototype.delete = originalDelete;
+  }
+});
