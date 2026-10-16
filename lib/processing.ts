@@ -1,4 +1,5 @@
 /** Durable processing of already received library material. Never fetches bookmarks from Grok. */
+import { readLinkedPdf } from "./pdf-source";
 import { registerLibraryProcessingHandlers } from "./processing-handlers";
 import { db } from "./db";
 import { fetchArticle, type FetchResult } from "./fetch-article";
@@ -36,12 +37,12 @@ const jobOf = (r: Record<string, any>): ProcessingJob => ({
 });
 export async function processingStatus(
   owner: string,
-  args: { limit?: number; after?: string } = {},
+  args: { limit?: number; after?: string; sourceId?: string } = {},
 ) {
   const limit = Math.max(1, Math.min(100, Number(args.limit) || 50));
   const rows = await db().query(
-    `select j.* from processing_jobs j where j.user_id=$1 and j.id>$2::bigint order by j.id limit $3`,
-    [owner, /^\d+$/.test(args.after ?? "") ? args.after : "0", limit + 1],
+    `select j.* from processing_jobs j where j.user_id=$1 and j.id>$2::bigint and ($4::text is null or j.source_id=$4) order by j.id limit $3`,
+    [owner, /^\d+$/.test(args.after ?? "") ? args.after : "0", limit + 1, args.sourceId ?? null],
   );
   return {
     jobs: rows.slice(0, limit).map(jobOf),
@@ -104,8 +105,9 @@ export async function enqueueProcessing(
 export async function linkedArticleHandler({
   job,
   deadline,
+  signal,
 }: ProcessingContext): Promise<ProcessingOutcome> {
-  const r: FetchResult = await fetchPage(job.target, { deadline });
+  const r: FetchResult = await fetchPage(job.target, { deadline, pdf: true });
   if (!r.ok)
     return {
       state:
@@ -117,7 +119,7 @@ export async function linkedArticleHandler({
       error: r.error,
     };
   if ("pdf" in r)
-    return { state: "pdf_pending", error: "PDF text processing is pending." };
+    return readLinkedPdf(r.pdf,r.name,r.resolvedUrl ?? job.target,deadline,signal);
   return {
     state: "complete",
     article: r.article,

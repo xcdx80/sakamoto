@@ -949,7 +949,7 @@ test("planned job deadlines during paid embedding preserve progress beyond eight
 });
 
 test("zero-progress embedding timeouts retain the four automatic and eight deliberate failure limit", async () => {
-  const { processLibrary } = await import("../lib/processing");
+  const { processLibrary, processingStatus } = await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const originalFetch = globalThis.fetch,
     originalNow = Date.now,
@@ -989,7 +989,9 @@ test("zero-progress embedding timeouts retain the four automatic and eight delib
         ],
       },
     );
-    now += 1000;
+    // Scheduling uses the database clock; another fixture may hold its publication lock.
+    const queued = await processingStatus("zero-progress-reader");
+    now = Math.max(now, Date.parse(queued.jobs.find((j) => j.kind === "indexing")!.nextAttemptAt) + 1);
     let job;
     for (let attempt = 1; attempt <= 8; attempt++) {
       const result = await processLibrary("zero-progress-reader", {

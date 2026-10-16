@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
+const pdfRuntimeAssets = ["./server/pdf-worker.mjs", "./node_modules/@llamaindex/liteparse-wasm/package.json", "./node_modules/@llamaindex/liteparse-wasm/pkg/*.js", "./node_modules/@llamaindex/liteparse-wasm/pkg/*.wasm"];
+
 const nextConfig: NextConfig = {
   serverExternalPackages: ["linkedom"],
+  outputFileTracingIncludes: {
+    "/api/processing": pdfRuntimeAssets,
+    "/api/cron/processing": pdfRuntimeAssets,
+    "/mcp": pdfRuntimeAssets,
+    "/mcp/*": pdfRuntimeAssets,
+  },
   poweredByHeader: false,
   async headers() {
     return [

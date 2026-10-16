@@ -8,6 +8,7 @@
  * (your-site/mcp/gls_...) for clients that only take a URL.
  */
 
+import { supplyLinkedText } from "./linked-text";
 import { processLibrary, processingStatus } from "./processing";
 import { searchEvidence,searchOptions,scheduleSearchRebuild } from "./retrieval";
 import { hashToken, looksLikeToken } from "./agent";
@@ -55,9 +56,10 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  {name:"supply_link_text",title:"Supply extracted text for a failed linked source",description:"Deliberately recover a retained unsupported linked PDF using its processing job ID. Saves reader-supplied text and discovery links without claiming verified PDF pages. Existing saved text is never replaced.",inputSchema:{type:"object",properties:{jobId:{type:"string",pattern:"^[0-9]+$"},text:{type:"string",minLength:1,maxLength:1000000},title:{type:"string",maxLength:500}},required:["jobId","text"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
  {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
  {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
-  { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
+  { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"},sourceId:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
   {name:"reindex_library",title:"Schedule a resumable search rebuild",description:"Schedule existing active saved sources for the current embedding contract, at most 25 per page. Pass next as after until it is null. Does not dispatch paid work; process_library resumes the same durable jobs and reuses compatible vectors.",inputSchema:{type:"object",properties:{after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
   {
     name: "search_saved_passages", title: "Search saved source evidence",
@@ -221,6 +223,7 @@ async function answer(msg: Rpc, userId: string, label: string): Promise<object |
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (name === "supply_link_text") { const result = await supplyLinkedText(userId,args); return ok(result ? toolResult("Saved reader-supplied linked text.",result) : toolError("This source is unavailable, changed or not awaiting text recovery.")); }
         if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
         if (name === "process_library") return ok(toolResult("Processed received material.", await processLibrary(userId, args)));
         if (name === "processing_status") return ok(toolResult("Received material processing status.", await processingStatus(userId, args)));

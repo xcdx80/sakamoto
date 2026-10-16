@@ -13,6 +13,7 @@ export async function GET(req: Request) {
   return Response.json(
     await processingStatus(owner, {
       after: url.searchParams.get("after") ?? undefined,
+      sourceId: url.searchParams.get("sourceId") ?? undefined,
     }),
     { headers: { "Cache-Control": "no-store" } },
   );
