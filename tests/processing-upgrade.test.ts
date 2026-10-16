@@ -210,7 +210,7 @@ test("a populated pre-processing library upgrades atomically, reindexes, and reu
   });
   const processed = await call("process_library", { limit: 4 });
   assert.deepEqual(
-    processed.jobs.map((job: any) => [job.resultItemId, job.state]),
+    processed.jobs.filter((job: any) => job.kind === "link").map((job: any) => [job.resultItemId, job.state]),
     [
       [active, "complete"],
       [removed, "terminal"],

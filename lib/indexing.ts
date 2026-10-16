@@ -31,7 +31,10 @@ export async function indexSavedSource(
   for (const passage of passages) {
     if (signal.aborted || Date.now() + 500 >= deadline)
       return {
-        state: "retryable",
+        state:
+          completed > Number(job.checkpoint.completed ?? 0)
+            ? "continue"
+            : "retryable",
         error: "Indexing checkpoint saved; resume processing to continue.",
         checkpoint: { completed },
       };

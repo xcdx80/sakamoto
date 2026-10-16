@@ -52,7 +52,7 @@ export async function processingStatus(
 }
 
 export type ProcessingOutcome = {
-  state: "complete" | "terminal" | "retryable" | "pdf_pending";
+  state: "complete" | "terminal" | "retryable" | "pdf_pending" | "continue";
   error?: string;
   article?: Article;
   canonicalUrl?: string;
@@ -224,6 +224,21 @@ export async function processLibrary(
         error: "Processing interrupted. Try again after the retry time.",
       };
     }
+    // Healthy time-slice progress is separate from failures. A continuation must
+    // advance its durable checkpoint and cannot publish a partial source.
+    if (
+      result.state === "continue" &&
+      (!result.checkpoint ||
+        !Object.keys(result.checkpoint).length ||
+        JSON.stringify(result.checkpoint) === JSON.stringify(job.checkpoint) ||
+        Buffer.byteLength(JSON.stringify(result.checkpoint)) > 16_000 ||
+        result.article ||
+        result.publication)
+    )
+      result = {
+        state: "retryable",
+        error: "Processing did not produce a valid continuation checkpoint.",
+      };
     if (result.state === "retryable" && job.attempts >= row.max_attempts)
       result = { ...result, state: "terminal" };
     const a = result.article,

@@ -698,3 +698,151 @@ test("legacy PDF type inference and returned read links open the exact saved sou
   assert.equal(document.doc.blocks[0].id, found.results[0].address.blockId);
   assert.equal(document.doc.blocks[0].runs[0].text, found.results[0].excerpt);
 });
+
+test("healthy bounded indexing continues beyond eight windows without consuming failure retries", async () => {
+  const { processLibrary } = await import("../lib/processing");
+  const { searchEvidence } = await import("../lib/retrieval");
+  const originalFetch = globalThis.fetch,
+    originalNow = Date.now;
+  let now = originalNow(),
+    calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    calls++;
+    now += 9000;
+    return Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  };
+  try {
+    await shelveForUser(
+      "continuation-reader",
+      { id: "long-window", title: "Windowed source" },
+      {
+        id: "long-window",
+        title: "Windowed source",
+        blocks: Array.from({ length: 20 }, (_, n) => ({
+          id: "b" + n,
+          type: "p",
+          runs: [{ text: `Independent observatory measurement number ${n}.` }],
+        })),
+      },
+    );
+    now += 1000;
+    let state = "pending";
+    let windows = 0;
+    while (state !== "complete" && windows < 12) {
+      const result = await processLibrary("continuation-reader", { limit: 1 });
+      state = result.jobs[0].state;
+      now = Math.max(now, Date.parse(result.jobs[0].nextAttemptAt) + 1);
+      assert.notEqual(
+        state,
+        "terminal",
+        "ordinary progress must remain resumable",
+      );
+      windows++;
+    }
+    assert.equal(state, "complete");
+    assert.ok(windows > 8);
+    assert.equal(calls, 20);
+    const found = await searchEvidence("continuation-reader", {
+      query: "astronomical observations",
+    });
+    assert.equal(found.mode, "hybrid");
+    assert.equal(found.results[0].itemId, "long-window");
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+  }
+});
+
+test("a metadata-only item receives its first indexing job when source text arrives at revision one", async () => {
+  const { POST: sync } = await import("../app/api/sync/route");
+  const { processLibrary, processingStatus } =
+    await import("../lib/processing");
+  const { searchEvidence } = await import("../lib/retrieval");
+  const { pullRows } = await import("../lib/db");
+  const identity = makeToken();
+  const owner = "first-text-reader";
+  await createToken(owner, identity.id, identity.hash, "First text fixture");
+  const push = (row: unknown) =>
+    sync(
+      new Request("http://localhost/api/sync", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + identity.token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ changes: { articles: [row] } }),
+      }),
+    );
+  const metadata = { id: "first-text", title: "Metadata before text" };
+  assert.equal(
+    (
+      await push({
+        id: metadata.id,
+        articleId: metadata.id,
+        data: metadata,
+        revision: 0,
+        deleted: false,
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await processingStatus(owner)).jobs.length, 0);
+  const doc = {
+    ...metadata,
+    blocks: [
+      {
+        id: "support",
+        type: "p",
+        runs: [{ text: "First observatory source document." }],
+      },
+    ],
+  };
+  const supplied = await (
+    await push({
+      id: metadata.id,
+      articleId: metadata.id,
+      data: metadata,
+      doc,
+      revision: 1,
+      sourceRevision: 1,
+      changedFields: [],
+      deleted: false,
+    })
+  ).json();
+  assert.equal(supplied.accepted[0].sourceRevision, 1);
+  assert.equal((await processingStatus(owner)).jobs[0]?.state, "pending");
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({
+      embedding: { values: [1, ...Array(767).fill(0)] },
+      usageMetadata: { promptTokenCount: 20 },
+    });
+  };
+  try {
+    await processLibrary(owner, { limit: 1 });
+    assert.equal(
+      (await searchEvidence(owner, { query: "star measurements" })).mode,
+      "hybrid",
+    );
+    const row = (await pullRows(owner)).changes.articles.at(-1)!;
+    await push({
+      id: metadata.id,
+      articleId: metadata.id,
+      data: { ...row.data, title: "Manual title" },
+      revision: row.revision,
+      sourceRevision: 1,
+      changedFields: ["title"],
+      deleted: false,
+    });
+    assert.equal((await processLibrary(owner)).processed, 0);
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

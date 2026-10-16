@@ -83,7 +83,7 @@ end $$;
 
 create function schedule_source_indexing() returns trigger language plpgsql as $$
 begin
- if not new.deleted and new.doc is not null and (TG_OP='INSERT' or old.deleted or old.source_revision<>new.source_revision) then
+ if not new.deleted and new.doc is not null and (TG_OP='INSERT' or old.deleted or old.source_revision<>new.source_revision or old.doc is null) then
   insert into processing_jobs(user_id,source_id,source_revision,kind,target)
   values(new.user_id,new.id,new.source_revision,'indexing','gemini-embedding-2:768:search-prefix-v1:block-600-overlap-80-v1')
   on conflict(user_id,source_id,source_revision,kind,target) do update set
@@ -105,3 +105,18 @@ begin
  return new;
 end $$;
 create trigger articles_indexing_status before insert or update on articles for each row execute function prepare_indexing_status();
+
+-- Keep healthy bounded progress outside the failure allowance. The existing
+-- completion retains all lease/source fences, with this adjustment in the same transaction.
+alter function complete_processing(text,bigint,text,timestamptz,text,text,jsonb,jsonb,jsonb,text[],jsonb) rename to complete_processing_attempt;
+create function complete_processing(p_owner text,p_job bigint,p_token text,p_now timestamptz,p_state text,p_error text,p_checkpoint jsonb,p_data jsonb,p_doc jsonb,p_aliases text[],p_publication jsonb default null)
+returns boolean language plpgsql as $$
+declare finished boolean;
+begin
+ if p_state='continue' and (p_checkpoint is null or p_data is not null or p_doc is not null or p_publication is not null) then raise exception 'Invalid processing continuation'; end if;
+ finished:=complete_processing_attempt(p_owner,p_job,p_token,p_now,case when p_state='continue' then 'pending' else p_state end,case when p_state='continue' then null else p_error end,p_checkpoint,p_data,p_doc,p_aliases,p_publication);
+ if finished and p_state='continue' then
+  update processing_jobs set attempts=greatest(0,attempts-1),next_attempt_at=greatest(p_now,clock_timestamp()) where user_id=p_owner and id=p_job;
+ end if;
+ return finished;
+end $$;

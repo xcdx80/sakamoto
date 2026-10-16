@@ -162,12 +162,6 @@ function ReaderInner({ article }: { article: Article }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (!articleEl) return;
-    const block = new URLSearchParams(window.location.search).get("passage");
-    if (block && article.blocks.some((b) => b.id === block)) jumpToBlock(block);
-  }, [articleEl, article, jumpToBlock]);
-
   const api = useMemo<ReaderApi>(
     () => ({
       ix,
@@ -300,6 +294,12 @@ function ReaderInner({ article }: { article: Article }) {
   useEffect(() => {
     if (!hydrated || !articleEl || resumed.current) return;
     resumed.current = true;
+    // Explicit evidence navigation wins over saved progress and its later RAF.
+    const passage = new URLSearchParams(window.location.search).get("passage");
+    if (passage && article.blocks.some((block) => block.id === passage)) {
+      jumpToBlock(passage);
+      return;
+    }
     // Opened from a link to one highlight (the home page's daily one): go there, not to where you left off.
     const hlId = new URLSearchParams(window.location.search).get("hl");
     const hl = hlId ? (useStore.getState().highlights[articleId] ?? []).find((h) => h.id === hlId) : undefined;

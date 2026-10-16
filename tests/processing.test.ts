@@ -649,7 +649,7 @@ test("existing canonical URL variants reuse the original item and respect remove
         }),
       });
       const processed = await a.call("process_library", { limit: 1 });
-      const job = processed.jobs[0];
+      const job = processed.jobs.find((j: any) => j.kind === "link");
       assert.equal(job.resultItemId, id);
       assert.equal(job.state, removed ? "terminal" : "complete");
       const shelf = (await a.call("search_library", {})).results;
