@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, FileText, MessageSquare, MoreHorizontal, Newspaper, Star, Trash2, X } from "lucide-react";
+import { reclassifyItem } from "@/lib/processing-client";
 import { fmtMinutes, TOPIC, TOPICS, type Book, type TopicKey } from "@/lib/library";
 
 export type LibraryView = "grid" | "list";
@@ -38,7 +39,7 @@ export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, 
                 {b.dek && <p className="content-card-dek">{b.dek}</p>}
               </div>
               <div className="content-card-reading">
-                {b.processing?.classification === "pending" && <span>Classification pending</span>}
+                {b.processing?.classification && b.processing.classification !== "complete" && <span title={b.processing.classificationMessage}>Classification {b.processing.classification}</span>}
                 {b.processing?.indexing === "pending" && <span>Indexing pending</span>}
                 <span>{fmtMinutes(b.minutes)} read</span>
                 {b.pct >= 1 ? <span className="content-read-state"><Check size={12} aria-hidden /> Read</span> : b.pct > 0 ? <span className="content-read-state">{Math.round(b.pct * 100)}% read</span> : b.sample ? <span>Sample</span> : null}
@@ -70,6 +71,14 @@ export function ContentDetails({ book, onClose, onShelve, onRemove }: {
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [categoryBusy, setCategoryBusy] = useState(false);
+  const [categoryMessage, setCategoryMessage] = useState("");
+  const reclassify = async () => {
+    setCategoryBusy(true);setCategoryMessage("");
+    try {await reclassifyItem(book.id);setCategoryMessage("Category queued. Use Process now to advance it; manual choices are preserved.");}
+    catch(e){setCategoryMessage(e instanceof Error?e.message:"Could not schedule categorization.");}
+    finally{setCategoryBusy(false);}
+  };
   useEffect(() => { ref.current?.showModal(); }, []);
 
   return (
@@ -95,6 +104,7 @@ export function ContentDetails({ book, onClose, onShelve, onRemove }: {
             <button className="content-primary" type="submit">Save changes</button>
           </div>
         </form>}
+        {!book.sample && <div><button type="button" disabled={categoryBusy} onClick={reclassify}>{categoryBusy ? "Scheduling…" : "Reclassify"}</button><p role="status">{categoryMessage}</p></div>}
         <div className="content-detail-links">
           <Link href={`/read/${book.id}`}>Open reader <ArrowUpRight size={15} aria-hidden /></Link>
           {book.url && <a href={book.url} target="_blank" rel="noreferrer">Original source <ArrowUpRight size={15} aria-hidden /></a>}

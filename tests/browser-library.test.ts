@@ -98,38 +98,22 @@ test("a signed-out reader never fetches private server text into anonymous stora
   assert.equal(await fetchText("server-private"), null);
 });
 
-test("a pending classification preserves manual tags independently from an unset topic", async () => {
-  const { shelveText } = await import("../lib/shelving");
+test("explicit server categorization preserves local manual fields until an account-bound sync", async () => {
+  const { reclassifyItem } = await import("../lib/processing-client");
   store.useStore.getState().activateAccount("manual-category-owner");
   const article = { id: "classification-race", title: "Manual tags", origin: "paste" as const, blocks: [] };
   store.useStore.getState().addToLibrary(article, 10);
-  let resolve!: (response: Response) => void;
-  globalThis.fetch = () =>
-    new Promise<Response>((r) => {
-      resolve = r;
-    });
-  const pending = shelveText(article);
-  store.useStore.getState().shelve(article.id, { tags: ["my manual tag"] });
-  resolve(Response.json({ topic: "science", tags: ["automatic tag"], scene: "A desk" }));
-  await pending;
-  assert.deepEqual(store.useStore.getState().library[0].tags, ["my manual tag"]);
-  assert.equal(store.useStore.getState().library[0].topic, "science");
-});
-
-test("explicitly empty manual tags stay empty through later automatic classification", async () => {
-  const { shelveText } = await import("../lib/shelving");
-  store.useStore.getState().activateAccount("cleared-manual-category");
-  const article = { id: "manual-empty", title: "Empty tags", origin: "paste" as const, blocks: [] };
-  store.useStore.getState().addToLibrary(article, 2);
-  store.useStore.getState().shelve(article.id, { tags: [] });
-  globalThis.fetch = async () => Response.json({ topic: "science", tags: ["automatic"], scene: "A desk" });
-  await shelveText(article);
+  store.useStore.getState().shelve(article.id, { tags: [], topic: "work" });
+  let request: RequestInit | undefined;
+  globalThis.fetch = async (_url, init) => { request = init; return Response.json({jobId:"1",state:"pending"}); };
+  await reclassifyItem(article.id);
   assert.deepEqual(store.useStore.getState().library[0].tags, []);
-  assert.equal(store.useStore.getState().library[0].topic, "science");
+  assert.equal(store.useStore.getState().library[0].topic, "work");
+  assert.equal(new Headers(request!.headers).get("X-Sakamoto-Owner"), "manual-category-owner");
+  assert.deepEqual(JSON.parse(request!.body as string), {itemId:article.id,reclassify:true});
 });
 
 test("accepted posts remain readable in grid/list filters while pending processing does not start legacy paid sorting", async () => {
-  const { backfill } = await import("../lib/shelving");
   const { toLibraryBooks, filterBooks } = await import("../lib/library");
   const { ContentCards } = await import("../components/library/ContentCards");
   const { createElement } = await import("react");
@@ -139,7 +123,6 @@ test("accepted posts remain readable in grid/list filters while pending processi
   store.useStore.getState().applyRemote({ articles: [{ id: item.id, articleId: item.id, data: item, deleted: false, revision: 1 }] });
   let providerCalls = 0;
   globalThis.fetch = async () => { providerCalls++; return Response.json({ topic: "science", tags: [] }); };
-  await backfill(store.useStore.getState().library);
   assert.equal(providerCalls, 0);
   const state = store.useStore.getState();
   const books = filterBooks(toLibraryBooks({ library: state.library, progress: state.progress, highlights: state.highlights, hydrated: true, hiddenSamples: [] }), { contentType: "post" });
