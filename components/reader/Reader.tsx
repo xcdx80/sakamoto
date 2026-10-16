@@ -27,6 +27,7 @@ import { Margin } from "./Margin";
 import { Notebook } from "./Notebook";
 import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
+import { LinkedDocuments } from "./LinkedDocuments";
 import { LinkedDiscoveries } from "./LinkedDiscoveries";
 import { TopBar } from "./TopBar";
 import { ThreadReading } from "./ThreadReading";
@@ -547,6 +548,7 @@ function ReaderInner({ article }: { article: Article }) {
                   )}
                 </div>
                 <LinkedDiscoveries key={article.id} itemId={article.id} />
+                <LinkedDocuments key={"links-"+article.id} itemId={article.id} />
                 {article.post && <p className="focus-hide mt-4 text-[13px] text-ink-3">Completeness reported by agent: {article.post.completeness.status}.{article.post.completeness.reason ? ` ${article.post.completeness.reason}` : ""}</p>}
                 <CarefulRead article={article} />
                 <div className="focus-hide rise" style={{ animationDelay: "200ms" }}>

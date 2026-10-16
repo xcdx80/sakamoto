@@ -225,8 +225,9 @@ export async function fetchWebSource(
           kind: "pdf",
         };
       }
-      const limit =
-        options.pdf && type.includes("application/pdf")
+      const sniffPdf = Boolean(options.pdf && (!type || type.includes("application/octet-stream")));
+      let limit =
+        options.pdf && (type.includes("application/pdf") || sniffPdf)
           ? 25_000_000
           : 6_000_000;
       if (Number(response.headers.get("content-length")) > limit) {
@@ -240,12 +241,17 @@ export async function fetchWebSource(
       const reader = response.body?.getReader();
       const parts: Uint8Array[] = [];
       let length = 0;
+      let prefix = "";
       if (reader)
         try {
           while (true) {
             const { value, done } = await within(reader.read(), signal);
             if (done) break;
             length += value.byteLength;
+            if (sniffPdf && prefix.length < 5) {
+              prefix += new TextDecoder().decode(value.slice(0,5-prefix.length));
+              if (prefix.length === 5 && prefix !== "%PDF-") limit = 6_000_000;
+            }
             if (length > limit) {
               await reader.cancel();
               return {

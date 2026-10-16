@@ -207,9 +207,8 @@ test("MCP evidence search finds a saved full post while metadata search retains 
 
 test("the shared durable processing operation indexes curated passages and ranks paraphrase, multilingual and exact evidence", async () => {
   const { processLibrary } = await import("../lib/processing");
-  const { retrievalFixtures, fixtureVector } = await import(
-    "./retrieval-fixtures"
-  );
+  const { retrievalFixtures, fixtureVector } =
+    await import("./retrieval-fixtures");
   process.env.GOOGLE_API_KEY = "fixture-google";
   const original = globalThis.fetch;
   let calls = 0;
@@ -582,9 +581,8 @@ test("source changes during paid indexing and deletions during paid query embedd
 
 test("a resumable rebuild ignores incompatible persisted vectors and publishes only the current contract", async () => {
   const { processLibrary } = await import("../lib/processing");
-  const { searchEvidence, scheduleSearchRebuild } = await import(
-    "../lib/retrieval"
-  );
+  const { searchEvidence, scheduleSearchRebuild } =
+    await import("../lib/retrieval");
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -771,9 +769,8 @@ test("healthy bounded indexing continues beyond eight windows without consuming 
 
 test("a metadata-only item receives its first indexing job when source text arrives at revision one", async () => {
   const { POST: sync } = await import("../app/api/sync/route");
-  const { processLibrary, processingStatus } = await import(
-    "../lib/processing"
-  );
+  const { processLibrary, processingStatus } =
+    await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const { pullRows } = await import("../lib/db");
   const identity = makeToken();
@@ -952,9 +949,7 @@ test("planned job deadlines during paid embedding preserve progress beyond eight
 });
 
 test("zero-progress embedding timeouts retain the four automatic and eight deliberate failure limit", async () => {
-  const { processLibrary, processingStatus } = await import(
-    "../lib/processing"
-  );
+  const { processLibrary, processingStatus } = await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const originalFetch = globalThis.fetch,
     originalNow = Date.now,
@@ -994,11 +989,9 @@ test("zero-progress embedding timeouts retain the four automatic and eight delib
         ],
       },
     );
-    // Claim against the source's actual scheduled time, not elapsed setup speed.
-    const ready = (await processingStatus("zero-progress-reader")).jobs.find(
-      (j) => j.kind === "indexing",
-    )!;
-    now = Math.max(now, Date.parse(ready.nextAttemptAt) + 1);
+    // Scheduling uses the database clock; another fixture may hold its publication lock.
+    const queued = await processingStatus("zero-progress-reader");
+    now = Math.max(now, Date.parse(queued.jobs.find((j) => j.kind === "indexing")!.nextAttemptAt) + 1);
     let job;
     for (let attempt = 1; attempt <= 8; attempt++) {
       const result = await processLibrary("zero-progress-reader", {
