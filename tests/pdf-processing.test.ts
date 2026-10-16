@@ -126,3 +126,31 @@ test('HTTP source-filtered status and supplied-text recovery remain owner bound 
   assert.equal((await recover(a.request('/api/processing/recover',{jobId:jobs[0].id,text:'Do not resurrect the removed identity.'}))).status,409);
   configureArticleFetch({});
 });
+
+test('HTTP text recovery preserves a short source body when the reader supplies no title', async () => {
+  const {scanPdf}=await import('./pdf-fixtures');
+  const {POST:recover}=await import('../app/api/processing/recover/route');
+  configureArticleFetch({lookup:async()=>[{address:'93.184.216.34',family:4}],request:async()=>new Response(scanPdf(),{headers:{'content-type':'application/pdf'}})});
+  const a=await account(); await a.save('710',['https://public.example/caption.pdf']);
+  const job=(await a.call('process_library')).jobs[0];
+  const response=await recover(a.request('/api/processing/recover',{jobId:job.id,text:'Important extracted insight'}));
+  assert.equal(response.status,200);
+  const doc=await a.read((await response.json()).itemId);
+  assert.equal(doc.title,'Recovered linked document');
+  assert.equal(doc.blocks.map((b:any)=>b.runs.map((r:any)=>r.text).join('')).join(''),'Important extracted insight');
+  configureArticleFetch({});
+});
+
+test('MCP recovery keeps literal Markdown-looking identifiers and punctuation in the body independently of its title', async () => {
+  const {scanPdf}=await import('./pdf-fixtures');
+  configureArticleFetch({lookup:async()=>[{address:'93.184.216.34',family:4}],request:async()=>new Response(scanPdf(),{headers:{'content-type':'application/pdf'}})});
+  const a=await account(); await a.save('711',['https://public.example/literal.pdf']);
+  const job=(await a.call('process_library')).jobs[0];
+  const text='# Source heading\n\nThe variable x_y_z must be preserved — exactly.\n\n**literal** [notation](https://example.com) and $a_b$\n';
+  const receipt=await a.call('supply_link_text',{jobId:job.id,title:'Separate reader title',text});
+  const doc=await a.read(receipt.itemId);
+  assert.equal(doc.title,'Separate reader title');
+  assert.equal(doc.blocks.map((b:any)=>b.runs.map((r:any)=>r.text).join('')).join(''),text);
+  assert.ok(doc.blocks.every((b:any)=>b.type==='p'&&b.runs.every((r:any)=>!r.em&&!r.strong&&!r.href&&!r.code)));
+  configureArticleFetch({});
+});
