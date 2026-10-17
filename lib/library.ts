@@ -1,14 +1,15 @@
-/**
- * The library: every text on your shelf, shelved by topic. A fixed set of
- * topics, each with a cloth colour (four shades, so its books look like a
- * set), a painted plate and a small clay icon. Books get their spine, height
- * and colour from their id, so the same book always looks the same.
- *
- * Shared by the client (the shelves) and the server (the classifier and the
- * agent server): no React, no store, no fetches.
- */
+/** Shared library presentation, classification and filtering rules. No external I/O. */
+
+import { contentTypeOf, readingMinutes, tidyTitle, wordCount, type ContentType } from "./article";
+import { SAMPLE_SHELF } from "./classics";
+import { SAMPLES } from "./samples";
+import type { Highlight, LibraryItem, Progress } from "./store";
+
+export { CONTENT_TYPES, contentTypeOf, type ContentType } from "./article";
 
 export type TopicKey =
+  | "ai-engineering"
+  | "distribution"
   | "ai"
   | "programming"
   | "infra"
@@ -48,6 +49,8 @@ export type Topic = {
 };
 
 export const TOPICS: Topic[] = [
+  { key: "ai-engineering", name: "AI engineering", shades: ["#5b4a9e", "#7a68bf", "#3b2f6e", "#a597d6"], inks: "deep violet and soft lavender", hint: "practical building, evaluating and operating AI applications, retrieval, agent orchestration and model integrations; general AI research belongs in ai", blurb: "Building reliable applications with models." },
+  { key: "distribution", name: "Distribution", shades: ["#7a5230", "#9a7050", "#563820", "#c9a585"], inks: "walnut brown and tan", hint: "acquiring audiences and customers: SEO, marketing channels, sales, content distribution and go-to-market execution; general company strategy belongs in business", blurb: "Helping useful things reach their audience." },
   { key: "ai", name: "AI", shades: ["#5b4a9e", "#7a68bf", "#3b2f6e", "#a597d6"], inks: "deep violet and soft lavender", hint: "machine learning, language models, AI research, AI products and agents", blurb: "Machines that learn: models, agents, research and what it all means." },
   { key: "programming", name: "Programming", shades: ["#2f4f8f", "#4a6fb3", "#1d3263", "#8aa6d8"], inks: "navy blue and cornflower blue", hint: "software engineering, languages, code, developer tools, open source, engineering practice", blurb: "How software is made, and the people who make it." },
   { key: "infra", name: "Infrastructure", shades: ["#6b6a2a", "#8b8a43", "#4a491a", "#bdbb7f"], inks: "olive and pale khaki", hint: "systems, cloud, GPUs, inference, databases, distributed systems, performance, devops", blurb: "The machinery underneath: systems, chips, clouds and the bills that come with them." },
@@ -72,21 +75,23 @@ export const TOPICS: Topic[] = [
   { key: "writing", name: "Writing", shades: ["#b0502d", "#cc7147", "#86381c", "#e6a580"], inks: "terracotta and burnt orange", hint: "writing, language, storytelling, journalism, communication", blurb: "Words, sentences and the craft of saying things clearly." },
   { key: "learning", name: "Learning", shades: ["#2c7a76", "#4c9b94", "#1c5654", "#8cc4bd"], inks: "deep teal and pale sea-green", hint: "education, learning, teaching, memory, tools for thought, note-taking", blurb: "How we learn, remember and think with tools." },
   { key: "living", name: "Living", shades: ["#b0841f", "#cda03a", "#835f15", "#e5c97a"], inks: "mustard ochre and olive green", hint: "life, relationships, attention, time, happiness, personal essays, food, travel", blurb: "Attention, time and the rest of life." },
-  { key: "unsorted", name: "Unsorted", shades: ["#5d5a55", "#7b776f", "#3f3d39", "#aaa59b"], inks: "warm grey and charcoal", hint: "", blurb: "Not shelved yet. Gloss sorts new texts as they arrive." },
+  { key: "unsorted", name: "Unsorted", shades: ["#5d5a55", "#7b776f", "#3f3d39", "#aaa59b"], inks: "warm grey and charcoal", hint: "", blurb: "Not categorized yet. Sakamoto sorts new texts as they arrive." },
 ];
 
 export const TOPIC = Object.fromEntries(TOPICS.map((t) => [t.key, t])) as Record<TopicKey, Topic>;
-export const isTopic = (v: unknown): v is TopicKey => typeof v === "string" && v in TOPIC;
+export const isTopic = (v: unknown): v is TopicKey => typeof v === "string" && Object.hasOwn(TOPIC, v);
 export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
 export type Book = {
+  processing?: LibraryItem["processing"];
   id: string;
   title: string;
   author: string;
   year?: number;
   url?: string;
   topic: TopicKey;
+  contentType: ContentType;
   minutes: number;
   dek?: string;
   tags: string[];
@@ -191,17 +196,17 @@ export function lookOf(b: Pick<Book, "id" | "topic" | "minutes">): Look {
 
 /* ---------- pictures ---------- */
 
-export const topicArtSrc = (k: TopicKey) => `/library/topics/${k}.webp`;
-export const iconSrc = (k: TopicKey | TagKey) => `/library/icons/${k}.webp`;
+export const topicArtSrc = (k: TopicKey) => `/library/topics/${k === "ai-engineering" ? "ai" : k === "distribution" ? "business" : k}.webp`;
+export const iconSrc = (k: TopicKey | TagKey) => `/library/icons/${k === "ai-engineering" ? "ai" : k === "distribution" ? "business" : k}.webp`;
 
 /* ---------- shelving ---------- */
 
-export type Sort = "topic" | "recent" | "color" | "length";
+export type Sort = "topic" | "recent" | "title" | "color" | "length";
 
 export const SORTS: { key: Sort; label: string }[] = [
-  { key: "topic", label: "Topic" },
   { key: "recent", label: "Recent" },
-  { key: "color", label: "Colour" },
+  { key: "title", label: "Title" },
+  { key: "topic", label: "Topic" },
   { key: "length", label: "Length" },
 ];
 
@@ -211,6 +216,7 @@ export function sortBooks(books: Book[], sort: Sort): Book[] {
   const by = [...books];
   if (sort === "topic") by.sort((a, b) => TOPIC_ORDER[a.topic] - TOPIC_ORDER[b.topic] || a.added - b.added);
   if (sort === "recent") by.sort((a, b) => b.added - a.added);
+  if (sort === "title") by.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true }));
   if (sort === "color") by.sort((a, b) => lookOf(a).hue - lookOf(b).hue || lookOf(a).h - lookOf(b).h);
   if (sort === "length") by.sort((a, b) => a.minutes - b.minutes);
   return by;
@@ -245,6 +251,79 @@ export const TAGS: { key: TagKey; label: string; test: (b: Book) => boolean }[] 
 ];
 
 export const tagsOf = (b: Book) => TAGS.filter((t) => t.key !== "agent" && t.test(b));
+
+export type LibraryFilters = {
+  query?: string;
+  topic?: TopicKey | null;
+  status?: TagKey | null;
+  tag?: string | null;
+  contentType?: ContentType | null;
+};
+
+/** All selected facets intersect; every search word must occur in the searchable metadata. */
+export function filterBooks(books: Book[], filters: LibraryFilters): Book[] {
+  const words = filters.query?.toLowerCase().trim().split(/\s+/).filter(Boolean) ?? [];
+  const status = TAGS.find((tag) => tag.key === filters.status);
+  return books.filter((book) => {
+    if (filters.topic && book.topic !== filters.topic) return false;
+    if (status && !status.test(book)) return false;
+    if (filters.tag && !book.tags.includes(filters.tag)) return false;
+    if (filters.contentType && book.contentType !== filters.contentType) return false;
+    const text = `${book.title} ${book.author} ${TOPIC[book.topic].name} ${book.tags.join(" ")} ${book.year ?? ""} ${book.url ?? ""} ${book.contentType}`.toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+}
+
+export const tagOptions = (books: Book[]): string[] => [...new Set(books.flatMap((book) => book.tags))].sort((a, b) => a.localeCompare(b));
+
+export function libraryStats(books: Book[]) {
+  return {
+    count: books.length,
+    topics: new Set(books.filter((book) => book.topic !== "unsorted").map((book) => book.topic)).size,
+    hours: Math.max(1, Math.round(books.reduce((minutes, book) => minutes + book.minutes, 0) / 60)),
+    reading: books.filter((book) => book.pct > 0 && book.pct < 1).length,
+    read: books.filter((book) => book.pct >= 1).length,
+  };
+}
+
+export function bylineOf(source: { author?: string; source?: string; origin?: string }): string {
+  if (source.author) return source.author;
+  const name = source.source?.split(",")[0].trim();
+  if (name) return name.replace(/^www\./, "").replace(/\.(pdf|txt|md|markdown)$/i, "").replace(/\.(com|org|net|io|ai|dev|co|edu|blog|app)(\.[a-z]{2})?$/i, "");
+  return source.origin === "paste" ? "Pasted text" : source.origin === "file" ? "A file" : "Saved";
+}
+
+/** Samples stay visible until six own texts are saved, or once opened, unless hidden. */
+export const SAMPLES_UNTIL = 6;
+
+export function toLibraryBooks({ library, progress, highlights, hydrated, hiddenSamples }: {
+  library: LibraryItem[];
+  progress: Record<string, Progress>;
+  highlights: Record<string, Highlight[]>;
+  hydrated: boolean;
+  hiddenSamples: string[];
+}): Book[] {
+  const read = (id: string) => hydrated ? progress[id]?.pct ?? 0 : 0;
+  const marks = (id: string) => hydrated ? (highlights[id] ?? []).length : 0;
+  const ownCount = library.filter((item) => item.origin !== "sample").length;
+  const mine: Book[] = library.filter((item) => item.origin !== "sample" || !hiddenSamples.includes(item.id)).map((item) => ({
+    processing: item.processing, id: item.id, title: tidyTitle(item.title), author: bylineOf(item), year: item.year,
+    url: item.sourceUrl, topic: topicOf(item.topic), contentType: contentTypeOf(item),
+    minutes: readingMinutes(item.words), dek: item.dek, tags: item.tags ?? [],
+    favorite: Boolean(item.favorite), pct: read(item.id), highlights: marks(item.id),
+    added: item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
+    agent: item.addedBy === "agent", sample: item.origin === "sample",
+  }));
+  const savedIds = new Set(library.map((item) => item.id));
+  const samples: Book[] = SAMPLES.filter((article) => !savedIds.has(article.id) && !hiddenSamples.includes(article.id) && (ownCount < SAMPLES_UNTIL || read(article.id) > 0)).map((article) => ({
+    id: article.id, title: article.title, author: article.author ?? "", year: yearOf(article.published),
+    topic: SAMPLE_SHELF[article.id]?.topic ?? "unsorted", contentType: contentTypeOf(article),
+    minutes: readingMinutes(wordCount(article)), dek: article.dek, tags: [], favorite: false,
+    pct: read(article.id), highlights: marks(article.id), added: 0, cover: SAMPLE_SHELF[article.id]?.cover,
+    agent: false, sample: true,
+  }));
+  return [...mine, ...samples];
+}
 
 export const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
 

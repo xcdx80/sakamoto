@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { Atkinson_Hyperlegible_Next, Literata, Newsreader, Schibsted_Grotesk } from "next/font/google";
 import { BOOT_SCRIPT } from "@/lib/settings";
 import "./globals.css";
 import { Tooltips } from "@/components/ui/Tooltips";
 import { ClerkProvider } from "@clerk/nextjs";
-import { SyncAgent } from "@/components/account/SyncAgent";
+import { AccountLibrary } from "@/components/account/SyncAgent";
 import { OG_IMAGE, SITE_URL } from "@/lib/brand";
 
 const serif = Newsreader({
@@ -41,15 +40,15 @@ const legible = Atkinson_Hyperlegible_Next({
   adjustFontFallback: false,
 });
 
-const DESCRIPTION = "Highlight any line and ask it anything. An open model writes the answer in the margin, beside the words, citing the paragraphs it used.";
+const DESCRIPTION = "Ask your knowledge base. Find answers in your saved posts, articles and documents, with citations back to the source.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Gloss", template: "%s" },
+  title: { default: "Sakamoto", template: "%s" },
   description: DESCRIPTION,
-  applicationName: "Gloss",
-  openGraph: { type: "website", siteName: "Gloss", title: "Gloss", description: DESCRIPTION, url: "/", images: [OG_IMAGE] },
-  twitter: { card: "summary_large_image", title: "Gloss", description: DESCRIPTION, images: [OG_IMAGE.url] },
+  applicationName: "Sakamoto",
+  openGraph: { type: "website", siteName: "Sakamoto", title: "Sakamoto", description: DESCRIPTION, url: "/", images: [OG_IMAGE] },
+  twitter: { card: "summary_large_image", title: "Sakamoto", description: DESCRIPTION, images: [OG_IMAGE.url] },
 };
 
 export const viewport: Viewport = {
@@ -83,12 +82,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ClerkProvider appearance={CLERK_APPEARANCE}>
-          {children}
-          <SyncAgent />
+          <AccountLibrary>{children}</AccountLibrary>
         </ClerkProvider>
         <Tooltips />
-        {/* Plausible: cookieless page views, from the production site only, so previews and local runs never count. */}
-        {process.env.VERCEL_ENV === "production" && <Script defer data-domain="usegloss.io" src="https://plausible.io/js/script.js" strategy="afterInteractive" />}
       </body>
     </html>
   );

@@ -4,15 +4,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
 import { Block, type Mark } from "../components/reader/Block";
+import { SourceText } from "../components/reader/SourceText";
 import type { Block as BlockData } from "../lib/article";
 import { readerMarkdownBlocks } from "../lib/reader-markdown";
 
 function read(input: BlockData | BlockData[], marks: Mark[] = []) {
   const blocks = Array.isArray(input) ? input : [input];
   const markdown = readerMarkdownBlocks(blocks);
-  const html = renderToStaticMarkup(createElement("div", { className: "prose-read" }, blocks.map((block, i) => createElement(Block, {
+  const html = renderToStaticMarkup(createElement(SourceText, { contentType: "post", children: createElement("div", { className: "prose-read" }, blocks.map((block, i) => createElement(Block, {
     key: block.id, block, markdown: markdown.get(block.id), n: i + 1, marks, activeGloss: null, hoverGloss: null, activeHighlight: null, fresh: null, cursor: false, hasAt: false, onAsk() {},
-  }))));
+  }))) }));
   return parseHTML(html).document;
 }
 
@@ -111,24 +112,19 @@ test("Markdown hard line breaks remain inline inside their paragraph", () => {
   assert.equal(document.querySelector(".blk-text p div"), null);
 });
 
-test("reading imported Markdown aloud skips code and speaks link labels without syntax", async () => {
-  const saved = new Map<string, PropertyDescriptor | undefined>();
-  const stub = (name: string, value: unknown) => { saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { value, configurable: true, writable: true }); };
-  const requests: string[] = [];
-  stub("localStorage", { getItem: (key: string) => key === "together:api-key" ? "fixture-key" : null });
-  stub("navigator", {});
-  stub("Audio", class { src = ""; play() { return Promise.resolve(); } pause() {} removeAttribute() {} });
-  stub("fetch", async (_url: unknown, init: RequestInit) => { requests.push(JSON.parse(String(init.body)).text); return new Response(JSON.stringify({ error: "Fixture stops before audio playback" }), { status: 503 }); });
-  const { startListening, stopListening } = await import("../components/reader/Listen");
+
+test("Markdown speech text skips code while retired playback performs no requests", async () => {
+  const { readerSpeechText } = await import("../lib/reader-markdown");
+  const { textToArticle } = await import("../lib/article");
+  const { ListenButton } = await import("../components/reader/Listen");
+  const article = textToArticle("# Narration\n\n```js\nconsole.log('do not narrate code');\n```\n\nRead [the guide](https://example.com) &amp; **learn**.", { origin: "paste" });
+  assert.deepEqual([...readerSpeechText(article.blocks).values()].filter(Boolean), ["Read the guide & learn."]);
+  const originalFetch=globalThis.fetch;
+  let requests=0;
+  globalThis.fetch=async()=>{requests++;throw new Error("Retired playback cannot dispatch.");};
   try {
-    const { textToArticle } = await import("../lib/article");
-    const { indexArticle } = await import("../lib/doc");
-    const article = textToArticle("# Narration\n\n```js\nconsole.log('do not narrate code');\n```\n\nRead [the guide](https://example.com) &amp; **learn**.", { origin: "paste" });
-    startListening(indexArticle(article), null);
-    assert.deepEqual(requests, ["Read the guide & learn."]);
-  } finally {
-    stopListening();
-    await new Promise(resolve => setImmediate(resolve));
-    for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
-  }
+    const markup=renderToStaticMarkup(createElement(ListenButton,{from:()=>null}));
+    assert.equal(parseHTML(markup).document.querySelector('button')?.hasAttribute('disabled'),true);
+    assert.equal(requests,0);
+  } finally {globalThis.fetch=originalFetch;}
 });

@@ -1,15 +1,9 @@
 "use client";
 
-/**
- * Painted covers in the browser: kept in their own IndexedDB store, fetched
- * from the account when they were painted on another device, and painted on
- * request when the reader has turned painted covers on (off by default; each
- * one is a call to an image model).
- */
+import { accountEpoch, accountScope, scopedKey } from "./account-scope";
 
-import { readApiKey } from "./ask";
-import { isTopic } from "./library";
-import { useStore, type LibraryItem } from "./store";
+/** Existing painted covers remain cached and readable; new generation is unavailable. */
+
 
 const DB = "gloss-covers";
 const STORE = "covers";
@@ -41,67 +35,30 @@ const urls = new Map<string, string>();
 
 /** A painted cover's picture, as an object URL: this device first, then the account. */
 export async function paintedUrl(id: string): Promise<string | null> {
-  const hit = urls.get(id);
+  const epoch = accountEpoch(),
+    key = scopedKey(id);
+  const hit = urls.get(key);
   if (hit) return hit;
-  let blob = (await tx<Blob>("readonly", (s) => s.get(id))) ?? null;
+  let blob = (await tx<Blob>("readonly", (s) => s.get(key))) ?? null;
+  if (accountEpoch() !== epoch) return null;
   if (!blob) {
+    if (!accountScope()) return null;
     try {
-      const res = await fetch(`/api/covers/${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/covers/${encodeURIComponent(id)}`, {headers:{"X-Sakamoto-Owner":accountScope()!}});
       if (res.ok) {
         blob = await res.blob();
-        await tx("readwrite", (s) => s.put(blob, id));
+        if (accountEpoch() !== epoch) return null;
+        await tx("readwrite", (s) => s.put(blob, key));
       }
     } catch {}
   }
-  if (!blob) return null;
+  if (!blob || accountEpoch() !== epoch) return null;
   const url = URL.createObjectURL(blob);
-  urls.set(id, url);
+  urls.set(key, url);
   return url;
 }
 
-export const forgetCover = (id: string) => tx("readwrite", (s) => s.delete(id));
-
-/** Paint one text's cover. "rest" means the free allowance is spent, so the queue should stop. */
-export async function paint(item: LibraryItem): Promise<"ok" | "rest" | "error"> {
-  if (!item.scene || !isTopic(item.topic)) return "error";
-  try {
-    const res = await fetch("/api/covers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id, scene: item.scene, topic: item.topic, apiKey: readApiKey() || undefined }),
-    });
-    if (res.status === 429 || res.status === 401) return "rest";
-    if (!res.ok) return "error";
-    const blob = await res.blob();
-    await tx("readwrite", (s) => s.put(blob, item.id));
-    urls.delete(item.id);
-    useStore.getState().shelve(item.id, { cover: "painted" });
-    return "ok";
-  } catch {
-    return "error";
-  }
-}
-
-let painting = false;
-
-/** Paint every sorted text that has no cover yet, until the allowance runs out. */
-export async function paintAll(items: LibraryItem[]): Promise<void> {
-  if (painting) return;
-  painting = true;
-  try {
-    // Two at a time: a picture can take from a few seconds to most of a minute.
-    const taken = new Set<string>();
-    let rest = false;
-    const worker = async () => {
-      for (;;) {
-        const next = useStore.getState().library.find((x) => !x.cover && x.scene && !taken.has(x.id) && items.some((i) => i.id === x.id));
-        if (!next || rest) return;
-        taken.add(next.id);
-        if ((await paint(next)) === "rest") rest = true;
-      }
-    };
-    await Promise.all([worker(), worker()]);
-  } finally {
-    painting = false;
-  }
-}
+export const forgetCover = (id: string) => {
+  const key = scopedKey(id);
+  return tx("readwrite", (s) => s.delete(key));
+};

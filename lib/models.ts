@@ -1,6 +1,6 @@
 /**
  * The model allow-list and wire types. Safe to import on the client: no keys,
- * no fetches. lib/together.ts does the network side.
+ * no fetches. Provider adapters own external I/O.
  */
 
 export type ModelEntry = {
@@ -13,27 +13,18 @@ export type ModelEntry = {
   outPerM: number;
 };
 
-/**
- * The allow-list. Route and UI both read it. Bake-off 2026-10-09: 3 sample
- * texts x 8 tasks on the real prompts, answers scored blind by a judge.
- *   V4.1 Flash  0.23s to first token, $0.0006 an answer, 7.3/10, best in 11 of 24
- *   V4 Pro      0.58s, $0.0052, 6.5/10
- *   Kimi K3     0.86s, $0.0096, 6.3/10 (best gloss summaries, weak on Related)
- *   GLM-5.3     0.36s at reasoning_effort low, $0.0048, 6.3/10, 3 of the 4 factual errors
- * GLM-5.3 ignores every thinking-off flag (default effort: a 60s summary).
- * Also left out: Qwen3.8 (prints its reasoning into content with thinking off).
- *
- * Flash won on quality as well as speed and cost, so it answers everything:
- * there was a "Deep" choice (V4 Pro, then Kimi K3) and it was dropped
- * 2026-10-09. Older answers and settings may still name "pro"; anything that
- * looks a model up goes through modelOf(), which falls back to Flash.
- */
+/** Luna is the active reader model. Flash remains addressable only for saved historical receipts. */
 export const MODELS = {
+  luna: {
+    id: "gpt-6-luna", label: "OpenAI Luna", short: "Luna",
+    blurb: "Answers with citations to the saved text.",
+    inPerM: 0.10, cachedPerM: 0.01, outPerM: 0.50,
+  },
   flash: {
     id: "deepseek-ai/DeepSeek-V4.1-Flash",
     label: "DeepSeek V4.1 Flash",
     short: "Quick",
-    blurb: "Answers in about half a second. Best for most questions.",
+    blurb: "Historical saved answer model.",
     inPerM: 0.3,
     cachedPerM: 0.006,
     outPerM: 1.2,
@@ -41,13 +32,13 @@ export const MODELS = {
 } as const satisfies Record<string, ModelEntry>;
 
 export type ModelKey = keyof typeof MODELS;
-export const DEFAULT_MODEL: ModelKey = "flash";
+export const DEFAULT_MODEL: ModelKey = "luna";
 
 export function isModelKey(v: unknown): v is ModelKey {
-  return typeof v === "string" && v in MODELS;
+  return typeof v === "string" && Object.hasOwn(MODELS, v);
 }
 
-/** A model key that is still on the list: a saved "pro" from before Deep was dropped becomes Flash. */
+/** Historical supported keys retain attribution; unavailable choices use the active reader model. */
 export const modelOf = (v: unknown): ModelKey => (isModelKey(v) ? v : DEFAULT_MODEL);
 
 export type Usage = {
@@ -79,3 +70,10 @@ export type StreamEvent =
   | { type: "usage"; usage: Usage }
   | { type: "done" }
   | { type: "error"; text: string };
+
+/** Neutral chat wire types shared by prompts and the selected answer adapter. */
+export type ToolCall = {id:string;type:"function";function:{name:string;arguments:string}};
+export type ChatMessage =
+  | {role:"system"|"user";content:string}
+  | {role:"assistant";content:string|null;tool_calls?:ToolCall[]}
+  | {role:"tool";content:string;tool_call_id:string};

@@ -6,6 +6,9 @@ import { createPortal } from "react-dom";
 import { BookOpen, BookmarkPlus, Check, Copy, Loader2, Plus, Trash2, X } from "lucide-react";
 import { importFromUrl, keep, looksLikeUrl } from "@/lib/import";
 import { normalizeUrl } from "@/lib/links";
+import { bookmarkWorkflow } from "@/lib/bookmark-workflow";
+import { agentConnections, makeAgentConnection, revokeAgentConnection } from "@/lib/agent-client";
+import { SITE_URL } from "@/lib/brand";
 import { useStore } from "@/lib/store";
 import { Mark, MarkStack, type AgentMark } from "./AgentMarks";
 import { Glyph } from "./Book";
@@ -14,9 +17,10 @@ export type AddTab = "links" | "agent";
 
 /**
  * Adding to the library: paste links (one or many), or connect an agent that
- * saves to it through the Gloss MCP server.
+ * saves to it through the Sakamoto MCP server.
  */
 export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab: (t: AddTab) => void; onClose: () => void; signedIn: boolean }) {
+  const account = useStore(s => s.scope);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -50,7 +54,7 @@ export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab
             <X size={17} />
           </button>
         </header>
-        {tab === "links" ? <Links /> : <Agent signedIn={signedIn} />}
+        {tab === "links" ? <Links /> : <Agent key={account ?? "anonymous"} signedIn={signedIn} />}
       </section>
     </div>,
     document.body
@@ -147,7 +151,7 @@ function Links() {
     <div className="mt-5">
       <p className="text-[19px] font-serif leading-tight text-ink">Save links to your library</p>
       <p className="mt-1 text-[13px] text-ink-3">
-        One or many, a line each. Gloss reads each page in and sorts it onto a topic. PDFs work too. Leaving Pocket, Instapaper or Raindrop?{" "}
+        One or many, a line each. Sakamoto reads each page in and sorts it onto a topic. PDFs work too. Leaving Pocket, Instapaper or Raindrop?{" "}
         <button type="button" onClick={() => fileRef.current?.click()} className="text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink">
           Drop its export here
         </button>
@@ -224,13 +228,13 @@ function Links() {
 }
 
 /**
- * Bookmarklets: one click on any page opens it in Gloss, in a new tab, to read now
+ * Bookmarklets: one click on any page opens it in Sakamoto, in a new tab, to read now
  * or to shelve for later (`/?url=` and `/?save=` on the home page).
  */
 function Bookmarklets() {
   const readRef = useRef<HTMLAnchorElement>(null);
   const saveRef = useRef<HTMLAnchorElement>(null);
-  const [origin, setOrigin] = useState("https://usegloss.io");
+  const [origin, setOrigin] = useState(SITE_URL);
   const code = (param: "url" | "save") => `javascript:void(window.open('${origin}/?${param}='+encodeURIComponent(location.href)))`;
   useEffect(() => setOrigin(window.location.origin), []);
   // React refuses javascript: links in JSX, so they are set by hand.
@@ -245,16 +249,16 @@ function Bookmarklets() {
       <p className="mt-1 text-[13px] text-ink-3">Drag one to your bookmarks bar, then click it on any article.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <a ref={readRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookOpen size={14} className="text-ink-3" /> Read in Gloss
+          <BookOpen size={14} className="text-ink-3" /> Read in Sakamoto
         </a>
         <a ref={saveRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookmarkPlus size={14} className="text-ink-3" /> Save to Gloss
+          <BookmarkPlus size={14} className="text-ink-3" /> Save to Sakamoto
         </a>
       </div>
       <details className="mt-3 text-[12.5px] text-ink-3">
         <summary className="cursor-pointer select-none hover:text-ink-2">On a phone</summary>
         <div className="mt-2">
-          <CopyBlock title="Bookmark any page, then edit the bookmark" body="Paste this as its address and name it Save to Gloss." text={code("save")} />
+          <CopyBlock title="Bookmark any page, then edit the bookmark" body="Paste this as its address and name it Save to Sakamoto." text={code("save")} />
         </div>
       </details>
     </div>
@@ -272,20 +276,20 @@ const LABELS: { label: string; mark?: AgentMark }[] = [
 ];
 
 function Agent({ signedIn }: { signedIn: boolean }) {
+  const account = useStore(s => s.scope);
   const [conns, setConns] = useState<Conn[] | null>(null);
   const [made, setMade] = useState<{ token: string; label: string } | null>(null);
   const [label, setLabel] = useState("Grok Bot");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://usegloss.io";
+  const origin = typeof window !== "undefined" ? window.location.origin : SITE_URL;
 
   useEffect(() => {
-    if (!signedIn) return;
-    fetch("/api/agent-tokens")
-      .then((r) => r.json())
-      .then((j: { tokens?: Conn[] }) => setConns(j.tokens ?? []))
-      .catch(() => setConns([]));
-  }, [signedIn]);
+    let active = true;
+    setConns(null); setMade(null); setErr(null);
+    if (signedIn && account) agentConnections().then(c => { if(active) setConns(c); }, e => { if(active) setErr(e.message); });
+    return () => { active = false; };
+  }, [signedIn, account]);
 
   if (!signedIn)
     return (
@@ -303,17 +307,17 @@ function Agent({ signedIn }: { signedIn: boolean }) {
   const create = async () => {
     setBusy(true);
     setErr(null);
-    const res = await fetch("/api/agent-tokens", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label }) });
-    const j = (await res.json().catch(() => ({}))) as { id?: string; token?: string; label?: string; error?: string };
-    setBusy(false);
-    if (!res.ok || !j.token || !j.id) return setErr(j.error ?? "Could not make a connection. Try again.");
-    setMade({ token: j.token, label: j.label ?? label });
-    setConns((c) => [{ id: j.id!, label: j.label ?? label, createdAt: new Date().toISOString(), lastUsedAt: null }, ...(c ?? [])]);
+    try {
+      const j = await makeAgentConnection(label);
+      setMade({ token: j.token, label: j.label });
+      setConns(c => [{id:j.id,label:j.label,createdAt:new Date().toISOString(),lastUsedAt:null}, ...(c??[])]);
+    } catch(e) { setErr(e instanceof Error?e.message:"Could not make a connection."); }
+    finally { setBusy(false); }
   };
 
   const revoke = async (id: string) => {
-    setConns((c) => c?.filter((x) => x.id !== id) ?? null);
-    await fetch(`/api/agent-tokens?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    try { await revokeAgentConnection(id); setConns(c => c?.filter(x => x.id !== id) ?? null); }
+    catch(e) { setErr(e instanceof Error?e.message:"Could not revoke the connection."); }
   };
 
   return (
@@ -369,25 +373,29 @@ function AgentIntro() {
       <div>
         <p className="font-serif text-[19px] leading-tight text-ink">Let your agent shelve for you</p>
         <p className="mt-1 text-[13px] leading-[1.5] text-ink-3">
-          Gloss has an MCP server. Give it to Grok Bot, Claude or ChatGPT, then ask: &ldquo;go through my X bookmarks from this month and save the articles to my Gloss library.&rdquo; Each one is read in, sorted onto a topic, and on your shelves the next time you open Gloss.
+          Connect Sakamoto to your agent to save full bookmarked posts, their available author-thread context, and directly linked articles or PDFs. Grok Bot needs its own authenticated X connection. Accepted sources stay saved while paid categorization and indexing process separately.
         </p>
       </div>
     </div>
   );
 }
 
-const PROMPT = "Go through my X bookmarks from the last month, find the ones that link to articles, essays or papers, and save those links to my Gloss library.";
+
 
 function Setup({ token, label, origin }: { token: string; label: string; origin: string }) {
+  const [time, setTime] = useState("09:00"), [timeZone, setTimeZone] = useState("Europe/Lisbon");
+  let prepared: ReturnType<typeof bookmarkWorkflow>;
+  try { prepared = bookmarkWorkflow(origin,time,timeZone); } catch { prepared = bookmarkWorkflow(origin); }
   const url = `${origin}/mcp`;
   const steps: { title: string; body: string; copy: string }[] =
     label === "Grok Bot" || label === "Grok"
       ? [
-          { title: "Grok Bot: say this in a chat", body: "It asks you to confirm; then the Gloss tools are ready.", copy: `Add a custom MCP server called Gloss at ${url} with the header Authorization set to Bearer ${token}` },
+          { title: "Grok Bot: custom MCP, Remote HTTPS", body: "In Connect apps, add Sakamoto as a custom Remote HTTPS server when available. Supply this endpoint; ask Grok to guide the connection if its controls differ.", copy: prepared.endpoint ?? "Deploy an approved public HTTPS Sakamoto origin first." },
+          { title: "Authentication header", body: "Put this in the connector’s protected header/secret field. Keep it out of chat, prompts and receipts. Complete X plugin sign-in separately using secure handoff.", copy: prepared.remoteReady ? `Authorization: Bearer ${token}` : "Cloud connection unavailable from this local origin." },
         ]
       : label === "Claude"
         ? [
-            { title: "Claude Code: run this", body: "Then ask Claude to save something to your Gloss library.", copy: `claude mcp add --transport http gloss ${url} --header "Authorization: Bearer ${token}"` },
+            { title: "Claude Code: run this", body: "Then ask Claude to save something to your Sakamoto library.", copy: `claude mcp add --transport http sakamoto ${url} --header "Authorization: Bearer ${token}"` },
             { title: "Or claude.ai: Settings, Connectors, Add custom connector", body: "This link carries your token, so keep it private.", copy: `${url}/${token}` },
           ]
         : [
@@ -400,7 +408,15 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
       {steps.map((s) => (
         <CopyBlock key={s.title} title={s.title} body={s.body} text={s.copy} />
       ))}
-      <CopyBlock title="Then ask it something like" body="Agents save the article a post links to. When the post is the piece, like an X Article or a long post, they send its text." text={PROMPT} />
+      <p className="text-[12px] text-ink-3">{prepared.connectionNotice}</p>
+      <CopyBlock title="Full-post sample and resumable backfill workflow" body="Verify the mixed sample first, then continue within your existing authorized backfill/account scope. These instructions do not configure a connection or a routine." text={prepared.workflow} />
+      <details>
+        <summary className="text-[13px]">Prepare the daily Grok routine</summary>
+        <label className="mt-2 block text-[12px]">Daily time <input aria-label="Grok routine daily time" type="time" value={time} onChange={e=>setTime(e.target.value)} className="rounded border border-rule p-1" /></label>
+        <label className="mt-2 block text-[12px]">Time zone <select aria-label="Grok routine time zone" value={timeZone} onChange={e=>setTimeZone(e.target.value)} className="rounded border border-rule p-1"><option>Europe/Lisbon</option><option>UTC</option><option>America/New_York</option><option>America/Los_Angeles</option></select></label>
+        <CopyBlock title="Prepared routine — not enabled" body="After the sample passes, enable only within your authorized routine/account scope; existing authorization applies. Inspect its Test run, next run and history; Grok allowance is separate from Sakamoto’s budget." text={prepared.routine} />
+      </details>
+      <p className="text-[12px] text-ink-3">Official Grok Bot guidance: {prepared.sources.map(source=><a key={source.url} className="mr-2 underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}. An unavailable account, expired X login or missing routine feature needs attention in Grok; Sakamoto cannot schedule source fetching.</p>
     </div>
   );
 }
@@ -429,7 +445,7 @@ function CopyBlock({ title, body, text }: { title: string; body: string; text: s
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-sunk px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-2">{text}</pre>
+      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-sunk px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-2">{text}</pre>
     </div>
   );
 }

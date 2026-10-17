@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { TOPIC, lookOf, type Book } from "@/lib/library";
+import { TOPIC, type Book } from "@/lib/library";
 import { MARK_NAMES, Mark, type AgentMark } from "./AgentMarks";
-import { Glyph, Plate } from "./Book";
+import { Glyph } from "./Book";
 
 /** Which mark to show for a connection, from the name the reader gave it. */
 function markFor(via?: string): AgentMark | null {
@@ -79,7 +79,7 @@ export function Arrivals({
             )
           ) : wave.done ? (
             <>
-              <b>{n}</b> new {noun} on your shelves
+              <b>{n}</b> new {noun} in your library
             </>
           ) : (
             <>Adding to your library</>
@@ -92,17 +92,11 @@ export function Arrivals({
       </div>
 
       <div className="arr-row">
-        <div className="arr-books">
-          {shown.map((b, i) => (
-            <span key={b.id} className="arr-book" style={{ background: lookOf(b).color, ["--i" as string]: i }}>
-              <Plate book={b} />
-            </span>
+        <div className="flex max-w-[180px] flex-wrap gap-1.5" aria-hidden>
+          {shown.map((b) => (
+            <span key={b.id} className="max-w-[80px] truncate rounded-md border border-rule bg-sunk px-2 py-1 text-[11px] text-ink-2">{b.title}</span>
           ))}
-          {more > 0 && (
-            <span key={`more-${more}`} className="arr-more tabular-nums">
-              +{more}
-            </span>
-          )}
+          {more > 0 && <span className="px-1 py-1 text-[11px] tabular-nums text-ink-3">+{more}</span>}
         </div>
         {latest && (
           <span key={latest.id} className="arr-latest">
@@ -117,7 +111,7 @@ export function Arrivals({
       {wave.done ? (
         <div className="arr-actions">
           <button type="button" onClick={onShow} className="arr-show">
-            Show {n === 1 ? "it" : "them"} on the shelf
+            Show {n === 1 ? "it" : "them"} in the library
           </button>
           <button type="button" onClick={onRemove} className="arr-undo">
             Remove {n === 1 ? "it" : "them"}

@@ -1,8 +1,12 @@
 "use client";
 
+import { READER_METADATA_FIELDS, type ReaderMetadataField } from "./library-ownership";
+import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-scope";
 import { create } from "zustand";
 import type { Action } from "./actions";
-import type { Article, BriefData } from "./article";
+import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
+import { derivedDocument, derivedDocumentMetadata } from "./source-edits";
+import type { RevisionAddress } from "./source-revision";
 import { modelOf, type ModelKey, type Source, type Usage } from "./models";
 import { DEFAULT_SETTINGS, SETTINGS_KEY, type Marker, type Settings } from "./settings";
 
@@ -16,8 +20,9 @@ export type Turn = {
   usage?: Usage;
   model?: string;
   modelKey?: ModelKey;
-  /** The reader needs their own key to continue: free answers are spent, or there is no shared key. */
+  /** Historical error flag retained for stored-result compatibility. */
   needKey?: boolean;
+  needSignIn?: boolean;
   /** Looking things up on the web before the answer starts. */
   searching?: boolean;
   /** The web results this answer may cite as [1], [2]. */
@@ -27,6 +32,8 @@ export type Turn = {
 };
 
 export type Gloss = {
+  pendingSource?: string | null;
+  sourceRevision?: number;
   id: string;
   articleId: string;
   /** Anchored to a selection... */
@@ -45,25 +52,32 @@ export type Gloss = {
  */
 export type Review = { due: number; step: number; last: number; off?: boolean };
 
-export type Highlight = { id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
+export type Highlight = { pendingSource?: string | null; sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
 
-export type BriefState =
-  | { status: "loading" }
-  | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number }
-  | { status: "error"; error: string; needKey?: boolean };
+export type BriefState = { pendingSource?: string | null; sourceRevision?: number } & (
+  { status: "loading" } | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number } | { status: "error"; error: string; needKey?: boolean; needSignIn?: boolean }
+);
 
 export type { Settings } from "./settings";
 
 export type LibraryItem = {
+  postId?: string;
+  processing?: import("./bookmarks").ProcessingState;
   id: string;
   title: string;
   author?: string;
   source?: string;
   words: number;
   origin: Article["origin"];
+  /** Optional for entries saved before content types were introduced. */
+  contentType?: ContentType;
   addedAt: number;
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
+  pendingSource?: string | null;
+  sourceRevision?: number;
+  recoveredFrom?: { itemId: string; sourceRevision: number };
+  manualFields?: ReaderMetadataField[];
   /* The library: where it is shelved, and what it looks like there. */
   /** One of the library's topics (lib/library.ts); missing until it has been sorted. */
   topic?: string;
@@ -80,16 +94,16 @@ export type LibraryItem = {
   favorite?: boolean;
   /** When it was first read to the end. */
   finishedAt?: number;
-  /** Shelved by an agent, through the Gloss MCP server. */
+  /** Saved by an agent, through the Sakamoto MCP server. */
   addedBy?: "agent";
   /** Which connection an agent saved it through, by the name the reader gave it. */
   addedVia?: string;
 };
 
-export type Progress = { block: string; pct: number; at: number };
+export type Progress = { pendingSource?: string | null; sourceRevision?: number; block: string; pct: number; at: number };
 
 /** A row from the account, as the sync route sends it. `data` is null on a tombstone. */
-export type RemoteRow<T> = { id: string; articleId: string; data: T | null; deleted: boolean };
+export type RemoteRow<T> = { id: string; articleId: string; data: T | null; deleted: boolean; revision?: number; sourceRevision?: number };
 export type RemoteChanges = {
   articles?: RemoteRow<LibraryItem>[];
   highlights?: RemoteRow<Highlight>[];
@@ -107,6 +121,8 @@ type Persisted = {
 };
 
 type UI = {
+  syncError: string | null;
+  syncNotice: string | null;
   hydrated: boolean;
   activeGloss: string | null;
   hoverGloss: string | null;
@@ -127,6 +143,10 @@ type UI = {
 
 type State = Persisted &
   UI & {
+    scope: string | null | undefined;
+    activateAccount: (owner: string | null) => void;
+    adoptAnonymous: () => Promise<void>;
+    anonymousCount: () => number;
     settings: Settings;
     hydrate: () => void;
     setSettings: (s: Partial<Settings>) => void;
@@ -141,7 +161,7 @@ type State = Persisted &
     setProgress: (articleId: string, p: Progress) => void;
     addToLibrary: (a: Article, words: number, extra?: Partial<LibraryItem>) => void;
     /** Change a shelf entry's library fields: its topic, tags, cover, favourite. */
-    shelve: (id: string, patch: Partial<LibraryItem>) => void;
+    shelve: (id: string, patch: Partial<LibraryItem>, options?: { automatic?: boolean }) => void;
     removeFromLibrary: (id: string) => void;
     replaceText: (a: Article, words: number) => Promise<boolean>;
     updateText: (a: Article, words: number) => Promise<boolean>;
@@ -150,9 +170,79 @@ type State = Persisted &
 
 const KEY = "gloss:v1";
 const DOC_PREFIX = "gloss:doc:";
-
+const ANONYMOUS_KEY = "sakamoto:anonymous:v2";
+function hasLegacyAccountSync(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) if (localStorage.key(i)?.startsWith("gloss:sync:")) return true;
+  } catch {}
+  return false;
+}
+function localSnapshotKey() {
+  return accountScope() ? scopedKey(KEY) : ANONYMOUS_KEY;
+}
+function readAnonymous(): Partial<Persisted> {
+  try {
+    const current = localStorage.getItem(ANONYMOUS_KEY);
+    if (current) return JSON.parse(current);
+    // Old versions mixed signed-in and anonymous content. Keep an uncertain cache quarantined for explicit adoption.
+    if (hasLegacyAccountSync()) return {};
+    return JSON.parse(localStorage.getItem(KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function adoptionSnapshot(): Partial<Persisted> {
+  const current = readAnonymous();
+  if (!hasLegacyAccountSync()) return current;
+  try {
+    const legacy = JSON.parse(localStorage.getItem(KEY) || "{}") as Partial<Persisted>;
+    return {
+      ...legacy,
+      ...current,
+      library: [...(legacy.library ?? []).filter((x) => !current.library?.some((y) => y.id === x.id)), ...(current.library ?? [])],
+      highlights: { ...legacy.highlights, ...current.highlights },
+      glosses: { ...legacy.glosses, ...current.glosses },
+      briefs: { ...legacy.briefs, ...current.briefs },
+      progress: { ...legacy.progress, ...current.progress },
+    };
+  } catch {
+    return current;
+  }
+}
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+// Only live callbacks need these aliases; reloads have no surviving in-flight callback.
+// Keys include the account epoch, and account activation clears them.
+const pendingReceipts = new Map<
+  string,
+  { articleId: string; sourceRevision: number }
+>();
+const pendingReceiptKey = (id: string, generation: string) =>
+  `${accountEpoch()}:${id}:${generation}`;
+function annotationSource(
+  library: LibraryItem[],
+  id: string,
+  source: RevisionAddress,
+): RevisionAddress & { articleId: string } {
+  const item = library.find((item) => item.id === id);
+  const pendingSource = Object.hasOwn(source, "pendingSource")
+    ? source.pendingSource
+    : source.sourceRevision === undefined ||
+        source.sourceRevision === (item?.sourceRevision ?? 1)
+      ? item?.pendingSource
+      : undefined;
+  const receipt = pendingSource
+    ? pendingReceipts.get(pendingReceiptKey(id, pendingSource))
+    : undefined;
+  return receipt
+    ? { ...receipt, pendingSource: undefined }
+    : {
+        articleId: id,
+        sourceRevision: source.sourceRevision ?? item?.sourceRevision ?? 1,
+        pendingSource,
+      };
+}
 
 export const useStore = create<State>((set, get) => ({
   glosses: {},
@@ -160,6 +250,9 @@ export const useStore = create<State>((set, get) => ({
   briefs: {},
   progress: {},
   library: [],
+  syncError: null,
+  syncNotice: null,
+  scope: undefined,
   settings: DEFAULT_SETTINGS,
   hydrated: false,
   activeGloss: null,
@@ -175,12 +268,74 @@ export const useStore = create<State>((set, get) => ({
   pending: null,
   shelf: null,
 
+  activateAccount: (owner) => {
+    if (get().scope === owner) return;
+    if (get().hydrated) persist(get());
+    pendingReceipts.clear();
+    selectAccount(owner);
+    set({
+      scope: owner,
+      syncError: null,
+      syncNotice: null,
+      hydrated: false,
+      library: [],
+      highlights: {},
+      glosses: {},
+      briefs: {},
+      progress: {},
+      activeGloss: null,
+      activeHighlight: null,
+      pending: null,
+    });
+    get().hydrate();
+  },
+  anonymousCount: () => {
+    return adoptionSnapshot().library?.length ?? 0;
+  },
+  adoptAnonymous: async () => {
+    const owner = accountScope();
+    if (!owner) return;
+    const epoch = accountEpoch();
+    const currentOwner = () => accountScope() === owner && accountEpoch() === epoch;
+    const fail = (title: string): never => {
+      const error = new Error(`Could not durably copy “${title}”. Anonymous data is unchanged. Free storage or restore the source and retry.`);
+      if (currentOwner()) set({ syncError: error.message });
+      throw error;
+    };
+    const old = adoptionSnapshot();
+    for (const item of old.library ?? []) {
+      const destination = await loadDoc(item.id, owner);
+      if (!currentOwner()) return;
+      if (destination) continue; // Keep an existing readable account copy without replacement.
+      const doc = await loadDoc(item.id, null, true);
+      if (!currentOwner()) return;
+      if (doc && !(await saveDoc(doc, owner))) fail(item.title);
+      if (!currentOwner()) return;
+    }
+    const current = get();
+    const arrays = <T extends { id: string }>(older: Record<string, T[]>, newer: Record<string, T[]>) =>
+      Object.fromEntries(
+        [...new Set([...Object.keys(older), ...Object.keys(newer)])].map((id) => [
+          id,
+          [...(older[id] ?? []).filter((x) => !(newer[id] ?? []).some((y) => x.id === y.id)), ...(newer[id] ?? [])],
+        ]),
+      );
+    const adopted: Persisted = {
+      library: [...(old.library ?? []).filter((x) => !current.library.some((y) => y.id === x.id)), ...current.library],
+      highlights: arrays(old.highlights ?? {}, current.highlights),
+      glosses: arrays(old.glosses ?? {}, current.glosses),
+      briefs: { ...old.briefs, ...current.briefs },
+      progress: { ...old.progress, ...current.progress },
+    };
+    if (!persist(adopted)) fail("anonymous library");
+    set({ ...adopted, syncError: null });
+  },
   hydrate: () => {
     if (get().hydrated) return;
     let data: Partial<Persisted> = {};
     let settings: Partial<Settings> = {};
     try {
-      data = JSON.parse(localStorage.getItem(KEY) || "{}");
+      data = accountScope() ? JSON.parse(localStorage.getItem(localSnapshotKey()) || "{}") : readAnonymous();
       settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     } catch {}
     // A reload mid-answer leaves a dangling stream: mark it, never spin forever.
@@ -220,55 +375,120 @@ export const useStore = create<State>((set, get) => ({
   setUI: (u) => set(u),
 
   addGloss: (g) =>
-    set((st) => ({
-      glosses: { ...st.glosses, [g.articleId]: [...(st.glosses[g.articleId] ?? []), g] },
-      activeGloss: g.id,
-      enteringGloss: g.id,
-    })),
+    set((st) => {
+      const bound = { ...g, ...annotationSource(st.library, g.articleId, g) };
+      return {
+        glosses: {
+          ...st.glosses,
+          [bound.articleId]: [...(st.glosses[bound.articleId] ?? []), bound],
+        },
+        activeGloss: g.id,
+        enteringGloss: g.id,
+      };
+    }),
 
   updateGloss: (articleId, id, fn) =>
-    set((st) => ({
-      glosses: { ...st.glosses, [articleId]: (st.glosses[articleId] ?? []).map((g) => (g.id === id ? fn(g) : g)) },
-    })),
+    set((st) => {
+      // An in-flight response can finish after its pending body moved to an offline copy.
+      const target = st.glosses[articleId]?.some((g) => g.id === id)
+        ? articleId
+        : Object.keys(st.glosses).find((key) =>
+            st.glosses[key].some((g) => g.id === id),
+          );
+      return target
+        ? {
+            glosses: {
+              ...st.glosses,
+              [target]: st.glosses[target].map((g) =>
+                g.id === id ? fn(g) : g,
+              ),
+            },
+          }
+        : {};
+    }),
 
   removeGloss: (articleId, id) =>
     set((st) => ({
-      glosses: { ...st.glosses, [articleId]: (st.glosses[articleId] ?? []).filter((g) => g.id !== id) },
+      glosses: {
+        ...st.glosses,
+        [articleId]: (st.glosses[articleId] ?? []).filter((g) => g.id !== id),
+      },
       activeGloss: st.activeGloss === id ? null : st.activeGloss,
       hoverGloss: st.hoverGloss === id ? null : st.hoverGloss,
     })),
 
   addHighlight: (h) => {
-    set((st) => ({ highlights: { ...st.highlights, [h.articleId]: [...(st.highlights[h.articleId] ?? []), h] }, enteringHighlight: h.id }));
-    setTimeout(() => get().enteringHighlight === h.id && set({ enteringHighlight: null }), 700);
+    set((st) => {
+      const bound = { ...h, ...annotationSource(st.library, h.articleId, h) };
+      return {
+        highlights: {
+          ...st.highlights,
+          [bound.articleId]: [...(st.highlights[bound.articleId] ?? []), bound],
+        },
+        enteringHighlight: h.id,
+      };
+    });
+    setTimeout(
+      () =>
+        get().enteringHighlight === h.id && set({ enteringHighlight: null }),
+      700,
+    );
   },
 
   updateHighlight: (articleId, id, patch) =>
     set((st) => ({
-      highlights: { ...st.highlights, [articleId]: (st.highlights[articleId] ?? []).map((h) => (h.id === id ? { ...h, ...patch } : h)) },
+      highlights: {
+        ...st.highlights,
+        [articleId]: (st.highlights[articleId] ?? []).map((h) =>
+          h.id === id ? { ...h, ...patch } : h,
+        ),
+      },
     })),
 
   removeHighlight: (articleId, id) =>
     set((st) => ({
-      highlights: { ...st.highlights, [articleId]: (st.highlights[articleId] ?? []).filter((h) => h.id !== id) },
+      highlights: {
+        ...st.highlights,
+        [articleId]: (st.highlights[articleId] ?? []).filter(
+          (h) => h.id !== id,
+        ),
+      },
       activeHighlight: st.activeHighlight === id ? null : st.activeHighlight,
     })),
 
   setBrief: (articleId, b) =>
     set((st) => {
       const briefs = { ...st.briefs };
-      if (b) briefs[articleId] = b;
-      else delete briefs[articleId];
+      if (b) {
+        const { articleId: target, ...source } = annotationSource(
+          st.library,
+          articleId,
+          b,
+        );
+        briefs[target] = { ...b, ...source };
+      } else delete briefs[articleId];
       return { briefs };
     }),
 
   setProgress: (articleId, p) =>
     set((st) => {
       // The first time a text is read to the end, the library notes when.
-      const done = p.pct >= 1 && st.library.some((x) => x.id === articleId && !x.finishedAt);
+      const { articleId: target, ...source } = annotationSource(
+        st.library,
+        articleId,
+        p,
+      );
+      const done =
+        p.pct >= 1 && st.library.some((x) => x.id === target && !x.finishedAt);
       return {
-        progress: { ...st.progress, [articleId]: p },
-        ...(done ? { library: st.library.map((x) => (x.id === articleId ? { ...x, finishedAt: p.at } : x)) } : {}),
+        progress: { ...st.progress, [target]: { ...p, ...source } },
+        ...(done
+          ? {
+              library: st.library.map((x) =>
+                x.id === target ? { ...x, finishedAt: p.at } : x,
+              ),
+            }
+          : {}),
       };
     }),
 
@@ -282,6 +502,7 @@ export const useStore = create<State>((set, get) => ({
         source: a.source,
         words,
         origin: a.origin,
+        contentType: contentTypeOf(a),
         addedAt: a.addedAt ?? Date.now(),
         dek: a.dek,
         year,
@@ -294,29 +515,83 @@ export const useStore = create<State>((set, get) => ({
       return { library: [item, ...st.library.filter((x) => x.id !== a.id)] };
     }),
 
-  shelve: (id, patch) => set((st) => ({ library: st.library.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+  shelve: (id, patch, options) =>
+    set((st) => ({
+      library: st.library.map((x) => {
+        if (x.id !== id) return x;
+        const manualFields = options?.automatic
+          ? x.manualFields
+          : [...new Set([...(x.manualFields ?? []), ...READER_METADATA_FIELDS.filter((field) => Object.hasOwn(patch, field))])];
+        return { ...x, ...patch, ...(manualFields ? { manualFields } : {}) };
+      }),
+    })),
 
   removeFromLibrary: (id) => {
     void dropDoc(id);
     set((st) => ({ library: st.library.filter((x) => x.id !== id) }));
   },
 
-  // Part of a text read again (a page swapped in by lib/upgrade.ts) where no mark is anchored:
+  // Part of a text read again (an existing saved page replacement) where no mark is anchored:
   // the marks stay. The rev bump makes sync send the text again.
   updateText: async (a, words) => {
-    if (!(await saveDoc(a))) return false;
-    set((st) => ({ library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)) }));
+    const epoch = accountEpoch(),
+      owner = accountScope();
+    const previous = await loadDoc(a.id, owner);
+    if (accountEpoch() !== epoch) return false;
+    if (previous && JSON.stringify(previous.blocks) === JSON.stringify(a.blocks)) return true;
+    // Preserve before the asynchronous replacement: a note can still arrive for the visible old body.
+    if (previous?.pendingSource) {
+      const { preserveOfflineSource } = await import("./offline-source");
+      try {
+        await preserveOfflineSource(a.id, owner);
+      } catch {
+        return false;
+      }
+      if (accountEpoch() !== epoch) return false;
+    }
+    const edited = { ...derivedDocument(a), pendingSource: uid() };
+    if (!(await saveDoc(edited, owner)) || accountEpoch() !== epoch)
+      return false;
+    set((st) => ({
+      library: st.library.map((x) =>
+        x.id === a.id
+          ? {
+              ...derivedDocumentMetadata(x),
+              pendingSource: edited.pendingSource,
+              words,
+              rev: (x.rev ?? 0) + 1,
+            }
+          : x,
+      ),
+    }));
+    window.dispatchEvent(
+      new CustomEvent("gloss:text-replaced", { detail: edited }),
+    );
     return true;
   },
 
   // A new reading of the same text. Every mark is anchored to a block id and offset in the old
   // text, so highlights, glosses and the whole-text gloss go with it; the caller asks first.
   replaceText: async (a, words) => {
-    if (!(await saveDoc(a))) return false;
+    const epoch = accountEpoch();
+    const edited = { ...derivedDocument(a), pendingSource: uid() };
+    if (!(await saveDoc(edited)) || accountEpoch() !== epoch) return false;
     set((st) => {
-      const rest = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== a.id)) as Record<string, T>;
+      const rest = <T>(m: Record<string, T>) =>
+        Object.fromEntries(
+          Object.entries(m).filter(([k]) => k !== a.id),
+        ) as Record<string, T>;
       return {
-        library: st.library.map((x) => (x.id === a.id ? { ...x, words, rev: (x.rev ?? 0) + 1 } : x)),
+        library: st.library.map((x) =>
+          x.id === a.id
+            ? {
+                ...derivedDocumentMetadata(x),
+                pendingSource: edited.pendingSource,
+                words,
+                rev: (x.rev ?? 0) + 1,
+              }
+            : x,
+        ),
         highlights: rest(st.highlights),
         glosses: rest(st.glosses),
         briefs: rest(st.briefs),
@@ -350,7 +625,7 @@ export const useStore = create<State>((set, get) => ({
         return next;
       };
 
-      const byArticle = <T,>(cur: Record<string, T>, rows: RemoteRow<T>[] = []) => {
+      const byArticle = <T>(cur: Record<string, T>, rows: RemoteRow<T>[] = []) => {
         if (!rows.length) return cur;
         const next = { ...cur };
         for (const r of rows) {
@@ -370,27 +645,25 @@ export const useStore = create<State>((set, get) => ({
     }),
 }));
 
-/* Debounced persistence. Streaming updates land many times a second, so the
-   write waits for a pause rather than serializing on every token. */
+/* Account snapshots persist synchronously so identity changes never move pending writes between scopes. */
+function persist(st: Persisted): boolean {
+  const { glosses, highlights, briefs, progress, library } = st;
+  try {
+    localStorage.setItem(localSnapshotKey(), JSON.stringify({ glosses, highlights, briefs, progress, library }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** Require discoverable metadata to be durable before source-conflict invalidation. */
+export function checkpointLibrary(): boolean {
+  return persist(useStore.getState());
+}
+
 if (typeof window !== "undefined") {
-  let t: ReturnType<typeof setTimeout> | null = null;
   useStore.subscribe((st, prev) => {
-    if (!st.hydrated) return;
-    if (
-      st.glosses === prev.glosses &&
-      st.highlights === prev.highlights &&
-      st.briefs === prev.briefs &&
-      st.progress === prev.progress &&
-      st.library === prev.library
-    )
-      return;
-    if (t) clearTimeout(t);
-    t = setTimeout(() => {
-      const { glosses, highlights, briefs, progress, library } = useStore.getState();
-      try {
-        localStorage.setItem(KEY, JSON.stringify({ glosses, highlights, briefs, progress, library }));
-      } catch {}
-    }, 400);
+    if (!st.hydrated || st.scope !== prev.scope) return;
+    if (st.library !== prev.library || st.glosses !== prev.glosses || st.highlights !== prev.highlights || st.briefs !== prev.briefs || st.progress !== prev.progress) persist(st);
   });
 }
 
@@ -419,40 +692,179 @@ function idb(): Promise<IDBDatabase> {
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, store = DOCS): Promise<T> {
   const db = await idb();
   return new Promise((resolve, reject) => {
-    const req = fn(db.transaction(store, mode).objectStore(store));
-    req.onsuccess = () => resolve(req.result);
+    const transaction = db.transaction(store, mode);
+    const req = fn(transaction.objectStore(store));
+    let result: T;
+    req.onsuccess = () => {
+      result = req.result;
+    };
     req.onerror = () => reject(req.error);
+    transaction.oncomplete = () => resolve(result);
+    transaction.onabort = () => reject(transaction.error ?? new Error("Browser storage transaction aborted."));
+    transaction.onerror = () => reject(transaction.error);
   });
 }
 
-export async function saveDoc(a: Article): Promise<boolean> {
+export async function saveDoc(a: Article, owner: string | null = accountScope()): Promise<boolean> {
   try {
-    await tx("readwrite", (s) => s.put(a, a.id));
+    await tx("readwrite", (s) => s.put(a, scopedKey(a.id, owner)));
     return true;
   } catch {}
   // No IndexedDB (some private windows): the old, smaller home still works.
   try {
-    localStorage.setItem(DOC_PREFIX + a.id, JSON.stringify(a));
+    localStorage.setItem(scopedKey(DOC_PREFIX + a.id, owner), JSON.stringify(a));
     return true;
   } catch {
     return false;
   }
 }
 
-export async function loadDoc(id: string): Promise<Article | null> {
+/** Bind only annotations created for this local body; historical marks are never rewritten. */
+export function bindPendingSource(
+  id: string,
+  pendingSource: string,
+  targetId: string,
+  revision: number,
+): void {
+  const st = useStore.getState();
+  const bind = <T extends RevisionAddress>(value: T): T => {
+    const next = { ...value, sourceRevision: revision };
+    delete next.pendingSource;
+    return next;
+  };
+  const arrays = <
+    T extends RevisionAddress & { id: string; articleId: string },
+  >(
+    values: Record<string, T[]>,
+  ): Record<string, T[]> => {
+    const pending = (values[id] ?? []).filter(
+      (value) => value.pendingSource === pendingSource,
+    );
+    if (!pending.length) return values;
+    const moved = pending.map((value) => ({
+      ...bind(value),
+      articleId: targetId,
+    }));
+    return {
+      ...values,
+      [id]: (values[id] ?? []).filter(
+        (value) => value.pendingSource !== pendingSource,
+      ),
+      [targetId]: [
+        ...(targetId === id
+          ? (values[id] ?? []).filter(
+              (value) => value.pendingSource !== pendingSource,
+            )
+          : (values[targetId] ?? [])),
+        ...moved,
+      ],
+    };
+  };
+  const single = <T extends RevisionAddress>(
+    values: Record<string, T>,
+  ): Record<string, T> => {
+    const value = values[id];
+    if (value?.pendingSource !== pendingSource) return values;
+    const next = { ...values };
+    delete next[id];
+    next[targetId] = bind(value);
+    return next;
+  };
+  const next: Persisted = {
+    library: st.library.map((item) => {
+      if (
+        item.id !== id ||
+        targetId !== id ||
+        item.pendingSource !== pendingSource
+      )
+        return item;
+      return bind(item);
+    }),
+    highlights: arrays(st.highlights),
+    glosses: arrays(st.glosses),
+    briefs: single(st.briefs),
+    progress: single(st.progress),
+  };
+  if (!persist(next))
+    throw new Error(
+      "Pending source annotations could not be saved. Sync paused; local data is retained for retry.",
+    );
+  const key = pendingReceiptKey(id, pendingSource);
+  if (!pendingReceipts.has(key))
+    pendingReceipts.set(key, { articleId: targetId, sourceRevision: revision });
+  useStore.setState(next);
+}
+
+/** Stamp only the exact uploaded cache value; a later local edit must never be replaced by its receipt. */
+export async function acknowledgeDocRevision(
+  uploaded: Article,
+  revision: number,
+  owner: string,
+): Promise<Article | null> {
+  const key = scopedKey(uploaded.id, owner),
+    expected = JSON.stringify(uploaded);
+  let unavailable: unknown;
   try {
-    const a = await tx<Article | undefined>("readonly", (s) => s.get(id));
+    const db = await idb();
+    const result = await new Promise<{
+      found: boolean;
+      acknowledged: Article | null;
+    }>((resolve, reject) => {
+      const transaction = db.transaction(DOCS, "readwrite"),
+        store = transaction.objectStore(DOCS),
+        read = store.get(key);
+      let acknowledged: Article | null = null,
+        found = false;
+      read.onsuccess = () => {
+        found = Boolean(read.result);
+        if (found && JSON.stringify(read.result) === expected) {
+          acknowledged = { ...read.result, sourceRevision: revision };
+            delete acknowledged!.pendingSource;
+          store.put(acknowledged, key);
+        }
+      };
+      transaction.oncomplete = () => resolve({ found, acknowledged });
+      transaction.onabort = () =>
+        reject(
+          transaction.error ?? new Error("Source revision cache write failed."),
+        );
+      transaction.onerror = () => reject(transaction.error);
+    });
+    if (result.found) return result.acknowledged;
+  } catch (error) {
+    unavailable = error;
+  }
+  const raw = localStorage.getItem(scopedKey(DOC_PREFIX + uploaded.id, owner));
+  if (raw) {
+    const cached = JSON.parse(raw) as Article;
+    if (JSON.stringify(cached) !== expected) return null;
+    const acknowledged = { ...cached, sourceRevision: revision };
+    delete acknowledged.pendingSource;
+    localStorage.setItem(
+      scopedKey(DOC_PREFIX + uploaded.id, owner),
+      JSON.stringify(acknowledged),
+    );
+    return acknowledged;
+  }
+  if (unavailable) throw unavailable;
+  return null;
+}
+
+export async function loadDoc(id: string, owner: string | null = accountScope(), explicitLegacyAdoption = false): Promise<Article | null> {
+  if (owner === null && hasLegacyAccountSync() && !explicitLegacyAdoption && !readAnonymous().library?.some((x) => x.id === id)) return null;
+  try {
+    const a = await tx<Article | undefined>("readonly", (s) => s.get(scopedKey(id, owner)));
     if (a) return a;
   } catch {}
   let legacy: Article | null = null;
   try {
-    const raw = localStorage.getItem(DOC_PREFIX + id);
+    const raw = localStorage.getItem(scopedKey(DOC_PREFIX + id, owner));
     legacy = raw ? (JSON.parse(raw) as Article) : null;
   } catch {}
   if (legacy) {
     try {
-      await tx("readwrite", (s) => s.put(legacy, id));
-      localStorage.removeItem(DOC_PREFIX + id);
+      await tx("readwrite", (s) => s.put(legacy, scopedKey(id, owner)));
+      localStorage.removeItem(scopedKey(DOC_PREFIX + id, owner));
     } catch {}
   }
   return legacy;
@@ -462,15 +874,18 @@ export async function loadDoc(id: string): Promise<Article | null> {
 async function migrateDocs() {
   let ids: string[] = [];
   try {
-    ids = Object.keys(localStorage).filter((k) => k.startsWith(DOC_PREFIX)).map((k) => k.slice(DOC_PREFIX.length));
+    ids = Object.keys(localStorage)
+      .filter((k) => k.startsWith(DOC_PREFIX))
+      .map((k) => k.slice(DOC_PREFIX.length));
   } catch {}
   for (const id of ids) await loadDoc(id);
 }
 
 /** Keep an imported PDF's original file, by its article id. */
 export async function savePdf(id: string, file: Blob): Promise<boolean> {
+  const key = scopedKey(id);
   try {
-    await tx("readwrite", (s) => s.put(file, id), FILES);
+    await tx("readwrite", (s) => s.put(file, key), FILES);
     return true;
   } catch {
     return false;
@@ -479,30 +894,33 @@ export async function savePdf(id: string, file: Blob): Promise<boolean> {
 
 /** The original PDF behind an article, when this browser imported it. */
 export async function loadPdf(id: string): Promise<Blob | null> {
+  const key = scopedKey(id);
   try {
-    return (await tx<Blob | undefined>("readonly", (s) => s.get(id), FILES)) ?? null;
+    return (await tx<Blob | undefined>("readonly", (s) => s.get(key), FILES)) ?? null;
   } catch {
     return null;
   }
 }
 
 /** Forget this device's copy of a text (not its PDF): it changed elsewhere and is fetched again on open. */
-export async function forgetDoc(id: string) {
+export async function forgetDoc(id: string, owner: string | null = accountScope()) {
+  const key = scopedKey(id, owner);
   try {
-    localStorage.removeItem(DOC_PREFIX + id);
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id, owner));
   } catch {}
   try {
-    await tx("readwrite", (s) => s.delete(id));
+    await tx("readwrite", (s) => s.delete(key));
   } catch {}
 }
 
 async function dropDoc(id: string) {
+  const key = scopedKey(id);
   try {
-    localStorage.removeItem(DOC_PREFIX + id);
+    localStorage.removeItem(scopedKey(DOC_PREFIX + id));
   } catch {}
   try {
-    await tx("readwrite", (s) => s.delete(id));
-    await tx("readwrite", (s) => s.delete(id), FILES);
+    await tx("readwrite", (s) => s.delete(key));
+    await tx("readwrite", (s) => s.delete(key), FILES);
   } catch {}
 }
 

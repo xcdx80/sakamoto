@@ -1,5 +1,6 @@
 "use client";
 
+import { sourceAddress } from "@/lib/source-revision";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, BadgeCheck, BookA, Check, Copy, Ellipsis, Eraser, Feather, Highlighter, Lightbulb, PenLine, Scale, Waypoints, type LucideIcon } from "lucide-react";
 import { ACTIONS, isShortSelection, type Action } from "@/lib/actions";
@@ -70,7 +71,7 @@ export function Lens({ rootEl, openHighlight }: { rootEl: HTMLElement | null; op
     if (existing) {
       if ((existing.note ?? undefined) !== note) st.updateHighlight(ix.article.id, existing.id, { note });
     } else if (note) {
-      st.addHighlight({ id: uid(), articleId: ix.article.id, anchor: l.anchor, createdAt: Date.now(), color: st.settings.marker, note });
+      st.addHighlight({ id: uid(), articleId: ix.article.id, ...sourceAddress(ix.article), anchor: l.anchor, createdAt: Date.now(), color: st.settings.marker, note });
     }
   }, [ix]);
 
@@ -299,7 +300,7 @@ export function Lens({ rootEl, openHighlight }: { rootEl: HTMLElement | null; op
     if (existing) {
       updateHighlight(ix.article.id, existing.id, { color });
     } else {
-      addHighlight({ id: uid(), articleId: ix.article.id, anchor: lens.anchor, createdAt: Date.now(), color });
+      addHighlight({ id: uid(), articleId: ix.article.id, ...sourceAddress(ix.article), anchor: lens.anchor, createdAt: Date.now(), color });
     }
     close();
   };

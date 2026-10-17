@@ -14,9 +14,9 @@ import { Desk, DeskLink } from "./Desk";
 const RECENT = 3;
 
 const STEPS = [
-  { title: "Paste a link", body: "An article, a chapter or a PDF." },
-  { title: "Select any line", body: "A word, a sentence, a passage." },
-  { title: "Ask it anything", body: "The answer lands in the margin, citing the text." },
+  { title: "Collect what matters", body: "Save X bookmarks through Grok or an agent connected with MCP." },
+  { title: "Ask your library", body: "Find knowledge across your saved posts, articles and documents." },
+  { title: "Go to the source", body: "Follow citations to the saved passages behind each answer." },
 ];
 
 function SignInLine({ children }: { children: string }) {
@@ -61,7 +61,7 @@ export function HomeBelow({ signedIn }: { signedIn: boolean }) {
   // Held open at its full size until the shelf is read, so nothing shifts when it fills.
   if (!hydrated) return <div className="desk is-holding" aria-hidden />;
 
-  const foot = signedIn ? null : <SignInLine>{all.length ? "These live in this browser only." : "Keep your highlights on every device."}</SignInLine>;
+  const foot = signedIn ? null : <SignInLine>{all.length ? "These live in this browser only." : "Build your private knowledge library."}</SignInLine>;
 
   // Before any highlights: Hassan's three steps, for first-timers and anyone signed out.
   if (!all.length)

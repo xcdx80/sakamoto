@@ -1,5 +1,5 @@
 import type { Action } from "./actions";
-import type { ChatMessage } from "./together";
+import type { ChatMessage } from "./models";
 
 export type DocPayload = {
   title: string;
@@ -21,13 +21,13 @@ export type ThreadPayload = {
 
 /**
  * The system message carries the whole text and nothing that varies per
- * question, so Together's prefix cache serves every follow-up on the same
+ * question, so follow-up questions share the same saved
  * article at the cached rate (about 2% of the fresh input price on Flash).
  */
 export function systemFor(doc: DocPayload): string {
   const byline = [doc.author, doc.published].filter(Boolean).join(", ");
   const body = doc.paras.map((p) => `[¶${p.n}] ${p.text}`).join("\n\n");
-  return `You are Gloss, a reading companion. You write short notes in the margin of a text someone is studying closely. Think of a sharp, generous scholar leaning over their shoulder.
+  return `You are Sakamoto, a reading companion. You write short notes in the margin of a text someone is studying closely. Think of a sharp, generous scholar leaning over their shoulder.
 
 THE TEXT: "${doc.title}"${byline ? ` by ${byline}` : ""}.
 Paragraphs are numbered [¶n]; the reader sees the same numbers in the margin.${doc.partial ? "\nOnly part of a long text is included below; say so if a question needs the rest." : ""}

@@ -1,20 +1,17 @@
 "use client";
 
+import { accountEpoch, accountScope, scopedKey } from "./account-scope";
+
+import { sourceAddress } from "./source-revision";
 import type { Action } from "./actions";
 import type { BriefData } from "./article";
 import { docPayload, type DocIndex } from "./doc";
 import { uid, useStore, type Anchor, type Gloss, type Turn } from "./store";
 import type { ModelKey, StreamEvent, Usage } from "./models";
-import { MODELS, modelOf } from "./models";
+import { MODELS } from "./models";
 
-const KEY_STORAGE = "together:api-key";
-
-export function readApiKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
+function readerHeaders() {
+  return { "Content-Type": "application/json", "X-Sakamoto-Owner": accountScope() ?? "anonymous", "Idempotency-Key": crypto.randomUUID() };
 }
 
 const controllers = new Map<string, AbortController>();
@@ -37,6 +34,7 @@ function lastAssistant(g: Gloss, fn: (t: Turn) => Turn): Gloss {
 
 /** Streams the newest assistant turn of a gloss from /api/ask. */
 async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
+  const epoch = accountEpoch();
   const st = useStore.getState();
   const articleId = ix.article.id;
   const g = (st.glosses[articleId] ?? []).find((x) => x.id === glossId);
@@ -45,6 +43,7 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
   // History after the first answer: alternating user/assistant, ending with the new user turn.
   const history = g.turns
     .slice(1, -1)
+    .slice(-12)
     .filter((t) => !t.error)
     .map((t) => ({ role: t.role, content: t.content }));
 
@@ -54,16 +53,14 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
 
   const ctrl = new AbortController();
   controllers.set(glossId, ctrl);
-  const update = (fn: (t: Turn) => Turn) => useStore.getState().updateGloss(articleId, glossId, (x) => lastAssistant(x, fn));
+  const update = (fn: (t: Turn) => Turn) => accountEpoch() === epoch && useStore.getState().updateGloss(articleId, glossId, (x) => lastAssistant(x, fn));
 
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: readerHeaders(),
       signal: ctrl.signal,
       body: JSON.stringify({
-        apiKey: apiKey || undefined,
         model: modelKey,
         length: st.settings.length,
         doc: docPayload(ix, g.anchor?.start.b ?? g.at),
@@ -73,15 +70,17 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
       }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     if (!res.ok || !res.body) {
-      const { error, needKey } = await failure(res);
-      update((t) => ({ ...t, streaming: false, error, needKey }));
+      const { error, needKey, needSignIn } = await failure(res);
+      update((t) => ({ ...t, streaming: false, error, needKey, needSignIn }));
       return;
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
     let pending = "";
+    let completed = false;
     let raf = 0;
     const flush = () => {
       raf = 0;
@@ -104,7 +103,8 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
         } catch {
           continue;
         }
-        if (e.type === "content") {
+        if (e.type === "done") completed = true;
+        else if (e.type === "content") {
           // Batch tokens into animation frames so a fast model never janks the page.
           pending += e.text;
           if (!raf) raf = requestAnimationFrame(flush);
@@ -124,10 +124,12 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
     }
     if (raf) cancelAnimationFrame(raf);
     flush();
+    if (!completed) update((t) => ({ ...t, error: t.error ?? "The answer was interrupted. Potentially billed usage remains reserved." }));
   } catch (err) {
-    if (ctrl.signal.aborted) update((t) => ({ ...t, streaming: false, error: t.content ? undefined : "Stopped." }));
+    if (ctrl.signal.aborted) update((t) => ({ ...t, streaming: false, error: "Stopped. Potentially billed usage remains reserved." }));
     else update((t) => ({ ...t, streaming: false, error: `Connection lost: ${String(err)}` }));
   } finally {
+    window.dispatchEvent(new Event("sakamoto:budget"));
     controllers.delete(glossId);
     update((t) => ({ ...t, streaming: false, searching: false }));
   }
@@ -138,12 +140,13 @@ export function startGloss(
   opts: { anchor?: Anchor; at?: string; action: Action; question?: string; modelKey?: ModelKey }
 ): string {
   const st = useStore.getState();
-  const modelKey = modelOf(opts.modelKey ?? st.settings.model);
+  const modelKey: ModelKey = "luna";
   // The answer is written in the margin, which focus mode hides: step out of it.
   if (st.focusMode) st.setUI({ focusMode: false });
   const g: Gloss = {
     id: uid(),
     articleId: ix.article.id,
+    ...sourceAddress(ix.article),
     anchor: opts.anchor,
     at: opts.at,
     action: opts.action,
@@ -158,7 +161,7 @@ export function startGloss(
 
 export function followUp(ix: DocIndex, glossId: string, question: string, modelKey?: ModelKey) {
   const st = useStore.getState();
-  const mk = modelOf(modelKey ?? st.settings.model);
+  const mk: ModelKey = "luna";
   st.updateGloss(ix.article.id, glossId, (g) => ({
     ...g,
     turns: [
@@ -170,10 +173,10 @@ export function followUp(ix: DocIndex, glossId: string, question: string, modelK
   void stream(ix, glossId, mk);
 }
 
-/** Re-runs the latest answer, optionally on a different model. */
+/** Intentionally starts a newly funded Luna attempt for the latest answer. */
 export function retry(ix: DocIndex, glossId: string, modelKey?: ModelKey) {
   const st = useStore.getState();
-  const mk = modelOf(modelKey ?? st.settings.model);
+  const mk: ModelKey = "luna";
   st.updateGloss(ix.article.id, glossId, (g) =>
     lastAssistant(g, () => ({ role: "assistant", content: "", streaming: true, modelKey: mk, model: MODELS[mk].label }))
   );
@@ -181,23 +184,26 @@ export function retry(ix: DocIndex, glossId: string, modelKey?: ModelKey) {
 }
 
 export async function fetchBrief(ix: DocIndex) {
+  const epoch = accountEpoch();
   const st = useStore.getState();
   const id = ix.article.id;
-  const modelKey = modelOf(st.settings.model);
-  st.setBrief(id, { status: "loading" });
+  const modelKey: ModelKey = "luna";
+  st.setBrief(id, { status: "loading", ...sourceAddress(ix.article) });
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/brief", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: apiKey || undefined, model: modelKey, doc: docPayload(ix) }),
+      headers: readerHeaders(),
+      body: JSON.stringify({ model: modelKey, doc: docPayload(ix) }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     const j = (await res.json()) as { brief?: BriefData; usage?: Usage; error?: string; code?: string };
-    if (j.brief) useStore.getState().setBrief(id, { status: "ready", data: j.brief, usage: j.usage, modelKey, at: Date.now() });
-    else useStore.getState().setBrief(id, { status: "error", error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
+    if (j.brief)
+      accountEpoch() === epoch &&
+        useStore.getState().setBrief(id, { status: "ready", ...sourceAddress(ix.article), data: j.brief, usage: j.usage, modelKey, at: Date.now() });
+    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key", needSignIn: res.status === 401 });
   } catch (e) {
-    useStore.getState().setBrief(id, { status: "error", error: `Connection lost: ${String(e)}` });
+    accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: `Connection lost: ${String(e)}` });
   }
 }
 
@@ -207,28 +213,19 @@ function noteFree(res: Response) {
   if (left !== null) window.dispatchEvent(new CustomEvent("gloss:free", { detail: Number(left) }));
 }
 
-/** A failed request's message, and whether the fix is the reader's own key. */
-async function failure(res: Response): Promise<{ error: string; needKey: boolean }> {
+/** Keep sign-in recovery separate from historical provider-key errors. */
+async function failure(res: Response): Promise<{ error: string; needKey: boolean; needSignIn: boolean }> {
   try {
     const j = (await res.json()) as { error?: string; code?: string };
-    return { error: j.error ?? `Request failed (${res.status}).`, needKey: j.code === "need_key" };
+    return { error: j.error ?? `Request failed (${res.status}).`, needKey: j.code === "need_key", needSignIn: res.status === 401 };
   } catch {
-    return { error: `Request failed (${res.status}).`, needKey: false };
+    return { error: `Request failed (${res.status}).`, needKey: false, needSignIn: res.status === 401 };
   }
 }
 
-/** Open the key menu in the top bar, from anywhere. */
+/** Open Processing budget; retain the existing event for saved clients. */
 export function openKeyMenu() {
   window.dispatchEvent(new Event("gloss:key"));
-}
-
-export async function validateKey(key: string): Promise<boolean> {
-  try {
-    const res = await fetch("/api/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
-    return ((await res.json()) as { ok?: boolean }).ok === true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -242,14 +239,14 @@ export async function streamAsk(
 ) {
   let full = "";
   try {
-    const apiKey = readApiKey();
     const res = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: readerHeaders(),
       signal,
-      body: JSON.stringify({ ...body, apiKey: apiKey || undefined, model: modelOf(useStore.getState().settings.model) }),
+      body: JSON.stringify({ ...body, model: "luna" }),
     });
     noteFree(res);
+    window.dispatchEvent(new Event("sakamoto:budget"));
     if (!res.ok || !res.body) {
       on.error?.((await failure(res)).error);
       return;
