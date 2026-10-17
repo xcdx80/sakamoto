@@ -86,7 +86,7 @@ const rejected = (raw: unknown, error: unknown): BookmarkReceipt => ({ receiptId
 async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context"): Promise<BookmarkReceipt> {
   // A post has no inferred document title: every supplied character belongs to its body.
   const blocks: Article["blocks"] = source.fullText.split(/\n\s*\n/).filter((text) => text.trim()).map((text, i) => ({ id: `b${i + 1}`, type: "p", runs: [{ text }] }));
-  const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? source.fullText.trim().slice(0, 100), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
+  const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? Array.from(source.fullText.trim()).slice(0, 100).join(""), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
   const processing: ProcessingState = { classification: "pending", indexing: "pending" };
   const item = { id: a.id, title: a.title, author: a.author, source: "X", sourceUrl: a.sourceUrl, origin: "paste", contentType: "post", words: wordCount(a), addedAt: Date.now(), addedBy: "agent", addedVia: source.provenance.via, processing, postId: source.postId };
   const rows = await db().query("select intake_bookmark($1,$2,$3,$4::jsonb,$5::jsonb,$6) as receipt", [owner, source.postId, source.url, JSON.stringify(item), JSON.stringify(a), role]);

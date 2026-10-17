@@ -5,7 +5,27 @@ import { createHash } from 'node:crypto';
 import { tidyTitle, type Article } from './article';
 import type { ProcessingOutcome } from './processing';
 type Extraction = {ok:true;pages:{page:number;text:string}[];totalPages:number;missingPages:number[];limited:boolean} | {ok:false;error:string};
-async function extract(bytes: ArrayBuffer, deadline: number, signal: AbortSignal): Promise<Extraction> {
+// Bound CPU/memory-heavy WASM extraction independently of concurrent network fetches.
+let activePdfWorkers=0;
+const pdfWaiters:(()=>void)[]=[];
+async function acquirePdfSlot(deadline:number,signal:AbortSignal):Promise<boolean>{
+ if(signal.aborted||deadline<=Date.now())return false;
+ if(activePdfWorkers<2){activePdfWorkers++;return true;}
+ return new Promise(resolve=>{
+  let settled=false;
+  const finish=(granted:boolean)=>{if(settled)return;settled=true;clearTimeout(timer);signal.removeEventListener('abort',abort);const i=pdfWaiters.indexOf(enter);if(i>=0)pdfWaiters.splice(i,1);if(granted)activePdfWorkers++;resolve(granted);};
+  const enter=()=>finish(!signal.aborted&&deadline>Date.now());
+  const abort=()=>finish(false);
+  const timer=setTimeout(abort,Math.max(1,deadline-Date.now()));
+  signal.addEventListener('abort',abort,{once:true});pdfWaiters.push(enter);
+ });
+}
+function releasePdfSlot(){activePdfWorkers--;while(activePdfWorkers<2&&pdfWaiters.length)pdfWaiters.shift()!();}
+async function extract(bytes:ArrayBuffer,deadline:number,signal:AbortSignal):Promise<Extraction>{
+ if(!await acquirePdfSlot(deadline,signal))return {ok:false,error:'PDF extraction timed out waiting for capacity. Retry later.'};
+ try{return await extractInWorker(bytes,deadline,signal);}finally{releasePdfSlot();}
+}
+async function extractInWorker(bytes: ArrayBuffer, deadline: number, signal: AbortSignal): Promise<Extraction> {
   return new Promise((resolve) => {
     if (signal.aborted || deadline <= Date.now()) return resolve({ok:false,error:'PDF extraction timed out. Retry or supply extracted text.'});
     const worker = new Worker(join(process.cwd(),'server/pdf-worker.mjs'), {workerData:{bytes},transferList:[bytes],resourceLimits:{maxOldGenerationSizeMb:128,maxYoungGenerationSizeMb:32}});

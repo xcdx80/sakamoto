@@ -1,14 +1,17 @@
 "use client";
 
-import { memo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { MessageCirclePlus } from "lucide-react";
 import type { Block as BlockT, Run } from "@/lib/article";
+import { readerMarkdown, type MarkdownPart } from "@/lib/reader-markdown";
+import { Markdown } from "./Markdown";
 
 /** `note`: a highlight with the reader's note, set only in the block where it ends. */
 export type Mark = { from: number; to: number; kind: "gloss" | "hl" | "pending"; id: string; color?: string; note?: boolean };
 
 type Props = {
   block: BlockT;
+  markdown?: MarkdownPart[] | null;
   n?: number;
   first?: boolean;
   marks: Mark[];
@@ -42,9 +45,8 @@ function wrapRun(run: Run, text: string, key: string): ReactNode {
  * marks that cover it. Offsets are over the block's plain text, the same
  * coordinates anchors use, so highlights never drift.
  */
-function segments(block: BlockT, marks: Mark[], activeGloss: string | null, hoverGloss: string | null, activeHighlight: string | null, fresh: string | null) {
+function segments(block: BlockT, marks: Mark[], activeGloss: string | null, hoverGloss: string | null, activeHighlight: string | null, fresh: string | null, from = 0, to = Infinity) {
   const runs = block.runs;
-  if (!marks.length) return runs.map((r, i) => wrapRun(r, r.text, String(i)));
 
   const bounds: number[] = [];
   let acc = 0;
@@ -53,7 +55,7 @@ function segments(block: BlockT, marks: Mark[], activeGloss: string | null, hove
     acc += r.text.length;
   }
   const len = acc;
-  const cuts = new Set<number>([0, len, ...bounds]);
+  const cuts = new Set<number>([0, len, ...bounds, Math.min(len, from), Math.min(len, to)]);
   for (const m of marks) {
     cuts.add(Math.max(0, Math.min(len, m.from)));
     cuts.add(Math.max(0, Math.min(len, m.to)));
@@ -64,7 +66,7 @@ function segments(block: BlockT, marks: Mark[], activeGloss: string | null, hove
   for (let i = 0; i < sorted.length - 1; i++) {
     const a = sorted[i];
     const b = sorted[i + 1];
-    if (b <= a) continue;
+    if (b <= a || a < from || b > to) continue;
     while (ri < runs.length - 1 && bounds[ri + 1] <= a) ri++;
     const run = runs[ri];
     const text = run.text.slice(a - bounds[ri], b - bounds[ri]);
@@ -168,9 +170,15 @@ function Table({ rows, head }: { rows: string[][]; head?: boolean }) {
   );
 }
 
-function BlockImpl({ block, n, first, marks, activeGloss, hoverGloss, activeHighlight, fresh, cursor, hasAt, onAsk }: Props) {
+function BlockImpl({ block, markdown: suppliedMarkdown, n, first, marks, activeGloss, hoverGloss, activeHighlight, fresh, cursor, hasAt, onAsk }: Props) {
   const Tag = block.type === "h2" ? "h2" : block.type === "h3" ? "h3" : block.type === "figure" ? "figure" : "div";
-  const content = segments(block, marks, activeGloss, hoverGloss, activeHighlight, fresh);
+  const markdown = useMemo(() => suppliedMarkdown === undefined ? readerMarkdown(block) : suppliedMarkdown, [block, suppliedMarkdown]);
+  const renderRange = (from: number, to: number, replacement?: string) => {
+    if (replacement === undefined) return segments(block, marks, activeGloss, hoverGloss, activeHighlight, fresh, from, to);
+    const covering = marks.filter(mark => mark.from < to && mark.to > from).map(mark => ({ ...mark, from: 0, to: replacement.length, note: mark.note && mark.to <= to }));
+    return segments({ ...block, runs: [{ text: replacement }] }, covering, activeGloss, hoverGloss, activeHighlight, fresh);
+  };
+  const content = markdown ? <Markdown parts={markdown} renderRange={renderRange} /> : segments(block, marks, activeGloss, hoverGloss, activeHighlight, fresh);
   return (
     <Tag
       className={`blk${first ? " is-first" : ""}${cursor ? " is-cursor" : ""}`}
@@ -200,14 +208,14 @@ function BlockImpl({ block, n, first, marks, activeGloss, hoverGloss, activeHigh
       ) : block.type === "figure" ? (
         block.runs.length > 0 && <figcaption className="blk-text">{content}</figcaption>
       ) : (
-        <span className="blk-text">{content}</span>
+        <div className={`blk-text${markdown ? " reader-markdown" : ""}`}>{content}</div>
       )}
     </Tag>
   );
 }
 
 export const Block = memo(BlockImpl, (a, b) => {
-  if (a.block !== b.block || a.n !== b.n || a.first !== b.first || a.cursor !== b.cursor || a.hasAt !== b.hasAt) return false;
+  if (a.markdown !== b.markdown || a.block !== b.block || a.n !== b.n || a.first !== b.first || a.cursor !== b.cursor || a.hasAt !== b.hasAt) return false;
   if (a.onAsk !== b.onAsk) return false;
   if (a.marks.length !== b.marks.length) return false;
   for (let i = 0; i < a.marks.length; i++) {

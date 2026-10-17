@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { processScheduled } from "@/lib/processing";
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET,
     actual = req.headers.get("authorization") ?? "",

@@ -15,7 +15,7 @@ import { fmtCost, useReader } from "./context";
  * The brief: a two-sentence gist, the load-bearing claims with citations,
  * what to keep in mind before relying on them, and a map of the text's movements. The map also labels the rail and the top bar.
  */
-export function Brief() {
+export function Brief({ compact = false }: { compact?: boolean }) {
   const { ix, jumpTo } = useReader();
   const savedBrief = useStore((s) => s.briefs[ix.article.id]);
   const brief = savedBrief && sameSourceRevision(savedBrief, ix.article) ? savedBrief : undefined;
@@ -23,21 +23,21 @@ export function Brief() {
   const setUI = useStore((s) => s.setUI);
   const hydrated = useStore((s) => s.hydrated);
 
-  if (!hydrated) return <div className="mt-6 h-[72px]" />;
+  if (!hydrated) return <div className={compact ? "mt-4 h-9" : "mt-6 h-[72px]"} />;
 
   if (!brief) {
     return (
       <button
         type="button"
         onClick={() => fetchBrief(ix)}
-        className="group mt-6 flex w-full items-center gap-5 rounded-[16px] border border-rule bg-raised/60 py-4 pl-5 pr-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:border-rule-strong hover:bg-raised hover:shadow-card active:scale-[0.995]"
+        className={compact ? "reader-utility-pill mt-4" : "group mt-6 flex w-full items-center gap-5 rounded-[16px] border border-rule bg-raised/60 py-4 pl-5 pr-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:border-rule-strong hover:bg-raised hover:shadow-card active:scale-[0.995]"}
       >
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 font-serif text-[19px] leading-none tracking-[-0.01em] text-ink [font-variation-settings:'opsz'_24]">
+          <span className={compact ? "flex items-center gap-1.5" : "flex items-center gap-1.5 font-serif text-[19px] leading-none tracking-[-0.01em] text-ink [font-variation-settings:'opsz'_24]"}>
             Summarize this text
             <ArrowRight size={15} strokeWidth={2} className="translate-y-px text-ink-4 transition-[transform,color] duration-300 ease-[var(--ease-out)] group-hover:translate-x-1 group-hover:text-rubric-text" aria-hidden />
           </span>
-          <span className="mt-1.5 block truncate text-[13px] leading-snug text-ink-3">The gist, the key claims and a map, before you start</span>
+          {!compact && <span className="mt-1.5 block truncate text-[13px] leading-snug text-ink-3">The gist, the key claims and a map, before you start</span>}
         </span>
         <kbd className="hidden sm:inline">B</kbd>
       </button>

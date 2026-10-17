@@ -15,6 +15,38 @@ async function account() {
  return {owner,call,request};
 }
 const post=(postId:string)=>({postId,url:`https://x.com/author/status/${postId}`,text:'Exact original post '+postId,author:{name:'Author',handle:'author'},observedAt:'2026-10-16T12:00:00Z',completeness:{status:'complete'}});
+test('a text-only MCP client can recover bookmark receipts and compare exact saved text before resuming',async()=>{
+ const a=await account();
+ // Deliberately ignore structuredContent, as clients that only expose TextContent do.
+ const visible=(result:any)=>JSON.parse(result.content[0].text.slice(result.content[0].text.indexOf('\n\n')+2));
+ const source={...post('11901'),text:'  Exact "quoted" source 🐈\n\\path\n  End.  ',quotedPostId:'11902',contextPosts:[{...post('11902'),text:'Quoted original 日本語.'}]};
+ const delivery={runId:'text-only-sample',batchId:'sample-01',status:'more',checkpoint:'next-page'};
+ const input={posts:[source],delivery};
+ const accepted=visible(await a.call('save_bookmarks',input));
+ assert.deepEqual(accepted.delivery.counts,{saved:1,incomplete:0,duplicate:0,removed:0,rejected:0});
+ assert.equal(accepted.delivery.safeToAdvance,true);
+ const receipt=accepted.results[0];
+ assert.ok(receipt.itemId);
+ assert.equal(receipt.sourceRevision,1);
+ const recovered=visible(await a.call('bookmark_delivery_status',{runId:delivery.runId,batchId:delivery.batchId}));
+ assert.equal(recovered.latest.results[0].itemId,receipt.itemId);
+ assert.equal(recovered.latest.results[0].sourceRevision,1);
+ assert.equal(recovered.latest.results[0].status,'saved');
+ assert.equal(recovered.latest.safeToAdvance,true);
+ const saved=visible(await a.call('read_saved_source',{itemId:receipt.itemId,revision:receipt.sourceRevision}));
+ assert.equal(saved.status,'found');
+ assert.equal(saved.sourceRevision,1);
+ assert.equal(saved.post.fullText,source.text);
+ assert.equal(saved.post.quotedPostId,'11902');
+ const quote=visible(await a.call('read_saved_source',{itemId:receipt.contextResults[0].itemId,revision:receipt.contextResults[0].sourceRevision}));
+ assert.equal(quote.post.fullText,'Quoted original 日本語.');
+ assert.deepEqual(visible(await a.call('save_bookmarks',input)),accepted);
+ const duplicate=visible(await a.call('save_bookmarks',{...input,delivery:{...delivery,batchId:'duplicate-check'}}));
+ assert.equal(duplicate.delivery.counts.duplicate,1);
+ const b=await account();
+ assert.equal(visible(await b.call('bookmark_delivery_status',{runId:delivery.runId,batchId:delivery.batchId})).latest,null);
+ assert.equal(visible(await b.call('read_saved_source',{itemId:receipt.itemId})).status,'not_found');
+});
 test('an owner resumes acknowledged batches after restart without inflating verified delivery counts or trusting source totals',async()=>{
  const a=await account(),delivery={runId:'initial-archive',batchId:'page-1',checkpoint:'cursor:next-page',status:'more',sourceTotal:1800};
  const first=await a.call('save_bookmarks',{posts:[post('11001'),{...post('11002'),completeness:{status:'partial',reason:'Parent unavailable'}},{...post('11003'),text:''}],delivery});
@@ -202,7 +234,7 @@ test('MCP compares full saved posts without revealing connector credentials or s
  assert.equal(first.structuredContent.post.author.handle,'author');
  assert.equal(first.structuredContent.post.completeness.status,'partial');
  assert.equal(first.structuredContent.post.completeness.verification,'agent_reported');
- assert.ok(Buffer.byteLength(JSON.stringify(first),'utf8')<2000000);
+ assert.ok(Buffer.byteLength(JSON.stringify(first),'utf8')<4000000);
  const pinned=await a.call('read_saved_source',{itemId:receipt.itemId,revision:receipt.sourceRevision});
  assert.deepEqual(pinned.structuredContent,first.structuredContent);
  const b=await account();
@@ -261,4 +293,21 @@ test('source comparison is one bounded MCP response rather than an unbounded JSO
  const response=await handle(a.request('/mcp',messages));
  assert.equal(response.status,400);
  assert.match((await response.json()).error.message,/one saved source per MCP request/);
+});
+
+test('text-compatible source comparison stays within the hosted response bound even for escape-heavy legacy text',async()=>{
+ const a=await account();
+ const {POST:push}=await import('../app/api/sync/route');
+ const id='escaped-legacy-source';
+ const source={postId:'11999',url:'https://x.com/author/status/11999',fullText:'"'.repeat(800000),author:{name:'Author',handle:'author'},observedAt:'2026-10-16T12:00:00Z',links:[],completeness:{status:'unknown',verification:'agent_reported'},provenance:{via:'Legacy browser',receivedAt:'2026-10-16T12:00:00Z'}};
+ const doc={id,title:'Legacy source',origin:'paste',contentType:'post',post:source,blocks:[]};
+ const data={id,title:'Legacy source',origin:'paste',contentType:'post',words:1};
+ assert.equal((await push(a.request('/api/sync',{changes:{articles:[{id,articleId:id,revision:0,data,doc}]}}))).status,200);
+ const response=await handle(a.request('/mcp',{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'read_saved_source',arguments:{itemId:id}}}));
+ const wire=await response.text();
+ assert.ok(Buffer.byteLength(wire,'utf8')<4000000,'Actual JSON-RPC envelope must fit the hosted response bound');
+ const result=JSON.parse(wire).result;
+ assert.equal(result.structuredContent.status,'too_large');
+ assert.match(result.content[0].text,/too_large/);
+ assert.equal(result.structuredContent.post,undefined);
 });

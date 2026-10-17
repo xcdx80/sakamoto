@@ -58,7 +58,8 @@ export function Processing({
   return (
     <section
       aria-label="Received material processing"
-      className="my-4 rounded-xl border border-black/10 p-4 text-sm"
+      id="library-processing"
+      className="my-4 rounded-xl border border-rule p-4 text-sm"
     >
       <div className="flex items-center justify-between gap-3">
         <strong>Received material</strong>
@@ -66,10 +67,11 @@ export function Processing({
           {busy ? "Processing…" : "Process now"}
         </button>
       </div>
-      <p className="mt-1 text-black/60">
-        Process saved sources and categories here. Ask Grok separately to fetch new bookmarks.
-        Daily processing handles a bounded batch.
+      <p className="mt-1 text-ink-3">
+        Your texts are saved and readable. Categories, search indexing and linked imports run separately.
+        Each Process now advances up to 48 jobs with bounded parallelism; remaining work stays queued. Use Import bookmarks or an agent to fetch new bookmarks.
       </p>
+      {status?.worker?.active && <p className="mt-2 font-medium">Background worker active · processing continues with this page closed.</p>}
       {error && <p role="alert">{error}</p>}
       <details className="mt-2">
         <summary>

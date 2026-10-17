@@ -1,7 +1,7 @@
 import { requestOwner } from "@/lib/owner";
 import { processingStatus, processLibrary } from "@/lib/processing";
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 export async function GET(req: Request) {
   const owner = await requestOwner(req);
   if (!owner)
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       Array.isArray(args) ||
       Object.keys(args).some((k) => !["limit", "retryJobId"].includes(k)) ||
       (args.limit !== undefined &&
-        (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 4)) ||
+        (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 48)) ||
       (args.retryJobId !== undefined &&
         (typeof args.retryJobId !== "string" || !/^\d+$/.test(args.retryJobId)))
     )

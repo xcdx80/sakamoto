@@ -26,6 +26,49 @@ class BrowserStorage implements Storage {
 Object.defineProperty(globalThis, "localStorage", { value: new BrowserStorage() });
 Object.defineProperty(globalThis, "window", { value: new EventTarget() });
 let store: typeof import("../lib/store");
+test("home leads with a knowledge-base question using the shared saved-answer composer", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { parseHTML } = await import("linkedom");
+  Object.defineProperty(globalThis, "document", { value: parseHTML("<html><body></body></html>").document, configurable: true });
+  const { Hero } = await import("../components/landing/Hero");
+  const { LibraryAnswer } = await import("../components/library/LibraryAnswer");
+  const { document } = parseHTML(renderToStaticMarkup(createElement(Hero, {
+    children: createElement(LibraryAnswer, { owner: "home-reader", filters: {}, presentation: "home" }),
+  })));
+  assert.match(document.querySelector("h1")?.textContent ?? "", /Ask.*knowledge base/s);
+  const question = document.querySelector('textarea[placeholder="Ask anything about what you’ve saved…"]');
+  assert.ok(question);
+  assert.equal(document.querySelector('button[type="submit"]')?.textContent, "Ask your knowledge base");
+  assert.doesNotMatch(document.documentElement.textContent ?? "", /Paste a link|selected content type/);
+});
+test("library sync status is a compact disclosure with no inline delivery or processing panels", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { parseHTML } = await import("linkedom");
+  const { XSyncStatus } = await import("../components/library/XSyncStatus");
+  const { document } = parseHTML(renderToStaticMarkup(createElement(XSyncStatus, { owner: "owner-a", version: 33 })));
+  const button = document.querySelector('button[aria-label="X sync status"]');
+  assert.ok(button);
+  assert.match(button.textContent ?? "", /X sync status/);
+  assert.equal(button.getAttribute("aria-expanded"), "false");
+  assert.equal(button.getAttribute("aria-haspopup"), "dialog");
+  assert.equal(document.querySelector('[role="dialog"], section'), null);
+  assert.doesNotMatch(document.body.textContent ?? "", /Process now|Last posts delivered/);
+});
+test("continue reading shows the saved title and progress in a named secondary section", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { parseHTML } = await import("linkedom");
+  const { ContinueReading } = await import("../components/landing/LibraryLine");
+  const { document } = parseHTML(renderToStaticMarkup(createElement(ContinueReading, { reading: { id: "resume-post", title: "A useful saved post", pct: .2 } })));
+  const reading = document.querySelector('section[aria-label="Continue reading"]');
+  assert.ok(reading);
+  assert.match(reading.textContent ?? "", /A useful saved post/);
+  assert.match(reading.textContent ?? "", /20% read/);
+  assert.equal(reading.querySelector('a[href="/read/resume-post"]')?.textContent?.includes("A useful saved post"), true);
+  assert.ok(reading.querySelector('a[href="/library"]'));
+});
 before(async () => {
   store = await import("../lib/store");
 });
@@ -128,10 +171,36 @@ test("accepted posts remain readable in grid/list filters while pending processi
   const books = filterBooks(toLibraryBooks({ library: state.library, progress: state.progress, highlights: state.highlights, hydrated: true, hiddenSamples: [] }), { contentType: "post" });
   assert.equal(books.length, 1);
   for (const view of ["grid", "list"] as const) {
-    const html = renderToStaticMarkup(createElement(ContentCards, { books, view, fresh: new Set<string>(), onManage() {}, onFavorite() {}, onTag() {}, selectedTag: null }));
+    const html = renderToStaticMarkup(createElement(ContentCards, { books, view, fresh: new Set<string>(), onManage() {}, onFavorite() {}, onTag() {}, selectedTag: null, connections: { "accepted-post": { parents: [], children: [{ id: "linked-essay", title: "The linked essay", author: "Essay author", contentType: "article" }] } } }));
     assert.match(html, /href="\/read\/accepted-post"/);
-    assert.match(html, /Classification pending/);
-    assert.match(html, /Indexing pending/);
+    assert.match(html, /Category queued/);
+    assert.match(html, /Search indexing queued/);
+    const { parseHTML } = await import("linkedom");
+    const { document } = parseHTML(html);
+    assert.ok(document.querySelector('a[href="/read/linked-essay"]'));
+    assert.equal(document.querySelector("a a"), null);
+    assert.match(document.querySelector('[aria-label="Related saved sources"]')!.textContent!, /Linked reading/);
+  }
+});
+
+test("grid and list identify linked-article provenance without claiming context posts were bookmarked", async () => {
+  const { toLibraryBooks } = await import("../lib/library");
+  const { ContentCards } = await import("../components/library/ContentCards");
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { parseHTML } = await import("linkedom");
+  const books = toLibraryBooks({ library: [{ id: "related-article", title: "A linked article", author: "Essay writer", words: 100, origin: "url", contentType: "article", addedAt: 1 }], progress: {}, highlights: {}, hydrated: true, hiddenSamples: [] }).filter(b => b.id === "related-article");
+  for (const view of ["grid", "list"] as const) for (const postRole of ["bookmark", "context"] as const) {
+    const html = renderToStaticMarkup(createElement(ContentCards, { books, view, fresh: new Set<string>(), onManage() {}, onFavorite() {}, onTag() {}, selectedTag: null, connections: { "related-article": { parents: [{ id: "parent-post", title: "Why I saved this", author: "Post writer", contentType: "post", postRole }], children: [] } } }));
+    const { document } = parseHTML(html);
+    assert.ok(document.querySelector('a[href="/read/related-article"]'));
+    assert.ok(document.querySelector('a[href="/read/parent-post"]'));
+    assert.equal(document.querySelector("a a"), null);
+    assert.match(document.querySelector('[aria-label="Related saved sources"]')!.textContent!, postRole === "bookmark" ? /From X bookmark/ : /From saved X post/);
+    const relation = document.querySelector('[aria-label="Related saved sources"]')!;
+    assert.match(relation.textContent!, /Why I saved this/);
+    assert.match(relation.textContent!, /Post writer/);
+    assert.match(relation.textContent!, /Source post/);
   }
 });
 

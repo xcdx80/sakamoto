@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { scopedKey } from "@/lib/account-scope";
 
 import { useUser } from "@clerk/nextjs";
@@ -15,16 +16,17 @@ import { watchShelf, retrySync } from "@/lib/sync";
 import { AddButton, AddPanel, type AddTab } from "./AddPanel";
 import { Arrivals, type Wave } from "./Arrivals";
 import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
-import { BookmarkDelivery } from "./BookmarkDelivery";
-import { Processing } from "./Processing";
+import { XSyncStatus } from "./XSyncStatus";
 import { EvidenceSearch } from "./EvidenceSearch";
 import { LibraryAnswer } from "./LibraryAnswer";
 import { Starter } from "./Starter";
+import { useLibraryRelations } from "@/lib/library-relations-client";
 
 // Preserve existing device history while the product is renamed.
 const SEEN_KEY = "gloss:library-seen";
 
 export function Library() {
+  const connections = useLibraryRelations();
   const { user, isSignedIn } = useUser();
   const syncNotice = useStore(s=>s.syncNotice);
   const syncError = useStore((s) => s.syncError);
@@ -160,7 +162,6 @@ export function Library() {
         <TopBar here="library" onLibrary={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
       </div>
       <main className="mx-auto w-full max-w-[1180px] px-4 pb-32 sm:px-8">
-        {account && <><BookmarkDelivery key={"delivery:"+account} owner={account} version={library.length} /><Processing key={account} owner={account} version={library.length} /></>}
         {syncNotice && <p role="status" className="mx-auto max-w-6xl px-6 py-4 text-sm">{syncNotice} <button className="underline" onClick={()=>useStore.getState().setUI({syncNotice:null})}>Dismiss</button></p>}
         {syncError && (
           <p role="alert" className="mx-auto max-w-6xl px-6 py-4 text-sm">
@@ -197,7 +198,11 @@ export function Library() {
                 </>}
               </p>
             </div>
-            <AddButton onClick={() => setAdding("links")} />
+            <div className="library-hero-actions">
+              <AddButton onClick={() => setAdding("links")} />
+              {account && <Link href="/library/import" className="library-sync-trigger">Import bookmarks</Link>}
+              {account && <XSyncStatus key={account} owner={account} version={library.length} />}
+            </div>
           </div>
           {fromAgent.length > 0 && (
             <button type="button" className="lib-news" onClick={() => { clearFilters(); setStatus("agent"); }}>
@@ -262,7 +267,8 @@ export function Library() {
           {filtered && <button type="button" onClick={clearFilters}>Clear filters <X size={13} aria-hidden /></button>}
         </div>
         {hydrated ? <>
-          <ContentCards books={visible} view={view} fresh={fresh} onManage={(b) => setManage(b.id)} onFavorite={(b) => shelveItem(b.id, { favorite: !b.favorite })} onTag={setTag} selectedTag={tag} />
+          {connections.error && <p role="alert" className="mb-3 text-sm text-ink-3">{connections.error} <button className="underline" onClick={connections.refresh}>Retry connections</button></p>}
+          <ContentCards books={visible} view={view} fresh={fresh} onManage={(b) => setManage(b.id)} onFavorite={(b) => shelveItem(b.id, { favorite: !b.favorite })} onTag={setTag} selectedTag={tag} connections={connections.index} />
           {!visible.length && (
             <div className="content-empty">
               <FileText size={28} strokeWidth={1.2} aria-hidden />

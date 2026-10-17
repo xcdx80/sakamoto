@@ -19,6 +19,6 @@ export function BookmarkDelivery({owner,version}:{owner:string;version:number}) 
     {status.next&&<button className="mt-2 underline" onClick={async()=>{try{const page=await receivedBookmarkDeliveries(status.next!);setStatus({...status,batches:[...status.batches,...page.batches],next:page.next});}catch(e){setError(e instanceof Error?e.message:'Could not load deliveries.');}}}>Show older deliveries</button>}
    </details>
   </>}
-  <p className="mt-2 text-ink-3">For new sources, open Connect an agent and run the Grok bookmark workflow. A stale delivery/check points to Grok or X access; pending/retryable jobs point to Sakamoto processing. Daily cron processes a bounded received batch. Grok account usage and the Sakamoto USD10 processing cap are separate.</p>
+  <p className="mt-2 text-ink-3">For new sources, use Import bookmarks for X or Birdclaw, or Connect an agent for the Grok workflow. A stale delivery/check points to Grok or X access; pending/retryable jobs point to Sakamoto processing. Daily cron processes a bounded received batch. Grok account usage and the Sakamoto USD10 processing cap are separate.</p>
  </section>;
 }

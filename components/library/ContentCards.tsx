@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, FileText, MessageSquare, MoreHorizontal, Newspaper, Star, Trash2, X } from "lucide-react";
 import { reclassifyItem } from "@/lib/processing-client";
 import { fmtMinutes, TOPIC, TOPICS, type Book, type TopicKey } from "@/lib/library";
+import type { ItemConnections } from "@/lib/library-relations-client";
+import { SourceConnections } from "./SourceConnections";
 
 export type LibraryView = "grid" | "list";
 type Patch = { title?: string; topic?: TopicKey; favorite?: boolean };
@@ -13,7 +15,7 @@ const TYPE_LABEL = { article: "Article", document: "Document", post: "Post" };
 const TYPE_ICON = { article: Newspaper, document: FileText, post: MessageSquare };
 
 /** A source is a reading destination; its management controls remain separate links and buttons. */
-export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, selectedTag }: {
+export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, selectedTag, connections }: {
   books: Book[];
   view: LibraryView;
   fresh: Set<string>;
@@ -21,6 +23,7 @@ export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, 
   onFavorite: (book: Book) => void;
   onTag: (tag: string) => void;
   selectedTag: string | null;
+  connections?: Record<string, ItemConnections>;
 }) {
   return (
     <ul className={view === "grid" ? "content-grid" : "content-list"} aria-label={view === "grid" ? "Library cards" : "Library list"}>
@@ -32,6 +35,8 @@ export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, 
               <div className="content-card-meta">
                 <span className="content-kind"><Icon size={14} strokeWidth={1.6} aria-hidden />{TYPE_LABEL[b.contentType]}</span>
                 <span className="content-card-topic"><i aria-hidden style={{ background: TOPIC[b.topic].shades[0] }} />{TOPIC[b.topic].name}</span>
+                {view === "list" && Boolean(connections?.[b.id]?.parents.length) && <span className="content-relation-badge"><MessageSquare size={12} aria-hidden />Saved from X</span>}
+                {view === "list" && Boolean(connections?.[b.id]?.children.length) && <span className="content-relation-badge"><FileText size={12} aria-hidden />Has linked reading</span>}
               </div>
               <div className="content-card-text">
                 <h2>{b.title}<ArrowUpRight className="content-card-arrow" size={18} strokeWidth={1.5} aria-hidden /></h2>
@@ -39,13 +44,14 @@ export function ContentCards({ books, view, fresh, onManage, onFavorite, onTag, 
                 {b.dek && <p className="content-card-dek">{b.dek}</p>}
               </div>
               <div className="content-card-reading">
-                {b.processing?.classification && b.processing.classification !== "complete" && <span title={b.processing.classificationMessage}>Classification {b.processing.classification}</span>}
-                {b.processing?.indexing === "pending" && <span>Indexing pending</span>}
+                {b.processing?.classification && b.processing.classification !== "complete" && <span title={b.processing.classificationMessage || "Your text is saved. Process now advances queued categorization."}>Category {b.processing.classification === "pending" ? "queued" : b.processing.classification}</span>}
+                {b.processing?.indexing === "pending" && <span title="Your text is readable. Process now builds its search index.">Search indexing queued</span>}
                 <span>{fmtMinutes(b.minutes)} read</span>
                 {b.pct >= 1 ? <span className="content-read-state"><Check size={12} aria-hidden /> Read</span> : b.pct > 0 ? <span className="content-read-state">{Math.round(b.pct * 100)}% read</span> : b.sample ? <span>Sample</span> : null}
                 {b.highlights > 0 && <span>{b.highlights} {b.highlights === 1 ? "highlight" : "highlights"}</span>}
               </div>
             </Link>
+            <SourceConnections connections={connections?.[b.id]} itemId={b.id} view={view} />
             <div className="content-card-footer">
               <div className="content-card-tags" aria-label={`Tags for ${b.title}`}>
                 {b.tags.map((tag) => <button key={tag} type="button" aria-pressed={selectedTag === tag} onClick={() => onTag(tag)}>{tag}</button>)}

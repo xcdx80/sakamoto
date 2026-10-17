@@ -44,11 +44,29 @@ export async function processingStatus(
     `select j.* from processing_jobs j where j.user_id=$1 and j.id>$2::bigint and ($4::text is null or j.source_id=$4) order by j.id limit $3`,
     [owner, /^\d+$/.test(args.after ?? "") ? args.after : "0", limit + 1, args.sourceId ?? null],
   );
+  registerLibraryProcessingHandlers(registerProcessingHandler);
+  const [summary] = await db().query(`select
+    count(*) filter(where j.state in ('pending','retryable','running'))::int as pending,
+    count(*) filter(where j.kind=any($3::text[]) and ((j.state in ('pending','retryable') and j.next_attempt_at<=$2::timestamptz) or (j.state='running' and j.lease_expires_at<=$2::timestamptz)))::int as ready,
+    count(*) filter(where j.state='running' and j.lease_expires_at>$2::timestamptz)::int as running,
+    min(j.next_attempt_at) filter(where j.kind=any($3::text[]) and j.state in ('pending','retryable')) as next_ready_at,
+    count(*) filter(where j.state='complete')::int as complete,
+    count(*) filter(where j.state in ('terminal','pdf_pending'))::int as attention
+    from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id and a.source_revision=j.source_revision
+    where j.user_id=$1 and not a.deleted`,[owner,new Date(clock()).toISOString(),['link',...handlers.keys()]]);
+  let worker:Record<string,any>|undefined;
+  try{[worker]=await db().query('select heartbeat_at from processing_workers where user_id=$1 and lease_expires_at>now()',[owner]);}
+  catch(error){
+    // Read-only queue status remains available while inspecting an installation before its worker migration.
+    if(!(error&&typeof error==='object'&&'code' in error&&error.code==='42P01'))throw error;
+  }
   return {
+    worker:{active:Boolean(worker),lastHeartbeatAt:worker?new Date(worker.heartbeat_at).toISOString():null},
+    summary,
     jobs: rows.slice(0, limit).map(jobOf),
     next: rows.length > limit ? String(rows[limit - 1].id) : null,
     description:
-      "Processing received material only. Fetch new bookmarks separately in Grok.",
+      "Processes received material only. Import new bookmarks through X sync, Birdclaw or an agent.",
   };
 }
 
@@ -152,7 +170,7 @@ export async function processLibrary(
   args: { limit?: number; retryJobId?: string } = {},
 ) {
   registerLibraryProcessingHandlers(registerProcessingHandler);
-  const limit = Math.max(1, Math.min(4, Number(args.limit) || 4));
+  const limit = Math.max(1, Math.min(48, Number(args.limit) || 4));
   const end = Date.now() + 23_000;
   if (args.retryJobId) {
     if (!/^\d+$/.test(args.retryJobId))
@@ -165,28 +183,17 @@ export async function processLibrary(
     );
   }
   let processed = 0;
-  for (; processed < limit && Date.now() < end; processed++) {
-    const now = clock(),
-      token = crypto.randomUUID();
+  let claimedSlots = 0;
+  const work = async () => {
+   while (claimedSlots < limit && Date.now() < end) {
+    claimedSlots++;
+    const token = crypto.randomUUID();
     const rows = await db().query(
-      `with candidate as (
-   select j.id from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id
-   where j.user_id=$1 and j.kind=any($5::text[]) and not a.deleted and a.source_revision=j.source_revision
-    and ((j.state in ('pending','retryable') and j.next_attempt_at<=$2::timestamptz) or (j.state='running' and j.lease_expires_at<=$2::timestamptz))
-   order by j.next_attempt_at,j.id for update of j skip locked limit 1)
-   update processing_jobs j set state=case when attempts>=max_attempts then 'terminal' else 'running' end,
-    attempts=case when attempts>=max_attempts then attempts else attempts+1 end,
-    error=case when attempts>=max_attempts then 'Retry limit reached.' else error end,
-    lease_token=case when attempts>=max_attempts then null else $3 end,lease_expires_at=case when attempts>=max_attempts then null else $4::timestamptz end,updated_at=$2 from candidate where j.id=candidate.id returning j.*`,
-      [
-        owner,
-        new Date(now).toISOString(),
-        token,
-        new Date(now + 45_000).toISOString(),
-        ["link", ...handlers.keys()],
-      ],
+      'select * from claim_processing($1,$2,$3::timestamptz,$4::text[])',
+      [owner, token, new Date(clock()).toISOString(), ['link', ...handlers.keys()]],
     );
-    if (!rows.length) break;
+    if (!rows.length) { claimedSlots--; break; }
+    processed++;
     const row = rows[0],
       job = jobOf(row);
     if (job.state === "terminal") continue;
@@ -268,7 +275,12 @@ export async function processLibrary(
         result.publication ? JSON.stringify(result.publication) : null,
       ],
     );
-  }
+   }
+  };
+  // Await every lane even when another fails, so the HTTP response never abandons paid work.
+  const lanes = await Promise.allSettled(Array.from({length:Math.min(6,limit)},work));
+  if (lanes.some(result=>result.status==='rejected'))
+    throw new Error('Processing interrupted; durable jobs and budget reservations are retained.');
   return { processed, ...(await processingStatus(owner)) };
 }
 /** Cron stays bounded across owners as well as jobs. Its caller must authenticate the scheduler secret. */
@@ -280,7 +292,7 @@ export async function processScheduled() {
     [["link", ...handlers.keys()], new Date(clock()).toISOString()],
   );
   return rows.length
-    ? processLibrary(rows[0].user_id, { limit: 4 })
+    ? processLibrary(rows[0].user_id, { limit: 48 })
     : { processed: 0 };
 }
 
