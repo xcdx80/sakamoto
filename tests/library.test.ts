@@ -156,7 +156,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
     assert.equal(page.changes.highlights[0].data.sourceRevision, 1);
   } finally {
     configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
-    await c.query("set search_path to public");
+    await c.query("reset search_path");
     c.release();
   }
 });
