@@ -13,6 +13,7 @@ import {
   paidFailure,
   PaidWorkError,
   reservePaidWork,
+  releaseRejectedPaidWork,
   markPaidWorkUncertain,
   settlePaidWork,
   recordPaidResponse,
@@ -118,6 +119,7 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         let usage: Usage | undefined;
+        let initialStarted = false;
         const send = (event: StreamEvent) => controller.enqueue(encode(event));
         const search = async (query: string) => {
           const reservation = await reservePaidWork({
@@ -191,6 +193,7 @@ export async function POST(req: Request) {
                 413,
               );
           }
+          initialStarted = true;
           call = await relay(initial);
           if (call) {
             send({ type: "reset" });
@@ -237,7 +240,9 @@ export async function POST(req: Request) {
           if (usage) send({ type: "usage", usage });
           send({ type: "done" });
         } catch (error) {
-          await markPaidWorkUncertain(initial.reservation).catch(() => {});
+          await (initialStarted
+            ? markPaidWorkUncertain(initial.reservation)
+            : releaseRejectedPaidWork(initial.reservation)).catch(() => {});
           send({
             type: "error",
             text:

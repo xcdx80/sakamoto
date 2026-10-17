@@ -27,3 +27,23 @@ test('large batches and simultaneous callers share the link and per-host concurr
  assert.ok(peak>1);assert.ok(peak<=4);assert.ok(sharedPeak<=2);assert.equal(fetched.length,16);assert.equal(new Set(fetched).size,16);assert.equal(status.jobs.filter((j:any)=>j.kind==='link'&&j.state==='complete').length,16);
  configureProcessing({});
 });
+
+test('one scheduled run advances both active owners and ignores an owner with only deleted sources',async()=>{
+ const {shelveForUser,pushRows}=await import('../lib/db');
+ const {enqueueProcessing,registerProcessingHandler}=await import('../lib/processing');
+ const {GET:cron}=await import('../app/api/cron/processing/route');
+ const owners=['deleted','first','second'].map(label=>label+'-'+crypto.randomUUID());
+ const seen=new Set<string>();
+ registerProcessingHandler('scheduler-fixture',async({owner})=>{seen.add(owner);return {state:'complete'};});
+ for(const owner of owners){
+  await shelveForUser(owner,{id:'scheduled',title:'Scheduled fixture'},{id:'scheduled',blocks:[]});
+  await enqueueProcessing(owner,'scheduled',1,'scheduler-fixture');
+ }
+ await pushRows(owners[0],{articles:[{id:'scheduled',article_id:'scheduled',data:{},deleted:true,revision:1}]});
+ process.env.CRON_SECRET='scheduler-fixture-secret';
+ const response=await cron(new Request('http://localhost/api/cron/processing',{headers:{authorization:'Bearer scheduler-fixture-secret'}}));
+ assert.equal(response.status,200);
+ const result=await response.json();
+ assert.equal(result.processed,2);
+ assert.deepEqual([...seen].sort(),owners.slice(1).sort());
+});

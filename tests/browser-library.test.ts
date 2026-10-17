@@ -232,6 +232,29 @@ test("retired speech and historical key-needed errors render unavailable or budg
   assert.equal(calls,0);
 });
 
+test("authentication failures on reader summaries and questions expose sign-in recovery without a provider-key prompt",async()=>{
+  const {indexArticle}=await import('../lib/doc');
+  const {fetchBrief,startGloss}=await import('../lib/ask');
+  store.useStore.getState().activateAccount(null);
+  const ix=indexArticle({id:'auth-recovery-'+crypto.randomUUID(),title:'Saved local text',origin:'paste',blocks:[{id:'body',type:'p',runs:[{text:'Readable without signing in.'}]}]});
+  globalThis.fetch=async()=>Response.json({error:'Sign in to ask about saved text.'},{status:401});
+  await fetchBrief(ix);
+  const brief=store.useStore.getState().briefs[ix.article.id];
+  assert.equal(brief.status,'error');
+  assert.equal(brief.status==='error'&&brief.needSignIn,true);
+  assert.equal(brief.status==='error'&&brief.needKey,false);
+  let stop=()=>{};
+  const finished=new Promise<void>(resolve=>{stop=store.useStore.subscribe(state=>{
+    const turn=state.glosses[ix.article.id]?.at(-1)?.turns.at(-1);
+    if(turn?.error&&!turn.streaming)resolve();
+  });});
+  const id=startGloss(ix,{action:'ask',question:'What does this say?'});
+  await finished;stop();
+  const turn=store.useStore.getState().glosses[ix.article.id].find(g=>g.id===id)!.turns.at(-1)!;
+  assert.equal(turn.needSignIn,true);
+  assert.equal(turn.needKey,false);
+});
+
 test("anonymous adoption never publishes an unreadable account card after quota failure and can repair it on retry",async()=>{
   localStorage.clear();store.useStore.getState().activateAccount("adoption-reset");store.useStore.getState().activateAccount(null);
   const doc={id:"adoption-durable",title:"Anonymous durable source",origin:"paste" as const,blocks:[{id:"body",type:"p" as const,runs:[{text:"Retain this literal anonymous source."}]}]};

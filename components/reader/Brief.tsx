@@ -50,6 +50,9 @@ export function Brief({ compact = false }: { compact?: boolean }) {
     return (
       <div className="mt-6 flex flex-wrap items-center gap-3 rounded-[16px] border border-rule px-4 py-3.5 text-[13.5px]">
         <p className="text-rubric-text">{brief.error}</p>
+        {brief.needSignIn && <SignInButton mode="modal">
+          <button type="button" className="font-medium text-ink underline decoration-rule-strong underline-offset-4">Sign in</button>
+        </SignInButton>}
         {brief.needKey && (
           <>
             <button type="button" onClick={openKeyMenu} className="font-medium text-ink underline decoration-rule-strong underline-offset-4">

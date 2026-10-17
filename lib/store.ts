@@ -22,6 +22,7 @@ export type Turn = {
   modelKey?: ModelKey;
   /** Historical error flag retained for stored-result compatibility. */
   needKey?: boolean;
+  needSignIn?: boolean;
   /** Looking things up on the web before the answer starts. */
   searching?: boolean;
   /** The web results this answer may cite as [1], [2]. */
@@ -54,7 +55,7 @@ export type Review = { due: number; step: number; last: number; off?: boolean };
 export type Highlight = { pendingSource?: string | null; sourceRevision?: number; id: string; articleId: string; anchor: Anchor; createdAt: number; color?: Marker; note?: string; review?: Review };
 
 export type BriefState = { pendingSource?: string | null; sourceRevision?: number } & (
-  { status: "loading" } | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number } | { status: "error"; error: string; needKey?: boolean }
+  { status: "loading" } | { status: "ready"; data: BriefData; usage?: Usage; modelKey?: ModelKey; at: number } | { status: "error"; error: string; needKey?: boolean; needSignIn?: boolean }
 );
 
 export type { Settings } from "./settings";

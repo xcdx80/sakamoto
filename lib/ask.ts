@@ -72,8 +72,8 @@ async function stream(ix: DocIndex, glossId: string, modelKey: ModelKey) {
     noteFree(res);
     window.dispatchEvent(new Event("sakamoto:budget"));
     if (!res.ok || !res.body) {
-      const { error, needKey } = await failure(res);
-      update((t) => ({ ...t, streaming: false, error, needKey }));
+      const { error, needKey, needSignIn } = await failure(res);
+      update((t) => ({ ...t, streaming: false, error, needKey, needSignIn }));
       return;
     }
     const reader = res.body.getReader();
@@ -201,7 +201,7 @@ export async function fetchBrief(ix: DocIndex) {
     if (j.brief)
       accountEpoch() === epoch &&
         useStore.getState().setBrief(id, { status: "ready", ...sourceAddress(ix.article), data: j.brief, usage: j.usage, modelKey, at: Date.now() });
-    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key" });
+    else accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: j.error ?? "Could not write the gloss.", needKey: j.code === "need_key", needSignIn: res.status === 401 });
   } catch (e) {
     accountEpoch() === epoch && useStore.getState().setBrief(id, { status: "error", ...sourceAddress(ix.article), error: `Connection lost: ${String(e)}` });
   }
@@ -213,13 +213,13 @@ function noteFree(res: Response) {
   if (left !== null) window.dispatchEvent(new CustomEvent("gloss:free", { detail: Number(left) }));
 }
 
-/** A failed request's message, and whether the fix is the reader's own key. */
-async function failure(res: Response): Promise<{ error: string; needKey: boolean }> {
+/** Keep sign-in recovery separate from historical provider-key errors. */
+async function failure(res: Response): Promise<{ error: string; needKey: boolean; needSignIn: boolean }> {
   try {
     const j = (await res.json()) as { error?: string; code?: string };
-    return { error: j.error ?? `Request failed (${res.status}).`, needKey: j.code === "need_key" };
+    return { error: j.error ?? `Request failed (${res.status}).`, needKey: j.code === "need_key", needSignIn: res.status === 401 };
   } catch {
-    return { error: `Request failed (${res.status}).`, needKey: false };
+    return { error: `Request failed (${res.status}).`, needKey: false, needSignIn: res.status === 401 };
   }
 }
 
