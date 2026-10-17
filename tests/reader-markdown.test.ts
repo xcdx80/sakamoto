@@ -110,3 +110,25 @@ test("Markdown hard line breaks remain inline inside their paragraph", () => {
   assert.ok(document.querySelector(".blk-text p br"));
   assert.equal(document.querySelector(".blk-text p div"), null);
 });
+
+test("reading imported Markdown aloud skips code and speaks link labels without syntax", async () => {
+  const saved = new Map<string, PropertyDescriptor | undefined>();
+  const stub = (name: string, value: unknown) => { saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { value, configurable: true, writable: true }); };
+  const requests: string[] = [];
+  stub("localStorage", { getItem: (key: string) => key === "together:api-key" ? "fixture-key" : null });
+  stub("navigator", {});
+  stub("Audio", class { src = ""; play() { return Promise.resolve(); } pause() {} removeAttribute() {} });
+  stub("fetch", async (_url: unknown, init: RequestInit) => { requests.push(JSON.parse(String(init.body)).text); return new Response(JSON.stringify({ error: "Fixture stops before audio playback" }), { status: 503 }); });
+  const { startListening, stopListening } = await import("../components/reader/Listen");
+  try {
+    const { textToArticle } = await import("../lib/article");
+    const { indexArticle } = await import("../lib/doc");
+    const article = textToArticle("# Narration\n\n```js\nconsole.log('do not narrate code');\n```\n\nRead [the guide](https://example.com) &amp; **learn**.", { origin: "paste" });
+    startListening(indexArticle(article), null);
+    assert.deepEqual(requests, ["Read the guide & learn."]);
+  } finally {
+    stopListening();
+    await new Promise(resolve => setImmediate(resolve));
+    for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
+  }
+});
