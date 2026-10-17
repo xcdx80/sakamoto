@@ -1,6 +1,7 @@
 /** The document model. Shared by server (import) and client (reader). */
 
 import { texToText } from "./tex";
+import { markdownTree, markdownText } from "./markdown";
 
 export type Run = { text: string; em?: boolean; strong?: boolean; code?: boolean; href?: string };
 
@@ -149,7 +150,7 @@ export function slugify(s: string): string {
 
 /** Plain text (or light Markdown) into blocks. Used for paste and .txt/.md files. */
 export function textToArticle(input: string, opts: { title?: string; origin: Article["origin"] }): Article {
-  const { title, blocks } = parseMarkdown(input, { title: opts.title, takeTitle: true });
+  const { title, blocks } = importedText(input, opts.title);
   return {
     id: `${slugify(title ?? "pasted")}-${Math.random().toString(36).slice(2, 7)}`,
     title: title ? tidyTitle(title) : "Untitled",
@@ -157,6 +158,24 @@ export function textToArticle(input: string, opts: { title?: string; origin: Art
     origin: opts.origin,
     addedAt: Date.now(),
   };
+}
+
+/** Keep Markdown source intact for the reader instead of partially consuming its syntax. */
+function importedText(input: string, suppliedTitle?: string): { title?: string; blocks: Block[] } {
+  const source = undash(input.replace(/\r/g, "")).replace(/^\n+|\n+$/g, "");
+  const tree = markdownTree(source);
+  const formatted = tree.children.some(node => node.type !== "paragraph" || node.children.some(child => child.type !== "text"));
+  if (!formatted) return parseMarkdown(input, { title: suppliedTitle, takeTitle: true });
+  let title = suppliedTitle;
+  let body = source;
+  const first = tree.children[0];
+  const firstText = first ? markdownText(first) : "";
+  if (!title && first && ((first.type === "heading" && first.depth === 1) || (first.type === "paragraph" && first.children.every(child => child.type === "text") && firstText.length < 120 && !/[.!?]$/.test(firstText)))) {
+    title = firstText;
+    body = source.slice(first.position!.end.offset!);
+  }
+  const blocks = body.split(/\n\s*\n/).filter(text => text.trim()).map((text, i): Block => ({ id: `b${i + 1}`, type: "p", runs: [{ text }] }));
+  return { title, blocks };
 }
 
 /** Markdown into blocks, nothing taken as the title. Used for PDF pages read by a vision model. */

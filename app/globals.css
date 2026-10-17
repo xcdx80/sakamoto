@@ -1942,3 +1942,28 @@ a.desk-tile:focus-visible {
     vertical-align: middle;
   }
 }
+
+/* Markdown keeps source characters for durable annotation offsets. */
+.reader-md-syntax { display: none; }
+.prose-read .reader-markdown { white-space: pre-wrap; overflow-wrap: anywhere; }
+.prose-read .reader-markdown > :first-child { margin-top: 0; }
+.prose-read .reader-markdown > :last-child { margin-bottom: 0; }
+.prose-read .reader-markdown p { margin: 0 0 .8em; }
+.prose-read .reader-markdown :is(h2, h3, h4, h5, h6) { margin: 1.3em 0 .5em; font-weight: 600; line-height: 1.3; }
+.prose-read .reader-markdown h2 { font-size: 1.32em; }
+.prose-read .reader-markdown :is(h3, h4, h5, h6) { font-size: 1.08em; }
+.prose-read .reader-markdown :is(ul, ol) { margin: .6em 0; padding-left: 1.5em; }
+.prose-read .reader-markdown ul { list-style: disc; }
+.prose-read .reader-markdown ol { list-style: decimal; }
+.prose-read .reader-markdown li { margin: .3em 0; }
+.prose-read .reader-markdown li > p { margin-bottom: .3em; }
+.prose-read .reader-markdown blockquote { margin: .8em 0; padding-left: 1.1em; border-left: 2px solid var(--rule-strong); color: var(--ink-2); }
+.prose-read .reader-markdown pre { max-width: 100%; overflow-x: auto; margin: .8em 0; padding: 1em; border-radius: 8px; background: var(--bg-sunk); white-space: pre; }
+.prose-read .reader-markdown pre code { padding: 0; background: none; font-family: monospace; }
+.prose-read .reader-markdown del { text-decoration: line-through; }
+.prose-read .reader-markdown hr { margin: 1em 0; border-top: 1px solid var(--rule); }
+.prose-read .reader-markdown [role="table"] { display: table; width: 100%; margin: .8em 0; border-collapse: collapse; font-size: .85em; }
+.prose-read .reader-markdown [role="row"] { display: table-row; }
+.prose-read .reader-markdown :is([role="cell"], [role="columnheader"]) { display: table-cell; padding: .5em .7em; border: 1px solid var(--rule); }
+.prose-read .reader-markdown [role="columnheader"] { font-weight: 650; background: var(--bg-sunk); }
+.prose-read .blk.is-first .reader-markdown::first-letter { all: unset; }

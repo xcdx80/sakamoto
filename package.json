@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3100",
     "lint": "tsc --noEmit",
-    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs"
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
+    "test:reader": "node --import tsx --test tests/reader-markdown.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",
@@ -19,7 +20,11 @@
     "next": "^16.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "mdast-util-from-markdown": "^2.1.0",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-util-decode-string": "^2.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -27,6 +32,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "tsx": "^4.23.15"
   }
 }

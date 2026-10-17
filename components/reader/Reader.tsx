@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
+import { readerMarkdownBlocks } from "@/lib/reader-markdown";
 import { blockEl, selectBlock, spanIn } from "@/lib/anchor";
 import { displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
 import { ARTICLE_QUESTIONS } from "@/lib/actions";
@@ -109,6 +110,7 @@ const GUTTER_MID = 52;
 function ReaderInner({ article }: { article: Article }) {
   const ix = useMemo(() => indexArticle(article), [article]);
   const articleId = article.id;
+  const markdown = useMemo(() => readerMarkdownBlocks(article.blocks), [article.blocks]);
   const [articleEl, setArticleEl] = useState<HTMLDivElement | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
   const [peek, setPeekState] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -537,6 +539,7 @@ function ReaderInner({ article }: { article: Article }) {
                   <Block
                     key={b.id}
                     block={b}
+                    markdown={markdown.get(b.id)}
                     n={ix.numbers.get(b.id)}
                     first={b.id === firstPara}
                     marks={marksByBlock.get(b.id) ?? EMPTY}

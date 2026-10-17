@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { Headphones, LoaderCircle, Pause, Play, Square } from "lucide-react";
 import { blockEl } from "@/lib/anchor";
-import { blockText, type Block } from "@/lib/article";
+import type { Block } from "@/lib/article";
+import { readerSpeechText } from "@/lib/reader-markdown";
 import { openKeyMenu, readApiKey } from "@/lib/ask";
 import type { DocIndex } from "@/lib/doc";
 import { useStore } from "@/lib/store";
@@ -148,12 +149,13 @@ export function startListening(ix: DocIndex, fromBlock: string | null) {
     return;
   }
   const blocks = ix.article.blocks;
+  const spoken = readerSpeechText(blocks);
   const at = Math.max(0, fromBlock ? blocks.findIndex((b) => b.id === fromBlock) : 0);
   let first = true;
   items = [];
   for (const b of blocks.slice(at)) {
     if (!SPOKEN.has(b.type)) continue;
-    const t = blockText(b).trim();
+    const t = spoken.get(b.id) ?? "";
     if (!t) continue;
     for (const c of chunks(t, first)) items.push({ block: b.id, text: c });
     first = false;
