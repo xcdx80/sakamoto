@@ -10,7 +10,8 @@
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "budget:reconcile": "node --env-file-if-exists=.env.local --import tsx scripts/reconcile-paid.ts",
-    "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts"
+    "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
+    "test:reader": "node --import tsx --test tests/reader-markdown.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",

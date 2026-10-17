@@ -167,3 +167,20 @@ function clipParts(parts: MarkdownPart[], from: number, to: number): MarkdownPar
     return [{ ...part, children, ...(part.tag === "ol" ? { start: (part.start ?? 1) + skippedItems } : {}) }];
   });
 }
+
+/** Read the displayed prose aloud while keeping stored source and block addresses unchanged. */
+export function readerSpeechText(blocks: Block[]): Map<string, string> {
+  const markdown = readerMarkdownBlocks(blocks);
+  function spoken(part: MarkdownPart, source: string): string {
+    if (part.kind === "replacement") return part.value;
+    if (part.kind !== "element") return part.kind === "text" ? source.slice(part.from, part.to) : "";
+    if (part.tag === "pre" || part.role === "table" || part.tag === "hr") return "";
+    if (part.tag === "br") return "\n";
+    const text = part.children.map(child => spoken(child, source)).join("");
+    return text + (["p", "li", "h2", "h3", "h4", "h5", "h6", "blockquote"].includes(part.tag) ? "\n" : "");
+  }
+  return new Map(blocks.map(block => {
+    const source = blockText(block), parts = markdown.get(block.id);
+    return [block.id, (parts ? parts.map(part => spoken(part, source)).join("") : source).trim()];
+  }));
+}

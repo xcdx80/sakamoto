@@ -27,6 +27,7 @@ jobs:
           else
             git show --format= --check HEAD
           fi
+      - run: npm run test:reader
       - run: npm run lint
       - name: Build with synthetic auth configuration
         # Compile/prerender fixture only; does not prove authentication or providers.
