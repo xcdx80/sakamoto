@@ -1996,18 +1996,20 @@ a.desk-tile:focus-visible {
   .content-card:has(.content-card-read:hover) { transform: translateY(-2px); border-color: var(--rule-strong); box-shadow: var(--shadow-card); }
   .content-card-read:hover .content-card-arrow, .content-card-read:focus-visible .content-card-arrow { opacity: 1; transform: none; }
 }
-.content-list { display: grid; gap: 0; border-top: 1px solid var(--rule); }
-.content-list .content-card { display: grid; grid-template-columns: minmax(0, 1fr) 180px; overflow: visible; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: transparent; }
-.content-list .content-card-read { display: grid; grid-template-columns: 145px minmax(0, 1fr) 150px; min-height: 118px; align-items: center; gap: 22px; padding: 21px 20px 21px 0; }
+.content-list { display: grid; gap: 18px; }
+.content-list .content-card { display: grid; grid-template-columns: minmax(0, 1fr) 180px; border-color: var(--rule-strong); border-radius: 14px; box-shadow: 0 2px 8px rgb(0 0 0 / .025); }
+.content-list .content-card-read { display: grid; grid-template-columns: 145px minmax(0, 1fr) 150px; min-height: 144px; align-items: center; gap: 14px 24px; padding: 22px 24px; }
 .content-list .content-card-meta { align-content: center; align-items: flex-start; flex-direction: column; gap: 10px; margin: 0; }
+.content-list .content-kind { padding: 5px 7px; border: 1px solid var(--rule); border-radius: 5px; background: var(--bg-sunk); font-size: 9px; font-weight: 500; color: var(--ink-2); }
 .content-list .content-card h2 { font-size: 23px; }
 .content-list .content-card-author { margin-top: 6px; }
 .content-list .content-card-dek { margin-top: 7px; -webkit-line-clamp: 1; font-size: 12px; }
 .content-list .content-card-reading { flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; margin: 0; padding: 0; }
-.content-list .content-card-footer { flex-direction: column; align-items: flex-end; justify-content: center; gap: 8px; min-height: 0; padding: 12px 0 12px 12px; border: 0; }
+.content-list .content-card-footer { flex-direction: column; align-items: flex-end; justify-content: center; gap: 8px; min-height: 0; padding: 22px 20px 22px 0; border: 0; }
 .content-list .content-card-tags { justify-content: flex-end; }
 .content-list .content-card-actions { margin: 0; }
-.content-list .content-card:has(.content-card-read:hover) { transform: none; box-shadow: none; background: color-mix(in oklab, var(--bg-raised) 60%, transparent); }
+.content-list .content-card-connections { grid-column: 1 / -1; grid-row: 2; padding: 0 24px 24px; }
+.content-list .content-card:has(.content-card-read:hover) { transform: none; }
 .content-empty { display: flex; min-height: 290px; flex-direction: column; align-items: center; justify-content: center; padding: 35px 24px; border: 1px dashed var(--rule-strong); border-radius: 8px; text-align: center; color: var(--ink-3); }
 .content-empty h2 { margin-top: 18px; font-family: var(--font-serif); font-size: 28px; line-height: 1.2; color: var(--ink); }
 .content-empty p { max-width: 360px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
@@ -2061,13 +2063,15 @@ a.desk-tile:focus-visible {
   .content-card-footer { padding-left: 20px; }
   .content-card-meta { margin-bottom: 20px; }
   .content-card-arrow { opacity: 1; transform: none; }
-  .content-list .content-card { grid-template-columns: minmax(0, 1fr) 42px; }
-  .content-list .content-card-read { display: flex; align-items: stretch; gap: 10px; padding: 20px 10px 20px 0; }
+  .content-list .content-card { grid-template-columns: minmax(0, 1fr) 48px; }
+  .content-list .content-card-read { display: flex; align-items: stretch; gap: 10px; padding: 18px 10px 18px 18px; }
+  .content-list { gap: 14px; }
   .content-list .content-card-meta { flex-direction: row; align-items: center; gap: 7px 10px; margin-bottom: 2px; }
   .content-list .content-card h2 { font-size: 23px; }
   .content-list .content-card-reading { margin-top: 0; }
   .content-list .content-card-dek { -webkit-line-clamp: 2; }
-  .content-list .content-card-footer { padding: 14px 0; justify-content: flex-start; }
+  .content-list .content-card-footer { padding: 18px 12px 18px 0; justify-content: flex-start; }
+  .content-list .content-card-connections { padding: 0 14px 14px; }
   .content-list .content-card-actions { flex-direction: column; gap: 8px; }
   .content-list .content-card-tags { display: none; }
   .content-dialog-panel { padding: 22px; }
