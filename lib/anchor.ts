@@ -22,7 +22,10 @@ function offsetWithin(el: HTMLElement, node: Node, offset: number): number {
   } catch {
     return 0;
   }
-  return r.toString().length;
+  // Decoded Markdown characters are a display of the adjacent retained source.
+  const contents = r.cloneContents();
+  contents.querySelectorAll("[data-md-replacement]").forEach(node => node.remove());
+  return contents.textContent?.length ?? 0;
 }
 
 function pointFor(node: Node, offset: number, edge: "start" | "end", root: HTMLElement): Point | null {
@@ -31,9 +34,13 @@ function pointFor(node: Node, offset: number, edge: "start" | "end", root: HTMLE
   if (blk && root.contains(blk)) {
     const t = blk.querySelector<HTMLElement>(".blk-text");
     if (!t) return null;
-    if (t.contains(node)) return { b: blk.dataset.block!, o: offsetWithin(t, node, offset) };
+    if (t.contains(node)) {
+      const replacement = el?.closest<HTMLElement>("[data-md-replacement]");
+      const o = replacement ? Number(offsetWithin(replacement, node, offset) === 0 ? replacement.dataset.sourceFrom : replacement.dataset.sourceTo) : offsetWithin(t, node, offset);
+      return { b: blk.dataset.block!, o };
+    }
     // In the paragraph number or padding: snap to the edge of the text.
-    return { b: blk.dataset.block!, o: edge === "start" ? 0 : (t.textContent ?? "").length };
+    return { b: blk.dataset.block!, o: edge === "start" ? 0 : offsetWithin(t, t, t.childNodes.length) };
   }
   return null;
 }
@@ -97,11 +104,22 @@ export function quoteFor(a: { start: Point; end: Point }, texts: Map<string, str
 }
 
 function locate(el: HTMLElement, offset: number): { node: Node; offset: number } {
+  for (const replacement of el.querySelectorAll<HTMLElement>("[data-md-replacement]")) {
+    const from = Number(replacement.dataset.sourceFrom), to = Number(replacement.dataset.sourceTo);
+    if (offset >= from && offset <= to && replacement.firstChild) {
+      const walker = document.createTreeWalker(replacement, NodeFilter.SHOW_TEXT);
+      let first: Node | null = null, last: Node | null = null;
+      while (walker.nextNode()) { first ??= walker.currentNode; last = walker.currentNode; }
+      const node = offset === from ? first : last;
+      if (node) return { node, offset: offset === from ? 0 : node.textContent?.length ?? 0 };
+    }
+  }
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let seen = 0;
   let last: Node | null = null;
   while (walker.nextNode()) {
     const n = walker.currentNode;
+    if (n.parentElement?.closest("[data-md-replacement]")) continue;
     const len = n.textContent?.length ?? 0;
     if (seen + len >= offset) return { node: n, offset: offset - seen };
     seen += len;
