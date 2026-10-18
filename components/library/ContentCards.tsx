@@ -42,9 +42,10 @@ const ContentCard = memo(function ContentCard({ b, view, fresh, onManage, onFavo
   b: Book; fresh: boolean; connections?: ItemConnections; index: number; total: number;
 }) {
   const Icon = TYPE_ICON[b.contentType];
+  const reading = b.reading ?? b;
   return (
     <li className="content-card" role="listitem" aria-setsize={total} aria-posinset={index + 1} data-fresh={fresh || undefined}>
-      <Link href={`/read/${b.id}`} prefetch={false} className="content-card-read" aria-label={`Read ${b.title}`}>
+      <Link href={`/read/${reading.id}`} prefetch={false} className="content-card-read" aria-label={`Read ${reading.title}`}>
         <div className="content-card-meta">
           <span className="content-kind"><Icon size={14} strokeWidth={1.6} aria-hidden />{b.thread ? `Thread · ${b.thread.postCount} ${b.thread.postCount === 1 ? 'post' : 'posts'}` : TYPE_LABEL[b.contentType]}</span>{b.contextOnly && <span className="content-relation-badge">Context only</span>}{Boolean(b.thread?.missingPostCount) && <span className="content-relation-badge">Missing posts</span>}
           <span className="content-card-topic"><i aria-hidden style={{ background: TOPIC[b.topic].shades[0] }} />{TOPIC[b.topic].name}</span>
@@ -52,9 +53,9 @@ const ContentCard = memo(function ContentCard({ b, view, fresh, onManage, onFavo
           {view === "list" && Boolean(connections?.children.length) && <span className="content-relation-badge"><FileText size={12} aria-hidden />Has linked reading</span>}
         </div>
         <div className="content-card-text">
-          <h2>{b.title}<ArrowUpRight className="content-card-arrow" size={18} strokeWidth={1.5} aria-hidden /></h2>
+          <h2>{reading.title}<ArrowUpRight className="content-card-arrow" size={18} strokeWidth={1.5} aria-hidden /></h2>
           <p className="content-card-author">{b.author}{b.year ? ` · ${b.year}` : ""}</p>
-          {b.dek && <p className="content-card-dek">{b.dek}</p>}
+          {reading.dek && <p className="content-card-dek">{reading.dek}</p>}
         </div>
         <div className="content-card-reading">
           {b.processing?.classification && b.processing.classification !== "complete" && <span title={b.processing.classificationMessage || "Your text is saved. Process now advances queued categorization."}>Category {b.processing.classification === "pending" ? "queued" : b.processing.classification}</span>}
@@ -122,7 +123,7 @@ export function ContentDetails({ book, onClose, onShelve, onRemove }: {
         </form>}
         {!book.sample && <div><button type="button" disabled={categoryBusy} onClick={reclassify}>{categoryBusy ? "Scheduling…" : "Reclassify"}</button><p role="status">{categoryMessage}</p></div>}
         <div className="content-detail-links">
-          <Link href={`/read/${book.id}`}>Open reader <ArrowUpRight size={15} aria-hidden /></Link>
+          <Link href={`/read/${book.reading?.id ?? book.id}`}>Open reader <ArrowUpRight size={15} aria-hidden /></Link>
           {book.url && <a href={book.url} target="_blank" rel="noreferrer">Original source <ArrowUpRight size={15} aria-hidden /></a>}
         </div>
         <div className="content-detail-remove">

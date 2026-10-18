@@ -1,6 +1,6 @@
 /** Owner-scoped thread projection and exact post-text search. Source bodies stay in their own records. */
 import { db } from './db';
-export type LibraryThreadGroup = { rootId: string; memberIds: string[]; missingPostCount?: number; contextOnly?: boolean };
+export type LibraryThreadGroup = { rootId: string; bookmarkIds?: string[]; memberIds: string[]; missingPostCount?: number; contextOnly?: boolean };
 export type LibraryThreadIndex = { groups: LibraryThreadGroup[]; postItemIds: string[] };
 type Node = { article_id: string; post_id: string; role: string; author: {id?:string;handle?:string}|null; parents: string[]; missing: string[] };
 const sameAuthor=(a:Node,b:Node)=>a.author&&b.author&&(a.author.id&&b.author.id?a.author.id===b.author.id:Boolean(a.author.handle&&b.author.handle&&a.author.handle.toLowerCase()===b.author.handle.toLowerCase()));
@@ -23,7 +23,7 @@ export async function readLibraryThreads(owner:string):Promise<LibraryThreadInde
   const roots=nodes.filter(n=>!n.parents.some(id=>members.has(id)&&sameAuthor(n,byId.get(id)!))).sort(compare);
   const root=roots[0]??[...nodes].sort(compare)[0];
   const missing=new Set(nodes.flatMap(n=>n.missing).filter(id=>!byId.has(id)));
-  groups.push({contextOnly,rootId:root.article_id,memberIds:nodes.sort(compare).map(n=>n.article_id),...(missing.size?{missingPostCount:missing.size}:{})});
+  groups.push({contextOnly,rootId:root.article_id,bookmarkIds:nodes.filter(n=>n.role==='bookmark').sort(compare).map(n=>n.article_id),memberIds:nodes.sort(compare).map(n=>n.article_id),...(missing.size?{missingPostCount:missing.size}:{})});
  }
  return {groups,postItemIds:rows.map(n=>n.article_id)};
 }

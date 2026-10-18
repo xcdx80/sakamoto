@@ -85,6 +85,8 @@ export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
 export type Book = {
+  /** Opening post presentation; id and editable metadata still belong to the saved bookmark. */
+  reading?: {id:string;title:string;dek?:string};
   contextOnly?: boolean;
   thread?: {postCount:number;memberIds:string[];searchText:string;missingPostCount?:number};
   processing?: LibraryItem["processing"];
@@ -337,8 +339,9 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     const members=group.memberIds.flatMap(id=>byId.get(id)??[]);
     if(!members.length)continue;
     const first=byId.get(group.rootId)??members[0];
+    const saved=group.bookmarkIds?.flatMap(id=>byId.get(id)??[])[0]??first;
     const thread=group.memberIds.length>1||group.missingPostCount?{postCount:group.memberIds.length,memberIds:group.memberIds,missingPostCount:group.missingPostCount,searchText:members.map(b=>`${b.title} ${b.author} ${b.tags.join(' ')} ${b.url??''}`).join(' ')}:undefined;
-    grouped.push({...first,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
+    grouped.push({...saved,...(saved.id!==first.id?{reading:{id:first.id,title:first.title,dek:first.dek}}:{}),pct:first.pct,highlights:first.highlights,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
   }
   return [...mine.filter(book=>!postIds.has(book.id)),...grouped,...samples];
 }

@@ -208,6 +208,23 @@ test('library threads use a saved opening context post and full-text search incl
  assert.equal(index.groups.length,1);assert.equal(index.groups[0].memberIds.length,3);
  assert.equal(index.groups[0].rootId,root.contextResults![0].itemId);
  assert.deepEqual(await searchLibraryPosts(owner,'needle continuation'),[root.threadResults![0].itemId]);
+ const openingId=root.contextResults![0].itemId!,savedId=root.itemId!,tipId=root.threadResults![0].itemId!;
+ const library=[
+  {id:openingId,title:'First post',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+  {id:savedId,title:'Bookmarked middle',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:2,favorite:true,topic:'science',tags:['mine']},
+  {id:tipId,title:'Continuation',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+ ];
+ const [card]=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:index}).filter(b=>!b.sample&&!b.contextOnly);
+ assert.equal(card.id,savedId,'card actions must target the bookmarked member');
+ assert.equal(card.title,'Bookmarked middle','management edits the saved member title');
+ assert.deepEqual(card.reading,{id:openingId,title:'First post',dek:undefined});
+ assert.equal(card.favorite,true);assert.equal(card.topic,'science');assert.deepEqual(card.tags,['mine']);
+ const savedRow=(await pullRows(owner,'')).changes.articles.find(r=>r.id===card.id)!;
+ await pushRows(owner,{articles:[{id:card.id,article_id:card.id,data:savedRow.data,revision:savedRow.revision,deleted:true}]});
+ const remaining=await readLibraryThreads(owner);
+ assert(remaining.groups.every(group=>group.contextOnly),'removing the saved member must remove the thread from the shelf');
+ assert(await articleDoc(owner,openingId),'removing the bookmark preserves the opening context post');
+
  assert.deepEqual(await readLibraryThreads('different-owner'),{groups:[],postItemIds:[]});
  assert.deepEqual(await searchLibraryPosts('different-owner','needle'),[]);
 });

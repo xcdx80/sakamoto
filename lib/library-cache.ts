@@ -5,12 +5,12 @@ type Envelope = {generation:number; value:unknown};
 type Bundle = {version:1; entries:Record<string,Envelope>};
 const ANONYMOUS = 'sakamoto:anonymous:v2';
 export const syncCacheKey = (owner:string) => `sakamoto:sync:v2:${owner}`;
-export const threadCacheKey = (owner:string) => `sakamoto:threads:v1:${owner}`;
+export const threadCacheKey = (owner:string) => `sakamoto:threads:v2:${owner}`;
 function groupOf(key:string):string {
  if(key===ANONYMOUS)return 'anonymous';
  const account=key.match(/^sakamoto:account:([^:]+):gloss:v1$/);
  if(account)return `account:${account[1]}`;
- for(const prefix of ['sakamoto:sync:v2:','sakamoto:threads:v1:'])if(key.startsWith(prefix))return `account:${encodeURIComponent(key.slice(prefix.length))}`;
+ for(const prefix of ['sakamoto:sync:v2:','sakamoto:threads:v2:'])if(key.startsWith(prefix))return `account:${encodeURIComponent(key.slice(prefix.length))}`;
  throw new Error('Unknown library cache key.');
 }
 const fallbackKey = (group:string) => `sakamoto:cache-fallback:v1:${group}`;
