@@ -3,6 +3,7 @@
 import { READER_METADATA_FIELDS, type ReaderMetadataField } from "./library-ownership";
 import { accountEpoch, accountScope, scopedKey, selectAccount } from "./account-scope";
 import { create } from "zustand";
+import {readLibraryCache,saveLibraryCache,syncCacheKey} from "./library-cache";
 import type { Action } from "./actions";
 import { contentTypeOf, type Article, type BriefData, type ContentType } from "./article";
 import { derivedDocument, derivedDocumentMetadata } from "./source-edits";
@@ -121,6 +122,7 @@ type Persisted = {
 };
 
 type UI = {
+  syncReady: boolean;
   syncError: string | null;
   syncNotice: string | null;
   hydrated: boolean;
@@ -182,8 +184,8 @@ function localSnapshotKey() {
 }
 function readAnonymous(): Partial<Persisted> {
   try {
-    const current = localStorage.getItem(ANONYMOUS_KEY);
-    if (current) return JSON.parse(current);
+    const current = readLibraryCache<Partial<Persisted>>(ANONYMOUS_KEY);
+    if (current) return current;
     // Old versions mixed signed-in and anonymous content. Keep an uncertain cache quarantined for explicit adoption.
     if (hasLegacyAccountSync()) return {};
     return JSON.parse(localStorage.getItem(KEY) || "{}");
@@ -250,6 +252,7 @@ export const useStore = create<State>((set, get) => ({
   briefs: {},
   progress: {},
   library: [],
+  syncReady: false,
   syncError: null,
   syncNotice: null,
   scope: undefined,
@@ -275,6 +278,7 @@ export const useStore = create<State>((set, get) => ({
     selectAccount(owner);
     set({
       scope: owner,
+      syncReady: false,
       syncError: null,
       syncNotice: null,
       hydrated: false,
@@ -327,7 +331,10 @@ export const useStore = create<State>((set, get) => ({
       briefs: { ...old.briefs, ...current.briefs },
       progress: { ...old.progress, ...current.progress },
     };
-    if (!persist(adopted)) fail("anonymous library");
+    if (!(await persist(adopted))) fail("anonymous library");
+    if(!currentOwner())return;
+    const latest=get();
+    if(latest.library!==current.library||latest.highlights!==current.highlights||latest.glosses!==current.glosses||latest.briefs!==current.briefs||latest.progress!==current.progress){await get().adoptAnonymous();return;}
     set({ ...adopted, syncError: null });
   },
   hydrate: () => {
@@ -335,7 +342,7 @@ export const useStore = create<State>((set, get) => ({
     let data: Partial<Persisted> = {};
     let settings: Partial<Settings> = {};
     try {
-      data = accountScope() ? JSON.parse(localStorage.getItem(localSnapshotKey()) || "{}") : readAnonymous();
+      data = accountScope() ? readLibraryCache<Partial<Persisted>>(localSnapshotKey()) ?? {} : readAnonymous();
       settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     } catch {}
     // A reload mid-answer leaves a dangling stream: mark it, never spin forever.
@@ -360,6 +367,7 @@ export const useStore = create<State>((set, get) => ({
       library: data.library ?? [],
       settings: { ...DEFAULT_SETTINGS, ...settings, model: modelOf(settings.model) },
       hydrated: true,
+      syncReady: Boolean(accountScope() && readLibraryCache<{complete?:boolean}>(syncCacheKey(accountScope()!))?.complete),
     });
     void migrateDocs();
   },
@@ -646,18 +654,13 @@ export const useStore = create<State>((set, get) => ({
 }));
 
 /* Account snapshots persist synchronously so identity changes never move pending writes between scopes. */
-function persist(st: Persisted): boolean {
+function persist(st: Persisted, extra: {key:string;value:unknown}[] = []): Promise<boolean> {
   const { glosses, highlights, briefs, progress, library } = st;
-  try {
-    localStorage.setItem(localSnapshotKey(), JSON.stringify({ glosses, highlights, briefs, progress, library }));
-    return true;
-  } catch {
-    return false;
-  }
+  return saveLibraryCache([{key:localSnapshotKey(),value:{glosses,highlights,briefs,progress,library}},...extra]);
 }
-/** Require discoverable metadata to be durable before source-conflict invalidation. */
-export function checkpointLibrary(): boolean {
-  return persist(useStore.getState());
+/** Await durable metadata before invalidating source text or acknowledging a sync cursor. */
+export function checkpointLibrary(extra: {key:string;value:unknown}[] = []): Promise<boolean> {
+  return persist(useStore.getState(),extra);
 }
 
 if (typeof window !== "undefined") {
@@ -720,13 +723,13 @@ export async function saveDoc(a: Article, owner: string | null = accountScope())
 }
 
 /** Bind only annotations created for this local body; historical marks are never rewritten. */
-export function bindPendingSource(
+export async function bindPendingSource(
   id: string,
   pendingSource: string,
   targetId: string,
   revision: number,
-): void {
-  const st = useStore.getState();
+): Promise<void> {
+  const st = useStore.getState(), owner=accountScope(), epoch=accountEpoch();
   const bind = <T extends RevisionAddress>(value: T): T => {
     const next = { ...value, sourceRevision: revision };
     delete next.pendingSource;
@@ -785,10 +788,13 @@ export function bindPendingSource(
     briefs: single(st.briefs),
     progress: single(st.progress),
   };
-  if (!persist(next))
+  if (!(await persist(next)))
     throw new Error(
       "Pending source annotations could not be saved. Sync paused; local data is retained for retry.",
     );
+  if(accountScope()!==owner||accountEpoch()!==epoch)throw new Error("Account changed while saving pending annotations.");
+  const current=useStore.getState();
+  if(current.library!==st.library||current.highlights!==st.highlights||current.glosses!==st.glosses||current.briefs!==st.briefs||current.progress!==st.progress)return bindPendingSource(id,pendingSource,targetId,revision);
   const key = pendingReceiptKey(id, pendingSource);
   if (!pendingReceipts.has(key))
     pendingReceipts.set(key, { articleId: targetId, sourceRevision: revision });
@@ -911,6 +917,56 @@ export async function forgetDoc(id: string, owner: string | null = accountScope(
   try {
     await tx("readwrite", (s) => s.delete(key));
   } catch {}
+}
+
+/** Read account cache membership once; a fresh browser has no source bodies to invalidate. */
+export async function cachedDocIds(owner: string): Promise<Set<string>> {
+  const prefix = scopedKey("", owner);
+  const keys = await tx<IDBValidKey[]>("readonly", store => store.getAllKeys(IDBKeyRange.bound(prefix, prefix + "\uffff")));
+  const ids = new Set(keys.filter((key): key is string => typeof key === "string").map(key => key.slice(prefix.length)));
+  const legacyPrefix = scopedKey(DOC_PREFIX, owner);
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(legacyPrefix)) ids.add(key.slice(legacyPrefix.length));
+  }
+  return ids;
+}
+
+/** Compare cached bodies and local source state before invalidating the batch atomically. */
+export async function forgetDocs(expected: Map<string, Article | null>, owner: string, unchanged: () => boolean): Promise<boolean> {
+  if (!unchanged()) return false;
+  if (!expected.size) return true;
+  let db: IDBDatabase | null;
+  try { db = await idb(); } catch { db = null; }
+  const legacyMatches = () => [...expected].every(([id, doc]) => {
+    const raw = localStorage.getItem(scopedKey(DOC_PREFIX + id, owner));
+    return !raw || JSON.stringify(JSON.parse(raw)) === JSON.stringify(doc);
+  });
+  const removed = !db || await new Promise<boolean>((resolve, reject) => {
+    const transaction = db.transaction(DOCS, "readwrite");
+    const store = transaction.objectStore(DOCS);
+    let remaining = expected.size, matches = true;
+    for (const [id, doc] of expected) {
+      const request = store.get(scopedKey(id, owner));
+      request.onsuccess = () => {
+        // A legacy body may still live in localStorage. loadDoc normally migrates it first.
+        try {
+          const raw = localStorage.getItem(scopedKey(DOC_PREFIX + id, owner));
+          const current = request.result ?? (raw ? JSON.parse(raw) : null);
+          if (JSON.stringify(current) !== JSON.stringify(doc)) matches = false;
+        } catch (error) { transaction.abort(); reject(error); return; }
+        if (--remaining) return;
+        if (!matches || !unchanged()) { transaction.abort(); return; }
+        for (const key of expected.keys()) store.delete(scopedKey(key, owner));
+      };
+    }
+    transaction.oncomplete = () => resolve(true);
+    transaction.onabort = () => transaction.error ? reject(transaction.error) : resolve(false);
+    transaction.onerror = () => reject(transaction.error);
+  });
+  if (!removed || !unchanged() || !legacyMatches()) return false;
+  for (const id of expected.keys()) localStorage.removeItem(scopedKey(DOC_PREFIX + id, owner));
+  return true;
 }
 
 async function dropDoc(id: string) {

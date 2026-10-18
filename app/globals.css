@@ -2236,3 +2236,14 @@ a.reading-connection-card:hover { border-color: var(--rule-strong); background: 
 .prose-read .reader-markdown :is([role="cell"], [role="columnheader"]) { display: table-cell; padding: .5em .7em; border: 1px solid var(--rule); }
 .prose-read .reader-markdown [role="columnheader"] { font-weight: 650; background: var(--bg-sunk); }
 .prose-read .blk.is-first .reader-markdown::first-letter { all: unset; }
+
+.reader-thread-heading { margin: 18px 0 8px; font-size: 14px; font-weight: 500; color: var(--ink-2); }
+
+/* Keep only nearby library rows mounted, including variable-height linked reading. */
+.content-window { position: relative; --library-columns: 3; overflow-anchor: none; }
+.content-window-row { position: absolute; top: 0; left: 0; width: 100%; padding-bottom: 18px; }
+@media (max-width: 1000px) { .content-window { --library-columns: 2; } }
+@media (max-width: 639px) {
+  .content-window { --library-columns: 1; }
+  .content-window-row { padding-bottom: 13px; }
+}

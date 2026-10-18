@@ -39,34 +39,38 @@ export type PushRow = {
 };
 export type PullRow = { id: string; articleId: string; data: any; deleted: boolean; revision: number; sourceRevision?: number };
 export type SyncPage = { now: string; cursor: string; hasMore: boolean; changes: Record<Collection, PullRow[]> };
-const cursorOf = (after: string, until?: string) => Buffer.from(JSON.stringify({ after, until })).toString("base64url");
+const cursorOf = (after: string, until?: string, snapshot?: boolean) => Buffer.from(JSON.stringify({ after, until, ...(snapshot?{snapshot:true}:{}) })).toString("base64url");
 
-/** Immutable change-log pages with a fixed upper watermark. Timestamps from older clients safely restart a full pull. */
-export async function pullRows(userId: string, cursor = "", limit = 100): Promise<SyncPage> {
+/** Cold clients receive the latest entity snapshot; warm clients resume the immutable change log. Both freeze an upper watermark. */
+export async function pullRows(userId: string, cursor = "", limit?: number): Promise<SyncPage> {
+  let snapshot = true;
   let after = "0",
     until: string | undefined;
   if (cursor) {
     try {
       const c = JSON.parse(Buffer.from(cursor, "base64url").toString());
-      if (/^\d+$/.test(c.after)) after = c.after;
+      if (/^\d+$/.test(c.after)){after = c.after;snapshot=c.snapshot===true;}
       if (/^\d+$/.test(c.until)) until = c.until;
     } catch {
       /* legacy clock: replay */
     }
   }
   if (!until) until = String((await db().query("select coalesce(max(sequence),0)::text as watermark from sync_changes"))[0].watermark);
+  const pageLimit = Math.max(1,Math.min(snapshot?1000:100,limit??(snapshot?1000:100)));
   const rows = await db().query(
     `select changes.*,a.manual_fields from sync_changes changes left join articles a
     on changes.collection='articles' and a.user_id=changes.user_id and a.id=changes.id
-    where changes.user_id=$1 and changes.sequence>$2::bigint and changes.sequence<=$3::bigint order by changes.sequence limit $4`,
-    [userId, after, until, Math.max(1, Math.min(100, limit)) + 1],
+    where changes.user_id=$1 and changes.sequence>$2::bigint and changes.sequence<=$3::bigint
+    ${snapshot?"and changes.sequence in (select max(sequence) from sync_changes where user_id=$1 and sequence<=$3::bigint group by collection,id)":""}
+    order by changes.sequence limit $4`,
+    [userId, after, until, pageLimit + 1],
   );
   const changes: SyncPage["changes"] = { articles: [], highlights: [], glosses: [], briefs: [], progress: [] };
   let bytes = 0,
     consumed = 0;
   for (const r of rows) {
-    const size = JSON.stringify(r.data).length;
-    if (consumed >= Math.max(1, Math.min(100, limit)) || (consumed > 0 && bytes + size > 1_000_000)) break;
+    const size = Buffer.byteLength(JSON.stringify(r.data),'utf8');
+    if (consumed >= pageLimit || (consumed > 0 && bytes + size > 1_000_000)) break;
     changes[r.collection as Collection].push({
       id: r.id,
       articleId: r.article_id,
@@ -80,7 +84,7 @@ export async function pullRows(userId: string, cursor = "", limit = 100): Promis
     consumed++;
   }
   const hasMore = consumed < rows.length;
-  const next = cursorOf(hasMore ? after : until, hasMore ? until : undefined);
+  const next = cursorOf(hasMore ? after : until, hasMore ? until : undefined, hasMore && snapshot);
   return { now: next, cursor: next, hasMore, changes };
 }
 

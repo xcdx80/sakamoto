@@ -122,6 +122,10 @@ test("an import started in one account cannot be saved by a late callback after 
 });
 
 test("legacy cache known to have synced accounts is not silently displayed when signed out", async () => {
+  // Clear this test file's earlier anonymous fixtures through the public store, including its durable cache.
+  store.useStore.getState().activateAccount(null);
+  for(const item of store.useStore.getState().library)store.useStore.getState().removeFromLibrary(item.id);
+  await store.checkpointLibrary();
   localStorage.clear();
   localStorage.setItem("gloss:v1", JSON.stringify({ library: [{ id: "legacy-private", title: "Previously synced private text", origin: "paste" }] }));
   localStorage.setItem("gloss:sync:legacy-owner", JSON.stringify({ since: "2026-01-01", seen: { articles: { "legacy-private": ["known", "legacy-private"] } } }));
@@ -515,5 +519,18 @@ test("notes admitted during a replacement commit retain their exact pending body
       (await store.loadDoc(noteId))?.blocks[0].runs[0].text,
       "First amber",
     );
+  }
+});
+
+test('a large library renders a small initial window while retaining the full item count and positions',async()=>{
+  const {createElement}=await import('react');const {renderToStaticMarkup}=await import('react-dom/server');const {parseHTML}=await import('linkedom');
+  const {ContentCards}=await import('../components/library/ContentCards');
+  const books:import('../lib/library').Book[]=Array.from({length:2166},(_,i)=>({id:'window-'+i,title:'Saved item '+i,author:'Example author',topic:'tech',contentType:'post',minutes:2,tags:[],favorite:false,pct:0,highlights:0,added:i,agent:false,sample:false}));
+  for(const view of ['grid','list'] as const){
+    const {document}=parseHTML(renderToStaticMarkup(createElement(ContentCards,{books,view,fresh:new Set<string>(),onManage(){},onFavorite(){},onTag(){},selectedTag:null})));
+    const cards=document.querySelectorAll('.content-card');
+    assert(cards.length>0&&cards.length<80,`Expected a bounded initial ${view} window, got ${cards.length} rows`);
+    assert.equal(cards[0].getAttribute('aria-setsize'),'2166');assert.equal(cards[0].getAttribute('aria-posinset'),'1');
+    assert.equal(document.querySelector('a[href="/read/window-0"]')?.getAttribute('aria-label'),'Read Saved item 0');
   }
 });

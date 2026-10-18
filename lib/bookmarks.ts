@@ -1,4 +1,5 @@
 /** Structured source intake. The authenticated caller supplies the owner, never the payload. */
+import { threadCoverageOf } from "./thread-coverage";
 import { createHash } from "node:crypto";
 import { wordCount, type Article } from "./article";
 import { db } from "./db";
@@ -55,9 +56,10 @@ function webUrl(v: unknown): string {
 }
 function sourceOf(raw: unknown, via: string, context = false): PostSource {
   const p = object(raw);
-  only(p, context ? [...fields, "contextPosts", "threadPosts"] : fields);
+  only(p, context ? [...fields, "contextPosts", "threadPosts", "threadCoverage"] : fields);
   if (p.contextPosts !== undefined && (!Array.isArray(p.contextPosts) || p.contextPosts.length > 8)) throw new Error("Send at most 8 parent or quote context posts with a bookmark.");
   if (p.threadPosts !== undefined && (!Array.isArray(p.threadPosts) || p.threadPosts.length > 8)) throw new Error("Send at most 8 connected author-thread descendants with a bookmark.");
+  if (context) threadCoverageOf(p.threadCoverage);
   const id = postId(p.postId), url = webUrl(p.url);
   if (xPostIdentity(url)?.postId !== id) throw new Error("Post URL must identify the supplied X post ID.");
   const author = object(p.author);
@@ -140,6 +142,9 @@ export async function importBookmarks(owner: string, args: Record<string, unknow
       const source = sourceOf(raw, via, true);
       const receipt = await persistSource(owner, source, "bookmark");
       const threadInputs = object(raw).threadPosts as unknown[] | undefined;
+      const coverage = threadCoverageOf(object(raw).threadCoverage);
+      if (coverage && receipt.status !== 'removed') await db().query(`update post_sources set thread_coverage=$3::jsonb
+        where user_id=$1 and post_id=$2 and (thread_coverage is null or (thread_coverage->>'observedAt')::timestamptz < $4::timestamptz)`,[owner,source.postId,JSON.stringify(coverage),coverage.observedAt]);
       const thread = threadInputs?.length ? await saveThreadPosts(owner,source,threadInputs,via,receipt.status === "removed") : null;
       if (thread) receipt.threadResults = thread.receipts;
       const contexts = object(raw).contextPosts as unknown[] | undefined;

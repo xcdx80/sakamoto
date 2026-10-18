@@ -1,11 +1,12 @@
 /** Bounded owner-scoped Postgres adapter for the author-thread reading module. */
 import { db } from './db';
+import type { ThreadCoverage } from './thread-coverage';
 import type { Article } from './article';
 import type { PostSource } from './bookmarks';
 
 export type ThreadEdge = { post_id: string; kind: 'reply' | 'quote'; target_post_id: string };
 export type ThreadSourceSummary = { post_id: string; deleted: boolean; structured: boolean; author: PostSource['author'] | null };
-export type ThreadSource = { post_id: string; article_id: string; role: 'bookmark' | 'context'; source_revision: number; doc: Article; deleted: boolean };
+export type ThreadSource = { post_id: string; article_id: string; role: 'bookmark' | 'context'; thread_coverage?: ThreadCoverage | null; source_revision: number; doc: Article; deleted: boolean };
 export const THREAD_POST_LIMIT = 100;
 export const THREAD_RELATION_LIMIT = 1000;
 

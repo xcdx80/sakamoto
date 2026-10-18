@@ -6,7 +6,7 @@ import { threadSource, threadSourceSummaries, threadSourceTexts, threadReplyNeig
 
 export type ThreadPost = { postId: string; itemId: string; role: 'bookmark' | 'context'; sourceRevision: number; savedUrl: string; post: PostSource; relationships: { fromPostId: string; kind: 'reply' | 'quote' }[] };
 export type ThreadGap = { kind: 'missing' | 'deleted' | 'unavailable' | 'ambiguous' | 'cyclic' | 'limit' | 'partial' | 'unknown'; postId?: string; savedUrl?: string; fromPostId?: string; relationship?: 'reply' | 'quote'; reason: string };
-export type AuthorThread = { posts: ThreadPost[]; context: ThreadPost[]; gaps: ThreadGap[]; ordering: 'reply' | 'uncertain'; conversationComplete: false };
+export type AuthorThread = { posts: ThreadPost[]; context: ThreadPost[]; gaps: ThreadGap[]; sourceNotices?: ThreadGap[]; ordering: 'reply' | 'uncertain'; conversationComplete: false };
 const sameAuthor = (a: PostSource['author'], b: PostSource['author']) => a.id && b.id ? a.id === b.id : a.handle.toLowerCase() === b.handle.toLowerCase();
 const compare = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
 
@@ -14,7 +14,7 @@ const compare = (a: string, b: string) => a.length - b.length || a.localeCompare
 function boundThreadResponse(view: AuthorThread, selectedItemId: string): AuthorThread {
   const maxBytes = 4_000_000, sourceBudget = 3_700_000;
   const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
-  const result: AuthorThread = { posts: [], context: [], gaps: [], ordering: view.ordering, conversationComplete: false };
+  const result: AuthorThread = { posts: [], context: [], gaps: [], sourceNotices: [], ordering: view.ordering, conversationComplete: false };
   const selected = view.posts.find((entry) => entry.itemId === selectedItemId);
   const accepted = new Set<string>();
   let used = bytes(result);
@@ -34,6 +34,11 @@ function boundThreadResponse(view: AuthorThread, selectedItemId: string): Author
   for (const gap of [...omitted, ...view.gaps]) {
     const size = bytes(gap) + 1;
     if (used + size + 512 <= maxBytes) { result.gaps.push(gap); used += size; }
+    else omittedGaps++;
+  }
+  for (const notice of view.sourceNotices ?? []) {
+    const size = bytes(notice) + 1;
+    if (used + size + 512 <= maxBytes) { result.sourceNotices!.push(notice); used += size; }
     else omittedGaps++;
   }
   if (omittedGaps) result.gaps.push({ kind: 'limit', reason: `${omittedGaps} additional graph diagnostics are outside the response byte budget.` });
@@ -120,13 +125,19 @@ export async function readAuthorThread(owner: string, itemId: string, options: {
     const children = allEdges.filter((e) => e.kind==='reply' && e.target_post_id===id && main.has(e.post_id));
     if (children.length > 1) gaps.push({kind:'ambiguous',postId:id,reason:'Replies branch here; sibling order is uncertain.'});
   }
+  const observedMissing = [...new Set([...sources.values()].flatMap(s=>s.thread_coverage?.missingPostIds ?? []))];
+  const availableObserved = new Set((await threadSourceSummaries(owner,observedMissing)).filter(s=>!s.deleted&&s.structured).map(s=>s.post_id));
+  for (const s of sources.values()) for (const id of s.thread_coverage?.missingPostIds ?? []) {
+    if (!availableObserved.has(id) && !gaps.some(g=>g.kind==='missing'&&g.postId===id)) gaps.push({kind:'missing',postId:id,fromPostId:s.post_id,reason:'X did not return this post during the latest supplied thread fetch.'});
+  }
+  const sourceNotices: ThreadGap[] = [];
   for (const s of sources.values()) {
     const status = s.doc?.post?.completeness;
-    if (!status || status.status !== 'complete') gaps.push({kind:status?.status==='partial'?'partial':'unknown',postId:s.post_id,reason:status?.reason ?? 'Agent did not report full source text.'});
+    if (!status || status.status !== 'complete') (status?.status === 'partial' ? gaps : sourceNotices).push({kind:status?.status==='partial'?'partial':'unknown',postId:s.post_id,reason:status?.reason ?? 'Agent did not report full source text.'});
   }
   const present = (id: string): ThreadPost | null => {
     const s = sources.get(id)!;
     return s.doc?.post ? {postId:id,itemId:s.article_id,role:s.role,sourceRevision:s.source_revision,savedUrl:revisionUrl(s.article_id,s.source_revision),post:s.doc.post,relationships:allEdges.filter((e)=>e.target_post_id===id).map((e)=>({fromPostId:e.post_id,kind:e.kind}))} : null;
   };
-  return boundThreadResponse({ posts: ordered.map(present).filter((p):p is ThreadPost=>p!==null), context:[...sources.keys()].filter((id)=>!main.has(id)).sort(compare).map(present).filter((p):p is ThreadPost=>p!==null),gaps,ordering:gaps.some((g)=>['ambiguous','cyclic','limit'].includes(g.kind))?'uncertain':'reply',conversationComplete:false }, itemId);
+  return boundThreadResponse({ posts: ordered.map(present).filter((p):p is ThreadPost=>p!==null), context:[...sources.keys()].filter((id)=>!main.has(id)).sort(compare).map(present).filter((p):p is ThreadPost=>p!==null),gaps,sourceNotices,ordering:gaps.some((g)=>['ambiguous','cyclic','limit'].includes(g.kind))?'uncertain':'reply',conversationComplete:false }, itemId);
 }

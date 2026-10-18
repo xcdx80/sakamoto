@@ -6,10 +6,10 @@ import { useSyncExternalStore } from "react";
  * The library's own preferences, kept apart from the reading settings.
  * `hiddenSamples`: the bundled samples taken off this device's shelf.
  */
-export type LibraryPrefs = { paintedCovers: boolean; hiddenSamples: string[] };
+export type LibraryPrefs = { view: "grid" | "list"; paintedCovers: boolean; hiddenSamples: string[] };
 
 const KEY = "gloss:library";
-const DEFAULTS: LibraryPrefs = { paintedCovers: false, hiddenSamples: [] };
+const DEFAULTS: LibraryPrefs = { view: "grid", paintedCovers: false, hiddenSamples: [] };
 const listeners = new Set<() => void>();
 let cache: LibraryPrefs | null = null;
 

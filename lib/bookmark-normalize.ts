@@ -1,9 +1,11 @@
+import type { ThreadCoverage } from "./thread-coverage";
 /** Shared X-wire normalization for live API pages and the local Birdclaw snapshot. No I/O. */
 export type WirePost = Record<string, any>;
 export type ImportedPost = {
+ threadCoverage?:ThreadCoverage;
  postId:string;url:string;text:string;author:{id?:string;name:string;handle:string};observedAt:string;
  publishedAt?:string;replyToPostId?:string;quotedPostId?:string;conversationId?:string;title?:string;
- links:string[];completeness:{status:'complete'|'partial'|'unknown';reason:string};contextPosts?:ImportedPost[];
+ links:string[];completeness:{status:'complete'|'partial'|'unknown';reason:string};contextPosts?:ImportedPost[];threadPosts?:ImportedPost[];
 };
 export function normalizePost(raw:WirePost,user:WirePost|undefined,observedAt:string,local:boolean):ImportedPost {
  if(!/^[1-9]\d{0,23}$/.test(raw.id)||!user||!/^\w{1,15}$/.test(user.username??''))throw new Error('A bookmarked post is missing its stable ID or author. No checkpoint was advanced.');
@@ -21,7 +23,7 @@ export function normalizePost(raw:WirePost,user:WirePost|undefined,observedAt:st
 }
 export function attachContext(post:ImportedPost,available:Map<string,ImportedPost>):ImportedPost {
  const queue=[post.replyToPostId,post.quotedPostId],seen=new Set([post.postId]),context:ImportedPost[]=[];
- while(queue.length&&context.length<8){const id=queue.shift();if(!id||seen.has(id))continue;seen.add(id);const p=available.get(id);if(!p)continue;context.push({...p,contextPosts:undefined});queue.push(p.replyToPostId,p.quotedPostId);}
+ while(queue.length&&context.length<8){const id=queue.shift();if(!id||seen.has(id))continue;seen.add(id);const p=available.get(id);if(!p)continue;const source={...p};delete source.contextPosts;delete source.threadPosts;delete source.threadCoverage;context.push(source);queue.push(p.replyToPostId,p.quotedPostId);}
  return context.length?{...post,contextPosts:context}:post;
 }
 export function normalizeXPage(payload:WirePost,observedAt:string):ImportedPost[] {
