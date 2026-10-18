@@ -71,6 +71,7 @@ test("an account switch during source-cache invalidation cannot delete the next 
   useStore.getState().activateAccount(nextOwner);
   for (const id of ["first", "second"]) await saveDoc({ id, title: "B " + id, blocks: [] });
   useStore.getState().activateAccount(owner);
+  await saveDoc({ id: "first", title: "A cached first", blocks: [] });
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return init?.method === "POST" ? POST(req) : GET(req);
@@ -286,9 +287,13 @@ test("recovery library-index failure retains the original document and discovera
   await saveDoc(local);
   useStore.getState().addToLibrary(local, 3);
   await shelveForUser(owner, { id: local.id, title: "Remote title" }, { ...local, title: "Remote title", blocks: [{ id: "b1", type: "p", runs: [{ text: "Remote text" }] }] });
-  const originalSet = localStorage.setItem;
+  const originalSet = localStorage.setItem, originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function(value:unknown,key?:IDBValidKey){
+    if(this.name === "cache" && String(key).endsWith(":gloss:v1") && JSON.stringify(value).includes("offline-"))throw new DOMException("Full", "QuotaExceededError");
+    return originalPut.call(this,value,key);
+  };
   localStorage.setItem = (key: string, value: string) => {
-    if (key.endsWith(":gloss:v1") && value.includes("offline-")) throw new DOMException("Full", "QuotaExceededError");
+    if ((key.endsWith(":gloss:v1") || key.startsWith("sakamoto:cache-fallback:")) && value.includes("offline-")) throw new DOMException("Full", "QuotaExceededError");
     originalSet(key, value);
   };
   const sync = startSync(owner);
@@ -302,6 +307,7 @@ test("recovery library-index failure retains the original document and discovera
   } finally {
     sync.stop();
     localStorage.setItem = originalSet;
+    IDBObjectStore.prototype.put = originalPut;
   }
 });
 

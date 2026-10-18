@@ -18,6 +18,7 @@
     "@llamaindex/liteparse-wasm": "2.15.1",
     "@mozilla/readability": "^0.6.0",
     "@neondatabase/serverless": "^1.2.0",
+    "@tanstack/react-virtual": "3.14.21",
     "linkedom": "^0.18.13",
     "lucide-react": "^1.53.0",
     "mdast-util-from-markdown": "^2.1.0",

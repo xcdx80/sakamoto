@@ -51,4 +51,17 @@ export async function setupPostgres() {
     connection.release();
   }
 }
-configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
+export const databaseAdapter: import('../lib/db').SqlAdapter = {
+  query: async (text,params) => (await pool.query(text,params)).rows,
+  async queryWithTimeout(text,params,timeoutMs) {
+    const connection=await pool.connect();
+    try {
+      await connection.query('begin read only');
+      await connection.query("select set_config('statement_timeout',$1,true)",[`${timeoutMs}ms`]);
+      const result=await connection.query(text,params);
+      await connection.query('commit');return result.rows;
+    } catch(e) {await connection.query('rollback');throw e;}
+    finally {connection.release();}
+  },
+};
+configureDatabase(databaseAdapter);

@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { fetchAuthorThread } from '@/lib/thread-client';
 import { useStore } from '@/lib/store';
 import type { AuthorThread, ThreadPost } from '@/lib/threads';
-import { ChevronDown, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 
 function PostLabel({ entry, current }: { entry: ThreadPost; current?: boolean }) {
@@ -50,17 +50,18 @@ export function ThreadContext({ itemId, thread, status, onRefresh, children }: {
         {() => <div className="text-[13px] leading-relaxed text-ink-2">
           <p>Only supplied, connected posts are shown. This does not establish that the full thread or reply conversation was imported.</p>
           <p className="mt-2">{thread?.ordering === 'uncertain' ? 'Ordering is uncertain; displayed order is provisional.' : 'Posts are ordered by their supplied reply relationships.'} Open a saved post to highlight it or add a note.</p>
-          {status === 'unavailable' && <p className="mt-2">Context is unavailable for this source. Your saved text remains readable.</p>}
+          {Boolean(thread?.sourceNotices?.length) && <p className="mt-2">Source completeness has not been independently verified for {thread!.sourceNotices!.length} posts. These notices do not indicate missing posts.</p>}
+          {status === 'unavailable'  && <p className="mt-2">Context is unavailable for this source. Your saved text remains readable.</p>}
           {status === 'signed_out' ? <p className="mt-2">Sign in to read available author-thread context.</p> : <button type="button" disabled={status === 'loading'} onClick={onRefresh} className="mt-3 underline underline-offset-4">Refresh context</button>}
         </div>}
       </Popover>
     </div>
     {children}
-    {hasContext && <details aria-label="Author thread and context" className="reader-thread-details focus-hide">
-      <summary>Author thread and context <ChevronDown size={14} aria-hidden /></summary>
+    {hasContext && <section aria-label="Author thread and context" className="reader-thread-details">
+      <h3 className="reader-thread-heading">{thread.posts.length > 1 ? `Thread · ${thread.posts.length} posts` : "Post context"}</h3>
       <div className="reader-thread-details-body">
       {thread.gaps.length > 0 && <ul aria-label="Thread gaps" className="mb-5 space-y-2 text-[13px] text-ink-3">
-        {thread.gaps.map((gap,index)=><li key={index}>{gap.kind}{gap.postId ? ` · post ${gap.postId}` : ''}{gap.fromPostId ? ` · ${gap.relationship === 'quote' ? 'quoted by' : 'parent of'} ${gap.fromPostId}` : ''}: {gap.reason}{gap.savedUrl && <Link href={gap.savedUrl} className="ml-2 underline underline-offset-4">Open saved post</Link>}</li>)}
+        {thread.gaps.map((gap,index)=><li key={index}>{gap.kind}{gap.postId ? ` · post ${gap.postId}` : ''}{gap.fromPostId ? ` · ${gap.relationship === 'quote' ? 'quoted by' : gap.relationship === 'reply' ? 'parent of' : 'fetch for'} ${gap.fromPostId}` : ''}: {gap.reason}{gap.savedUrl && <Link href={gap.savedUrl} className="ml-2 underline underline-offset-4">Open saved post</Link>}</li>)}
       </ul>}
     <ol className="space-y-10">
       {thread.posts.map((entry)=><li key={entry.postId} data-post-id={entry.postId} className="min-w-0 border-b border-rule pb-8">
@@ -79,6 +80,6 @@ export function ThreadContext({ itemId, thread, status, onRefresh, children }: {
       </ul>
     </section>}
       </div>
-    </details>}
+    </section>}
   </>;
 }

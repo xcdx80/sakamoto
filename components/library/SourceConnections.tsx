@@ -7,7 +7,7 @@ function RelatedReadingRow({ source }: { source: RelatedSource }) {
   const Icon = source.contentType === "post" ? MessageSquare : source.contentType === "document" ? FileText : Newspaper;
   const kind = source.contentType === "post" ? source.postRole === "bookmark" ? "X bookmark" : "Saved X post" : source.contentType === "document" ? "Document" : "Article";
   return <li className="connection-branch">
-    <Link href={"/read/" + encodeURIComponent(source.id)} className="connection-destination">
+    <Link prefetch={false} href={"/read/" + encodeURIComponent(source.id)} className="connection-destination">
       <span className="connection-type-icon"><Icon size={16} aria-hidden /></span>
       <span className="connection-destination-copy">
         <span className="connection-destination-meta">{kind}{source.author ? ` · ${source.author}` : ""}</span>
@@ -31,6 +31,6 @@ export function SourceConnections({ connections, itemId, view = "grid" }: { conn
       <div className="source-connection-heading"><CornerDownRight size={15} aria-hidden /><strong>Linked reading</strong><span>{connections.children.length} saved {connections.children.length === 1 ? "item" : "items"} from this post</span></div>
       <ul className="connection-branches">{connections.children.slice(0, 2).map(source => <RelatedReadingRow key={source.id} source={source} />)}</ul>
     </section>}
-    {(connections.parents.length > 2 || connections.children.length > 2) && <Link className="connection-more" href={"/read/" + encodeURIComponent(itemId) + "#reading-connections"}>View all connections <ArrowRight size={12} aria-hidden /></Link>}
+    {(connections.parents.length > 2 || connections.children.length > 2) && <Link prefetch={false} className="connection-more" href={"/read/" + encodeURIComponent(itemId) + "#reading-connections"}>View all connections <ArrowRight size={12} aria-hidden /></Link>}
   </div>;
 }

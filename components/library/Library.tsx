@@ -3,13 +3,13 @@ import Link from "next/link";
 import { scopedKey } from "@/lib/account-scope";
 
 import { useUser } from "@clerk/nextjs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FileText, LayoutGrid, List, Search, X } from "lucide-react";
 import { TopBar } from "@/components/ui/TopBar";
 import type { ContentType } from "@/lib/article";
 import { forgetCover } from "@/lib/covers";
-import { filterBooks, libraryStats, SAMPLES_UNTIL, SORTS, sortBooks, TAGS, TOPIC, TOPICS, tagOptions, toLibraryBooks, type Book, type Sort, type TagKey, type TopicKey } from "@/lib/library";
-import { hideSample, useLibraryPrefs } from "@/lib/library-prefs";
+import { filterBooks, libraryStats, SAMPLES_UNTIL, SORTS, sortBooks, TAGS, TOPIC, TOPICS, tagOptions, projectLibrary, type Book, type Sort, type TagKey, type TopicKey } from "@/lib/library";
+import { hideSample, setLibraryPrefs, useLibraryPrefs } from "@/lib/library-prefs";
 import { applySettings } from "@/lib/settings";
 import { useStore } from "@/lib/store";
 import { watchShelf, retrySync } from "@/lib/sync";
@@ -20,6 +20,7 @@ import { XSyncStatus } from "./XSyncStatus";
 import { EvidenceSearch } from "./EvidenceSearch";
 import { LibraryAnswer } from "./LibraryAnswer";
 import { Starter } from "./Starter";
+import { useLibraryThreads } from "@/lib/library-threads-client";
 import { useLibraryRelations } from "@/lib/library-relations-client";
 
 // Preserve existing device history while the product is renamed.
@@ -30,6 +31,7 @@ export function Library() {
   const { user, isSignedIn } = useUser();
   const syncNotice = useStore(s=>s.syncNotice);
   const syncError = useStore((s) => s.syncError);
+  const syncReady = useStore((s) => s.syncReady);
   const account = useStore((s) => s.scope);
   const adopt = useStore((s) => s.adoptAnonymous);
   const [adopted, setAdopted] = useState(false);
@@ -42,17 +44,28 @@ export function Library() {
   const shelveItem = useStore((s) => s.shelve);
   const removeFromLibrary = useStore((s) => s.removeFromLibrary);
   const prefs = useLibraryPrefs();
-  const [view, setView] = useState<LibraryView>("grid");
+  const view = prefs.view;
+  const setView = (view: LibraryView) => setLibraryPrefs({ view });
   const [only, setOnly] = useState<TopicKey | null>(null);
   const [status, setStatus] = useState<TagKey | null>(null);
   const [tag, setTag] = useState<string | null>(null);
   const [contentType, setContentType] = useState<ContentType | null>(null);
   const [sort, setSort] = useState<Sort>("recent");
   const [q, setQ] = useState("");
+  const threads = useLibraryThreads(q);
   const [manage, setManage] = useState<string | null>(null);
   const [adding, setAdding] = useState<AddTab | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const filterKey = JSON.stringify([q, only, status, tag, contentType, sort]);
+  const previousFilter = useRef(filterKey);
+  useLayoutEffect(() => {
+    if (previousFilter.current === filterKey) return;
+    previousFilter.current = filterKey;
+    const top = resultsRef.current?.getBoundingClientRect().top;
+    if (top !== undefined && top < 80) window.scrollTo({ top: Math.max(0, window.scrollY + top - 80), behavior: "instant" });
+  }, [filterKey]);
   const known = useRef<Set<string> | null>(null);
   const [lastSeen, setLastSeen] = useState(0);
 
@@ -88,7 +101,7 @@ export function Library() {
 
   // Anything that lands on the shelf while you look (an import, a sync from your agent) drops in.
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || (account && !syncReady) || !threads.index && account) return;
     const ids = new Set(library.map((x) => x.id));
     if (!known.current) {
       known.current = ids;
@@ -115,20 +128,22 @@ export function Library() {
       setWave((w) => w && { ...w, done: true });
       waveTimer.current = setTimeout(closeWave, 9000);
     }, byAgent ? 14_000 : 6000);
-  }, [hydrated, library, closeWave]);
+  }, [hydrated, library, closeWave, account, syncReady, threads.index]);
 
-  const own = library.filter((x) => x.origin !== "sample");
-  const books = useMemo(() => toLibraryBooks({ library, progress, highlights, hydrated, hiddenSamples: prefs.hiddenSamples }), [library, progress, highlights, hydrated, prefs.hiddenSamples]);
+  const projection = useMemo(() => projectLibrary({ library, progress, highlights, hydrated, hiddenSamples: prefs.hiddenSamples, threads: threads.index, account, syncReady }), [library, progress, highlights, hydrated, prefs.hiddenSamples, threads.index, account, syncReady]);
+  const {books,ready} = projection;
 
   const sorted = useMemo(() => sortBooks(books, sort), [books, sort]);
-  const visible = useMemo(() => filterBooks(sorted, { query: q, topic: only, status, tag, contentType }), [sorted, q, only, status, tag, contentType]);
+  const visible = useMemo(() => filterBooks(sorted, { query: q, topic: only, status, tag, contentType, postMatches: threads.matchedItemIds }), [sorted, q, only, status, tag, contentType, threads.matchedItemIds]);
   const tags = useMemo(() => tagOptions(books), [books]);
   const stats = useMemo(() => libraryStats(books), [books]);
 
-  const fromAgent = useMemo(() => (lastSeen ? books.filter((b) => b.agent && b.added > lastSeen) : []), [books, lastSeen]);
+  const fromAgent = useMemo(() => (lastSeen ? books.filter((b) => !b.contextOnly && b.agent && b.added > lastSeen) : []), [books, lastSeen]);
 
   const selected = manage ? books.find((b) => b.id === manage) : undefined;
   const filtered = Boolean(q || only || status || tag || contentType);
+  const manageItem = useCallback((book: Book) => setManage(book.id), []);
+  const favoriteItem = useCallback((book: Book) => shelveItem(book.id, { favorite: !book.favorite }), [shelveItem]);
   const clearFilters = () => {
     setQ("");
     setOnly(null);
@@ -189,13 +204,13 @@ export function Library() {
               <p className="content-eyebrow">A place for what stays with you</p>
               <h1 className="lib-title">{user?.firstName ? `${user.firstName}'s library` : "Your library"}</h1>
               <p className="lib-stats">
-                {hydrated && <>
+                {ready ? <>
                   <span><b>{stats.count}</b> {stats.count === 1 ? "item" : "items"}</span>
                   {stats.topics > 0 && <span><b>{stats.topics}</b> {stats.topics === 1 ? "topic" : "topics"}</span>}
                   <span><b>{stats.hours}</b> {stats.hours === 1 ? "hour" : "hours"} of reading</span>
                   {stats.reading > 0 && <span><b>{stats.reading}</b> in progress</span>}
                   {stats.read > 0 && <span><b>{stats.read}</b> read</span>}
-                </>}
+                </> : <span role="status">Loading your library…</span>}
               </p>
             </div>
             <div className="library-hero-actions">
@@ -204,7 +219,7 @@ export function Library() {
               {account && <XSyncStatus key={account} owner={account} version={library.length} />}
             </div>
           </div>
-          {fromAgent.length > 0 && (
+          {ready && fromAgent.length > 0 && (
             <button type="button" className="lib-news" onClick={() => { clearFilters(); setStatus("agent"); }}>
               {fromAgent.length} new from your agent since you last looked
             </button>
@@ -215,7 +230,7 @@ export function Library() {
           <div className="content-toolbar">
             <div className="lib-search content-search">
               <Search size={16} className="shrink-0 text-ink-3" aria-hidden />
-              <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search titles, authors, topics…" aria-label="Search the library" />
+              <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search titles, authors and all thread posts…" aria-label="Search the library" />
               {q ? <button type="button" aria-label="Clear search" onClick={() => setQ("")}><X size={15} /></button> : <kbd className="max-sm:hidden">/</kbd>}
             </div>
             <label className="content-select content-sort">
@@ -262,14 +277,17 @@ export function Library() {
 
         {account && q.trim() && <EvidenceSearch owner={account} options={{query:q,...(contentType?{contentType}:{}),...(only?{topic:only}:{}),...(tag?{tags:[tag]}:{})}} />}
 
-        <div className="content-results">
-          <p role="status" aria-live="polite">{hydrated ? <><b>{visible.length}</b> {filtered ? `of ${books.length} ` : ""}{visible.length === 1 ? "item" : "items"}{only ? ` in ${TOPIC[only].name}` : ""}</> : "Loading your library…"}</p>
+        <div ref={resultsRef} className="content-results">
+          <p role="status" aria-live="polite">{ready ? <><b>{visible.length}</b> {filtered ? `of ${stats.count} ` : ""}{visible.length === 1 ? "item" : "items"}{only ? ` in ${TOPIC[only].name}` : ""}</> : "Loading your library…"}</p>
           {filtered && <button type="button" onClick={clearFilters}>Clear filters <X size={13} aria-hidden /></button>}
         </div>
         {hydrated ? <>
           {connections.error && <p role="alert" className="mb-3 text-sm text-ink-3">{connections.error} <button className="underline" onClick={connections.refresh}>Retry connections</button></p>}
-          <ContentCards books={visible} view={view} fresh={fresh} onManage={(b) => setManage(b.id)} onFavorite={(b) => shelveItem(b.id, { favorite: !b.favorite })} onTag={setTag} selectedTag={tag} connections={connections.index} />
-          {!visible.length && (
+          {threads.error && <p role="alert">{threads.error} <button onClick={threads.refresh}>Retry threads</button></p>}
+          {threads.searchError && <p role="alert">{threads.searchError} Showing metadata matches. <button onClick={threads.refresh}>Retry search</button></p>}
+          {threads.searching && <p role="status">Searching all saved post text…</p>}
+          {!ready ? <p role="status">{threads.error ? "Thread view unavailable." : "Loading saved threads…"}</p> : <ContentCards scope={account ?? "anonymous"} books={visible} view={view} fresh={fresh} onManage={manageItem} onFavorite={favoriteItem} onTag={setTag} selectedTag={tag} connections={connections.index} />}
+          {ready && !visible.length && !threads.searching && (
             <div className="content-empty">
               <FileText size={28} strokeWidth={1.2} aria-hidden />
               <h2>{filtered ? "Nothing here just yet" : "Make room for a good idea"}</h2>
@@ -277,7 +295,7 @@ export function Library() {
               <button type="button" onClick={filtered ? clearFilters : () => setAdding("links")}>{filtered ? "Clear filters" : "Add something to read"}</button>
             </div>
           )}
-          {own.length < SAMPLES_UNTIL && <Starter count={own.length} signedIn={Boolean(isSignedIn)} onAdd={setAdding} />}
+          {ready && stats.ownCount < SAMPLES_UNTIL && <Starter count={stats.ownCount} signedIn={Boolean(isSignedIn)} onAdd={setAdding} />}
         </> : <div className="content-grid" aria-hidden>{Array.from({ length: 6 }, (_, i) => <div key={i} className="content-skeleton shimmer" />)}</div>}
       </main>
 

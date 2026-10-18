@@ -1,4 +1,5 @@
-import { pool, setupPostgres } from "./postgres";
+import {toLibraryBooks,filterBooks} from "../lib/library";
+import { databaseAdapter, pool, setupPostgres } from "./postgres";
 import { after, before } from "node:test";
 before(setupPostgres);
 after(() => pool.end());
@@ -113,6 +114,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
   const { configureDatabase } = await import("../lib/db");
   const c = await pool.connect(),
     schema = "upgrade_" + crypto.randomUUID().replaceAll("-", "");
+  const originalSearchPath=(await c.query("show search_path")).rows[0].search_path;
   try {
     await c.query(`create schema ${schema}`);
     await c.query(`set search_path to ${schema}`);
@@ -155,8 +157,8 @@ test("recorded migrations upgrade legacy text and annotations without discarding
     assert.equal(page.changes.highlights[0].data.note, "Keep me");
     assert.equal(page.changes.highlights[0].data.sourceRevision, 1);
   } finally {
-    configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
-    await c.query("reset search_path");
+    configureDatabase(databaseAdapter);
+    await c.query("select set_config('search_path',$1,false)",[originalSearchPath]);
     c.release();
   }
 });
@@ -183,4 +185,101 @@ test("clearing a manual tag choice stays cleared after background source refresh
   await shelveForUser(owner, { id: "cleared", title: "Refreshed", tags: ["new automatic"] }, { id: "cleared", updated: true });
   const latest = (await pullRows(owner, "")).changes.articles.at(-1)!.data;
   assert.equal("tags" in latest, false);
+});
+
+test('a connected thread is represented by its opening post while continuation metadata remains searchable', () => {
+ const library=[
+ {id:'opening',title:'Opening post',author:'Alice',origin:'paste' as const,contentType:'post' as const,postId:'101',words:100,addedAt:1},
+ {id:'tip',title:'Unique continuation tip',author:'Alice',origin:'paste' as const,contentType:'post' as const,postId:'102',words:100,addedAt:2},
+ ];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:{groups:[{rootId:'opening',memberIds:['opening','tip']}],postItemIds:['opening','tip']}}).filter(b=>!b.sample);
+ assert.equal(books.length,1);assert.equal(books[0].id,'opening');assert.equal(books[0].thread?.postCount,2);
+ assert.equal(filterBooks(books,{query:'Unique continuation'}).length,1);
+ assert.equal(filterBooks(books,{query:'needle',postMatches:new Set(['tip'])})[0]?.id,'opening');
+});
+
+test('library threads use a saved opening context post and full-text search includes pending continuations',async()=>{
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const {readLibraryThreads,searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='thread-library-'+crypto.randomUUID();
+ const post=(id:string,text:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const result=await importBookmarks(owner,{posts:[post('13002','Bookmarked middle',{replyToPostId:'13001',contextPosts:[post('13001','First post')],threadPosts:[post('13003','A needle only in the continuation body',{replyToPostId:'13002'})]})]},'birdclaw');
+ const root=result.results[0],index=await readLibraryThreads(owner);
+ assert.equal(index.groups.length,1);assert.equal(index.groups[0].memberIds.length,3);
+ assert.equal(index.groups[0].rootId,root.contextResults![0].itemId);
+ assert.deepEqual(await searchLibraryPosts(owner,'needle continuation'),[root.threadResults![0].itemId]);
+ const openingId=root.contextResults![0].itemId!,savedId=root.itemId!,tipId=root.threadResults![0].itemId!;
+ const library=[
+  {id:openingId,title:'First post',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+  {id:savedId,title:'Bookmarked middle',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:2,favorite:true,topic:'science',tags:['mine']},
+  {id:tipId,title:'Continuation',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+ ];
+ const [card]=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:index}).filter(b=>!b.sample&&!b.contextOnly);
+ assert.equal(card.id,savedId,'card actions must target the bookmarked member');
+ assert.equal(card.title,'Bookmarked middle','management edits the saved member title');
+ assert.deepEqual(card.reading,{id:openingId,title:'First post',dek:undefined});
+ assert.equal(card.favorite,true);assert.equal(card.topic,'science');assert.deepEqual(card.tags,['mine']);
+ const savedRow=(await pullRows(owner,'')).changes.articles.find(r=>r.id===card.id)!;
+ await pushRows(owner,{articles:[{id:card.id,article_id:card.id,data:savedRow.data,revision:savedRow.revision,deleted:true}]});
+ const remaining=await readLibraryThreads(owner);
+ assert(remaining.groups.every(group=>group.contextOnly),'removing the saved member must remove the thread from the shelf');
+ assert(await articleDoc(owner,openingId),'removing the bookmark preserves the opening context post');
+
+ assert.deepEqual(await readLibraryThreads('different-owner'),{groups:[],postItemIds:[]});
+ assert.deepEqual(await searchLibraryPosts('different-owner','needle'),[]);
+});
+
+test('a quote-only context source stays off the shelf but remains discoverable by full-text search',async()=>{
+ const {importBookmarks}=await import('../lib/bookmarks');const {readLibraryThreads,searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='quoted-search-'+crypto.randomUUID();
+ const post=(id:string,text:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const saved=await importBookmarks(owner,{posts:[post('14001','The bookmark',{quotedPostId:'14002',contextPosts:[post('14002','A unique needle deep in a quoted context source',{author:{name:'Bob',handle:'bob',id:'77'}})]})]},'birdclaw');
+ const root=saved.results[0],quote=root.contextResults![0];
+ const library=[{id:root.itemId!,title:'Bookmark',author:'Alice',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},{id:quote.itemId!,title:'Quote',author:'Bob',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1}];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:await readLibraryThreads(owner)}).filter(b=>!b.sample);
+ assert.equal(filterBooks(books,{}).length,1);
+ const matches=new Set(await searchLibraryPosts(owner,'unique needle'));
+ assert.equal(filterBooks(books,{query:'unique needle',postMatches:matches})[0]?.id,quote.itemId);
+});
+
+test('a fresh browser receives each latest saved entity once instead of replaying historical edits',async()=>{
+ const owner='bootstrap-'+crypto.randomUUID();
+ for(const title of ['First title','Intermediate title','Current title'])await shelveForUser(owner,{id:'updated',title},{id:'updated',title});
+ await shelveForUser(owner,{id:'second',title:'Second saved item'},{id:'second'});
+ const page=await pullRows(owner,'');
+ assert.deepEqual(page.changes.articles.map(r=>r.id),['updated','second']);
+ assert.equal(page.changes.articles[0].data.title,'Current title');assert.equal(page.hasMore,false);
+});
+
+test('bootstrap pagination freezes earlier source revisions and then resumes incremental history',async()=>{
+ const owner='snapshot-pages-'+crypto.randomUUID();
+ await shelveForUser(owner,{id:'first',title:'First'},{id:'first'});
+ await shelveForUser(owner,{id:'later',title:'Before snapshot'},{id:'later'});
+ const first=await pullRows(owner,'',1);assert.equal(first.hasMore,true);
+ await shelveForUser(owner,{id:'later',title:'After snapshot'},{id:'later',changed:true});
+ const second=await pullRows(owner,first.cursor,1);
+ assert.equal(second.changes.articles[0].data.title,'Before snapshot');assert.equal(second.hasMore,false);
+ const incremental=await pullRows(owner,second.cursor);
+ assert.equal(incremental.changes.articles[0].data.title,'After snapshot');assert.equal(incremental.hasMore,false);
+});
+
+test('full-post search rejects more than sixteen distinct terms and preserves repeated-term matches',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-bounds-'+crypto.randomUUID();
+ await assert.rejects(searchLibraryPosts(owner,Array.from({length:17},(_,i)=>'word'+i).join(' ')),/16 distinct/);
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const saved=await importBookmarks(owner,{posts:[{postId:'15001',url:'https://x.com/alice/status/15001',text:'needle '+ 'a'.repeat(399_000),author:{name:'Alice',handle:'alice'},observedAt:'2026-10-18T10:00:00Z'}]},'birdclaw');
+ assert.deepEqual(await searchLibraryPosts(owner,Array(499).fill('a').join(' ')),[saved.results[0].itemId]);
+});
+
+test('full-post search throttles one account without blocking another account',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-rate-'+crypto.randomUUID();
+ for(let i=0;i<30;i++)await searchLibraryPosts(owner,'needle');
+ await assert.rejects(searchLibraryPosts(owner,'needle'),/Too many/);
+ const {makeToken}=await import('../lib/agent');const {createToken}=await import('../lib/db');const {POST}=await import('../app/api/library-threads/route');
+ const token=makeToken();await createToken(owner,token.id,token.hash,'Search test');
+ const response=await POST(new Request('http://localhost/api/library-threads',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify({query:'needle'})}));
+ assert.equal(response.status,429);assert.equal(response.headers.get('Retry-After'),'60');
+ assert.deepEqual(await searchLibraryPosts(owner+'-other','needle'),[]);
 });

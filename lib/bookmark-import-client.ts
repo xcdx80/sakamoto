@@ -1,5 +1,5 @@
 'use client';
-import { bookmarkBatch } from './bookmark-batches';
+import { bookmarkBatch, bookmarkDeliveryPosts } from './bookmark-batches';
 import { accountEpoch } from './account-scope';
 import { useStore } from './store';
 import { retrySync } from './sync';
@@ -27,13 +27,14 @@ export async function importBirdclaw(archive:BirdclawSelection,onProgress:(messa
  const scope=useStore.getState().scope,epoch=accountEpoch();
  if(!archive.accountId||!archive.posts.length)throw new Error('Choose a Birdclaw account with bookmarks.');
  const accountHash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(archive.fingerprint+':'+archive.accountId));
- const runId='birdclaw-'+Array.from(new Uint8Array(accountHash)).map(n=>n.toString(16).padStart(2,'0')).join('');
- for(let offset=0;offset<archive.posts.length;){
+ const runId='birdclaw-v3-'+Array.from(new Uint8Array(accountHash)).map(n=>n.toString(16).padStart(2,'0')).join('');
+ const posts=bookmarkDeliveryPosts(archive.posts),acknowledged=new Set<string>();
+ for(let offset=0;offset<posts.length;){
   if(signal.aborted)break;if(scope!==useStore.getState().scope||epoch!==accountEpoch())throw new Error('Account changed; import stopped.');
-  const batch=bookmarkBatch(archive.posts,offset);
+  const batch=bookmarkBatch(posts,offset);
   const next=offset+batch.length;
   type Receipt={delivery:{safeToAdvance:boolean;counts:Record<string,number>};results:{status:string;reason?:string}[]};
-  const body={posts:batch,delivery:{runId,batchId:'offset-'+offset,status:next===archive.posts.length?'source_exhausted':'more',sourceTotal:archive.posts.length}};
+  const body={posts:batch,delivery:{runId,batchId:'offset-'+offset,status:next===posts.length?'source_exhausted':'more',sourceTotal:posts.length}};
   let result=await api<Receipt>('/api/bookmark-import',body);
   // A rejected acknowledgement is immutable. An explicit import attempt may repair
   // the same input under a fresh child batch; successful source identities still deduplicate.
@@ -42,7 +43,7 @@ export async function importBirdclaw(archive:BirdclawSelection,onProgress:(messa
   }
   retrySync();
   if(!result.delivery.safeToAdvance)throw new Error('Import paused: '+(result.results.find(r=>r.status==='rejected')?.reason??'an item was rejected. Reselect the same file to retry safely.'));
-  offset=next;onProgress(`${offset.toLocaleString()} / ${archive.posts.length.toLocaleString()} bookmarks acknowledged. Duplicates are kept once.`);
+  batch.forEach(post=>acknowledged.add(post.postId));offset=next;onProgress(`${acknowledged.size.toLocaleString()} / ${archive.posts.length.toLocaleString()} bookmarks acknowledged. Duplicates are kept once.`);
  }
 }
 export async function runXSync(action:'start'|'resume'|'restart',maxPages:number,onProgress:(run:XRun)=>void,signal:AbortSignal){
