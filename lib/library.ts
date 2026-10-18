@@ -287,6 +287,7 @@ export function libraryStats(allBooks: Book[]) {
   const books = allBooks.filter(book => !book.contextOnly);
   return {
     count: books.length,
+    ownCount: books.filter(book => !book.sample).length,
     topics: new Set(books.filter((book) => book.topic !== "unsorted").map((book) => book.topic)).size,
     hours: Math.max(1, Math.round(books.reduce((minutes, book) => minutes + book.minutes, 0) / 60)),
     reading: books.filter((book) => book.pct > 0 && book.pct < 1).length,
@@ -314,7 +315,6 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
 }): Book[] {
   const read = (id: string) => hydrated ? progress[id]?.pct ?? 0 : 0;
   const marks = (id: string) => hydrated ? (highlights[id] ?? []).length : 0;
-  const ownCount = library.filter((item) => item.origin !== "sample").length;
   const mine: Book[] = library.filter((item) => item.origin !== "sample" || !hiddenSamples.includes(item.id)).map((item) => ({
     processing: item.processing, id: item.id, title: tidyTitle(item.title), author: bylineOf(item), year: item.year,
     url: item.sourceUrl, topic: topicOf(item.topic), contentType: contentTypeOf(item),
@@ -323,6 +323,22 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     added: item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
     agent: item.addedBy === "agent", sample: item.origin === "sample",
   }));
+  let projected = mine;
+  if (threads) {
+    const postIds=new Set(threads.postItemIds),byId=new Map(mine.map(book=>[book.id,book]));
+    const wordsById=new Map(library.map(item=>[item.id,item.words]));
+    const grouped:Book[]=[];
+    for(const group of threads.groups){
+      const members=group.memberIds.flatMap(id=>byId.get(id)??[]);
+      if(!members.length)continue;
+      const first=byId.get(group.rootId)??members[0];
+      const saved=group.bookmarkIds?.flatMap(id=>byId.get(id)??[])[0]??first;
+      const thread=group.memberIds.length>1||group.missingPostCount?{postCount:group.memberIds.length,memberIds:group.memberIds,missingPostCount:group.missingPostCount,searchText:members.map(b=>`${b.title} ${b.author} ${b.tags.join(' ')} ${b.url??''}`).join(' ')}:undefined;
+      grouped.push({...saved,...(saved.id!==first.id?{reading:{id:first.id,title:first.title,dek:first.dek}}:{}),pct:first.pct,highlights:first.highlights,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
+    }
+    projected = [...mine.filter(book=>!postIds.has(book.id)),...grouped];
+  }
+  const ownCount = projected.filter(book => !book.sample && !book.contextOnly).length;
   const savedIds = new Set(library.map((item) => item.id));
   const samples: Book[] = SAMPLES.filter((article) => !savedIds.has(article.id) && !hiddenSamples.includes(article.id) && (ownCount < SAMPLES_UNTIL || read(article.id) > 0)).map((article) => ({
     id: article.id, title: article.title, author: article.author ?? "", year: yearOf(article.published),
@@ -331,19 +347,7 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     pct: read(article.id), highlights: marks(article.id), added: 0, cover: SAMPLE_SHELF[article.id]?.cover,
     agent: false, sample: true,
   }));
-  if (!threads) return [...mine, ...samples];
-  const postIds=new Set(threads.postItemIds),byId=new Map(mine.map(book=>[book.id,book]));
-  const wordsById=new Map(library.map(item=>[item.id,item.words]));
-  const grouped:Book[]=[];
-  for(const group of threads.groups){
-    const members=group.memberIds.flatMap(id=>byId.get(id)??[]);
-    if(!members.length)continue;
-    const first=byId.get(group.rootId)??members[0];
-    const saved=group.bookmarkIds?.flatMap(id=>byId.get(id)??[])[0]??first;
-    const thread=group.memberIds.length>1||group.missingPostCount?{postCount:group.memberIds.length,memberIds:group.memberIds,missingPostCount:group.missingPostCount,searchText:members.map(b=>`${b.title} ${b.author} ${b.tags.join(' ')} ${b.url??''}`).join(' ')}:undefined;
-    grouped.push({...saved,...(saved.id!==first.id?{reading:{id:first.id,title:first.title,dek:first.dek}}:{}),pct:first.pct,highlights:first.highlights,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
-  }
-  return [...mine.filter(book=>!postIds.has(book.id)),...grouped,...samples];
+  return [...projected,...samples];
 }
 
 /** A signed-in shelf is meaningful only after a complete sync and its thread projection. */

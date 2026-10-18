@@ -143,3 +143,16 @@ test('an edit committed while another source is checked survives invalidation an
   assert(recovery);assert.equal((await loadDoc(recovery.id,owner))?.blocks[0].runs?.[0].text,'Keep this concurrent edit');
  }finally{sync.stop()}
 });
+
+test('one long thread counts as one saved item for samples and starter guidance',async()=>{
+ const {projectLibrary,libraryStats,SAMPLES_UNTIL}=await import('../lib/library');
+ const posts=Array.from({length:6},(_,i)=>({id:'thread-'+i,title:'Post '+i,origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1}));
+ const context={...posts[0],id:'quoted-context'};
+ const base={progress:{},highlights:{},hydrated:true,hiddenSamples:[],account:'owner',syncReady:true,threads:{groups:[{rootId:'thread-0',memberIds:posts.map(p=>p.id),bookmarkIds:['thread-0']},{rootId:context.id,memberIds:[context.id],bookmarkIds:[],contextOnly:true}],postItemIds:[...posts.map(p=>p.id),context.id]}};
+ const one=projectLibrary({...base,library:[...posts,context]});
+ assert(one.books.some(book=>book.sample),'a single thread must retain the sample library');
+ assert.equal(libraryStats(one.books).ownCount,1);assert(libraryStats(one.books).ownCount<SAMPLES_UNTIL);
+ const articles=Array.from({length:5},(_,i)=>({...posts[0],id:'article-'+i,contentType:'article' as const}));
+ const six=projectLibrary({...base,library:[...posts,context,...articles]});
+ assert.equal(libraryStats(six.books).ownCount,6);assert.equal(six.books.some(book=>book.sample),false);
+});
