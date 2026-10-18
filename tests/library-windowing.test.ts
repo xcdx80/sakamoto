@@ -16,7 +16,7 @@ Object.defineProperties(globalThis,{self:{value:browser},navigator:{value:{userA
 Object.defineProperty(browser,'ResizeObserver',{value:BrowserResizeObserver});
 Object.defineProperty(browser.HTMLElement.prototype,'offsetHeight',{get(){return 240}});
 browser.HTMLElement.prototype.getBoundingClientRect=function(){return {x:0,y:100-y,top:100-y,bottom:340-y,left:0,right:1100,width:1100,height:240,toJSON(){return {}}} as DOMRect};
-const until=async(check:()=>boolean)=>{for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,5))}assert.fail('Window did not reach expected rows')};
+const until=async(check:()=>boolean,attempts=100)=>{for(let i=0;i<attempts;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,5))}assert.fail('Window did not reach expected rows')};
 
 test('scrolling a complete library loads distant rows and recycles earlier rows without reducing the searchable dataset',async()=>{
  const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {ContentCards}=await import('../components/library/ContentCards');
@@ -91,5 +91,26 @@ test('an old cached thread graph cannot enable actions before or after a failed 
   assert.equal(observed!.index,undefined);assert.equal(host.textContent,'waiting');
   release(Response.json({error:'Offline'},{status:503}));await until(()=>Boolean(observed!.error));
   assert.equal(observed!.index,undefined);assert.notEqual(host.textContent,'actionable');
+ }finally{root.unmount();globalThis.fetch=nativeFetch;useStore.getState().activateAccount(null)}
+});
+
+test('the final typed post query retries after an earlier search temporarily occupies its slot',async()=>{
+ const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {useLibraryThreads}=await import('../lib/library-threads-client');const {useStore}=await import('../lib/store');
+ useStore.getState().activateAccount('overlapping-search');useStore.setState({syncReady:true});
+ const nativeFetch=globalThis.fetch;let release!:(response:Response)=>void;let finalRequests=0;
+ globalThis.fetch=async (_url,init)=>{
+  if(init?.method!=='POST')return Response.json({groups:[],postItemIds:[]});
+  const query=JSON.parse(String(init.body)).query;
+  if(query==='earlier')return new Promise(resolve=>{release=resolve});
+  finalRequests++;return finalRequests===1?Response.json({error:'Busy'},{status:429,headers:{'Retry-After':'1'}}):Response.json({matchedItemIds:['final-continuation']});
+ };
+ let observed:ReturnType<typeof useLibraryThreads>;const Graph=({query}:{query:string})=>{observed=useLibraryThreads(query);return createElement('span',null,observed.searching?'searching':observed.searchError||'ready')};
+ const root=createRoot(document.getElementById('root')!);
+ try{
+  root.render(createElement(Graph,{query:'earlier'}));await until(()=>Boolean(release));
+  root.render(createElement(Graph,{query:'final'}));await until(()=>finalRequests===1);
+  release(Response.json({matchedItemIds:['outdated-continuation']}));
+  await until(()=>Boolean(observed!.matchedItemIds?.has('final-continuation')),400);
+  assert.equal(observed!.matchedItemIds?.has('outdated-continuation'),false);assert.equal(observed!.searchError,'');
  }finally{root.unmount();globalThis.fetch=nativeFetch;useStore.getState().activateAccount(null)}
 });

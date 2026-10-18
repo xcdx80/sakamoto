@@ -1,5 +1,5 @@
 import {toLibraryBooks,filterBooks} from "../lib/library";
-import { pool, setupPostgres } from "./postgres";
+import { databaseAdapter, pool, setupPostgres } from "./postgres";
 import { after, before } from "node:test";
 before(setupPostgres);
 after(() => pool.end());
@@ -157,7 +157,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
     assert.equal(page.changes.highlights[0].data.note, "Keep me");
     assert.equal(page.changes.highlights[0].data.sourceRevision, 1);
   } finally {
-    configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
+    configureDatabase(databaseAdapter);
     await c.query("select set_config('search_path',$1,false)",[originalSearchPath]);
     c.release();
   }
@@ -261,4 +261,25 @@ test('bootstrap pagination freezes earlier source revisions and then resumes inc
  assert.equal(second.changes.articles[0].data.title,'Before snapshot');assert.equal(second.hasMore,false);
  const incremental=await pullRows(owner,second.cursor);
  assert.equal(incremental.changes.articles[0].data.title,'After snapshot');assert.equal(incremental.hasMore,false);
+});
+
+test('full-post search rejects more than sixteen distinct terms and preserves repeated-term matches',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-bounds-'+crypto.randomUUID();
+ await assert.rejects(searchLibraryPosts(owner,Array.from({length:17},(_,i)=>'word'+i).join(' ')),/16 distinct/);
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const saved=await importBookmarks(owner,{posts:[{postId:'15001',url:'https://x.com/alice/status/15001',text:'needle '+ 'a'.repeat(399_000),author:{name:'Alice',handle:'alice'},observedAt:'2026-10-18T10:00:00Z'}]},'birdclaw');
+ assert.deepEqual(await searchLibraryPosts(owner,Array(499).fill('a').join(' ')),[saved.results[0].itemId]);
+});
+
+test('full-post search throttles one account without blocking another account',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-rate-'+crypto.randomUUID();
+ for(let i=0;i<30;i++)await searchLibraryPosts(owner,'needle');
+ await assert.rejects(searchLibraryPosts(owner,'needle'),/Too many/);
+ const {makeToken}=await import('../lib/agent');const {createToken}=await import('../lib/db');const {POST}=await import('../app/api/library-threads/route');
+ const token=makeToken();await createToken(owner,token.id,token.hash,'Search test');
+ const response=await POST(new Request('http://localhost/api/library-threads',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify({query:'needle'})}));
+ assert.equal(response.status,429);assert.equal(response.headers.get('Retry-After'),'60');
+ assert.deepEqual(await searchLibraryPosts(owner+'-other','needle'),[]);
 });

@@ -6,7 +6,11 @@
 import { READER_METADATA_FIELDS } from "./library-ownership";
 import { neon } from "@neondatabase/serverless";
 
-export type SqlAdapter = { query: (text: string, params?: unknown[]) => Promise<Record<string, any>[]> };
+export type SqlAdapter = {
+  query: (text: string, params?: unknown[]) => Promise<Record<string, any>[]>;
+  /** Server-enforced transaction-local deadline; adapters without it cannot run bounded searches. */
+  queryWithTimeout?: (text:string,params:unknown[],timeoutMs:number)=>Promise<Record<string,any>[]>;
+};
 let client: SqlAdapter | null = null;
 /** External SQL adapter substitution for isolated integration environments. Never reads another database implicitly. */
 export function configureDatabase(adapter: SqlAdapter) {
@@ -16,7 +20,17 @@ export function db(): SqlAdapter {
   if (!client) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set.");
-    client = neon(url);
+    const sql = neon(url);
+    client = {
+      query: (text,params) => sql.query(text,params),
+      async queryWithTimeout(text,params,timeoutMs) {
+        const results = await sql.transaction([
+          sql.query("select set_config('statement_timeout',$1,true)",[`${timeoutMs}ms`]),
+          sql.query(text,params),
+        ],{readOnly:true});
+        return results[1];
+      },
+    };
   }
   return client;
 }
