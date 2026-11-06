@@ -1,0 +1,313 @@
+platform: x
+as_of: 2026-11-05 (Europe/Lisbon). Code read at xai-org/x-algorithm commit 021afa44 (2026-11-05 05:16 WET).
+summary: X ranks For You candidates by predicted actions (reply, quote, share, follow, dwell) weighted in code,
+  drops candidates older than 48 hours from the main sources, and spreads out repeat posts from one author. Practitioners
+  agree on strong first lines, native content, and summarizing links. They disagree on cadence and posting times.
+length:
+- claim: Standard posts are 280 characters; Premium long posts go up to 25,000 characters.
+  confidence: medium
+  source_refs:
+  - web-x-premium-limits
+  note: Third-party summary; X does not publish a single official page with both limits.
+- claim: X Articles (Premium) allow roughly 100,000 characters.
+  confidence: medium
+  source_refs:
+  - web-x-premium-limits
+- claim: Long single posts and Articles are used for breakdowns (case studies, playbooks); threads remain common
+    for step-by-step content.
+  confidence: medium
+  source_refs:
+  - x-2108585781581217906
+  - x-2111080389565640897
+  - x-1538930462411968512
+formatting:
+- claim: Use headers on each body post of a thread, white space, a clear CTA or call-to-conversation, and a strong
+    hook post.
+  confidence: medium
+  source_refs:
+  - x-1538930467021504513
+- claim: Make it scannable and platform-native.
+  confidence: medium
+  source_refs:
+  - x-2111080389565640897
+links:
+- claim: No explicit rule limits the reach of links, but the algorithm tries to maximize user-seconds, so a link
+    that cuts people's time short gets less exposure. Post a text/image/video summary of what's at the link.
+  confidence: medium
+  source_refs:
+  - x-1915806794393457034
+  note: Elon Musk, April 2025. Policy may have changed since.
+- claim: Put the link in a reply instead of the post.
+  confidence: low
+  source_refs:
+  - x-1915777220897083556
+  note: 'Fan account (cb_doge), not an official source. Common practice (Ernesto: ''Full link in my first reply'').'
+- claim: In the open-source ranker, open_link has weight 0.2 and click 0.274, far below reply (5.0), quote (5.0)
+    and share via copy link (20.0).
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+  note: Code defaults; production may override params at runtime.
+media:
+- claim: Photo expand has a small weight (0.05); video open and video quality view are 0 in the ranker defaults.
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+  note: 'This does not mean media is useless: media can raise predicted dwell, replies and shares, which carry weight.'
+- claim: Video content and image checklists from creators were seen in saved posts but could not be read as text
+    (video/image only).
+  confidence: low
+  source_refs:
+  - x-2115618441571013084
+timing:
+- claim: 'Buffer (8.7M posts, 2026): best slot Tuesday 9am local; next Wednesday 10am and 9am; weekday mid-mornings
+    (about 9-11am) most reliable; evenings 6-11pm and weekends (Saturday worst) weakest.'
+  confidence: medium
+  source_refs:
+  - web-buffer-x-2026
+- claim: 'A summary of the same Buffer study: best window 8-11am weekdays, best day Wednesday, quietest Saturday
+    then Sunday.'
+  confidence: medium
+  source_refs:
+  - x-2109993207547191633
+  note: Slightly different window from Buffer's page summary (8-11am vs 9-11am).
+- claim: Posts made late on a Friday night after a burst of rapid posting underperform because few people are available
+    to see them.
+  confidence: medium
+  source_refs:
+  - x-2054454701639495856
+  note: Nikita Bier (X), a reply in May 2026.
+cadence:
+- claim: Cole's team posts 5-8+ times per day on X.
+  confidence: medium
+  source_refs:
+  - x-2035422609639395777
+- claim: 'Daily posting is not required: Vassallo posted nothing for 7 days and his next post got 600K views.'
+  confidence: low
+  source_refs:
+  - x-2078028115847110753
+  note: Single anecdote.
+- claim: Pick a strategy you can keep up every week for years.
+  confidence: medium
+  source_refs:
+  - x-1709584991162630383
+- claim: In the ranker, repeat posts from the same author are discounted (AuthorDiversityDecay 0.5 with a floor
+    of 0.25).
+  confidence: high
+  source_refs:
+  - code-x-algorithm-vm-params
+  note: Code defaults; the exact decay curve depends on implementation. A second post in the same feed load gets
+    less weight.
+algorithm_signals:
+- signal: favorite (like)
+  weight: 0.708
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+  note: home-mixer default; vm-ranker uses 0.5.
+- signal: reply
+  weight: 5.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: reply boost when author and replier follow each other
+  weight: 15.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+  - x-2076747704248758617
+  note: Added to the 5.0 reply weight for mutual follows; tested at 5-20 and set to 15 on 2026-07-24 per docs/BIDIRECTIONAL_BOOST_CHANGE.md.
+- signal: retweet
+  weight: 1.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: quote
+  weight: 5.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: share
+  weight: 2.118
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: share via DM
+  weight: 5.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: share via copy link
+  weight: 20.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: follow author
+  weight: 4.0
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: click
+  weight: 0.274
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: open link
+  weight: 0.2
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: dwell
+  weight: 0.05
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: continuous dwell time
+  weight: 0.0075
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+  note: Multiplies a predicted continuous value (time), so the small weight is not comparable to probability weights.
+- signal: click then dwell time
+  weight: 0.385
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: photo expand
+  weight: 0.05
+  effect: positive
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: video open / video quality view / profile click
+  weight: 0.0
+  effect: neutral
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: bookmark
+  effect: unknown
+  confidence: medium
+  source_refs:
+  - code-x-algorithm-params
+  note: No bookmark weight in param.rs at this commit.
+- signal: not interested
+  weight: -53.07
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: block author
+  weight: -31.2
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: mute author
+  weight: -58.8
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: report
+  weight: -234.0
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-params
+- signal: out-of-network weight factor
+  weight: 0.75
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-vm-params
+  note: Out-of-network candidates are scaled down relative to in-network.
+- signal: post age over 48 hours
+  effect: negative
+  confidence: high
+  source_refs:
+  - code-x-algorithm-age
+  note: MAX_POST_AGE = 48h in home-mixer sources and filters.
+- signal: read all the way through
+  effect: positive
+  confidence: medium
+  source_refs:
+  - code-x-algorithm-readme
+  note: 'README: Phoenix retrieval is now also trained to surface posts people read all the way through.'
+unverified_claims:
+- claim: '''X can only check 2,800 posts each time you open your feed.'''
+  confidence: low
+  source_refs:
+  - x-2114368194546696576
+  note: Not found in the public code at the commit read; the same post says 'How often X actually hits the 2,800
+    limit isn't in the code'.
+- claim: '''Likes: +0.66'' and ''Your second post appearing in someone''s feed reportedly gets only 62% of the first
+    post''s value.'''
+  confidence: low
+  source_refs:
+  - x-2114663830533939524
+  note: Code shows favorite 0.708 (home-mixer) / 0.5 (vm-ranker) and author diversity decay 0.5. Numbers differ.
+- claim: '''YOUR FIRST 2 HOURS MATTER'' and ''The first and 32nd likes may also unlock additional discovery opportunities.'''
+  confidence: low
+  source_refs:
+  - x-2114663830533939524
+  note: Not verified in code.
+- claim: '''1 report cancels out 468 likes.'''
+  confidence: low
+  source_refs:
+  - code-x-algorithm-readme
+  note: 'The README calls this a misconception: weights multiply predicted probabilities, not raw counts.'
+disagreements:
+- topic: How often to post
+  positions:
+  - who: Nicolas Cole
+    position: 5-8+ posts per day on X.
+    source_refs:
+    - x-2035422609639395777
+  - who: Daniel Vassallo
+    position: No evidence that daily posting matters.
+    confidence: low
+    source_refs:
+    - x-2078028115847110753
+  - who: 0xHvdes
+    position: Publish 5-7 high-quality posts per week.
+    confidence: low
+    source_refs:
+    - x-2087548852173721792
+  - who: x-algorithm (code)
+    position: Repeat posts from one author are decayed within a feed load (0.5, floor 0.25).
+    source_refs:
+    - code-x-algorithm-vm-params
+  takeaway: Volume helps only if quality holds; the engine should not suggest more than a few posts per day and
+    should space them.
+- topic: Best time to post
+  positions:
+  - who: Buffer 2026
+    position: Weekday mid-mornings, Tuesday 9am best.
+    source_refs:
+    - web-buffer-x-2026
+  - who: Nikita Bier
+    position: Late Friday night after rapid posting has almost no audience.
+    source_refs:
+    - x-2054454701639495856
+  takeaway: Default to weekday mornings in the audience's time zone; let the user's own analytics override.
+engine_rules:
+- Never put the only copy of the value behind a link; summarize first.
+- Prefer endings that invite replies or quotes (call-to-conversation) for reach goals; reply and quote weights are
+  5.0.
+- Flag news-peg drafts whose sources are older than 48 hours.
+- Do not quote unverified algorithm numbers as fact in drafts.

@@ -45,3 +45,24 @@ A portion of a saved source, with its original location and source revision, tha
 
 **Evidence search**:
 Finding supporting saved passages by meaning or exact wording within the reader's eligible library.
+
+**Production**:
+An original content idea being developed for publication. Its X and LinkedIn adaptations belong to the same production.
+
+**Writing brief**:
+The intended audience, purpose, perspective and supporting material for a production.
+
+**Factual claim**:
+An externally checkable assertion, including an event, personal experience, source finding, quantity or claimed result. Calling an assertion a proposal does not remove any factual claim it contains.
+
+**Proposal**:
+A clearly identified suggestion, opinion or intended test. It does not assert that the suggested method was used or produced a result. Any factual claims within a proposal still need supporting evidence.
+
+**Draft revision**:
+A retained version of a production's wording and platform adaptations.
+
+**Author approval**:
+The author's explicit acceptance of an exact reviewed draft revision. Changing the wording requires a new approval.
+
+**Voice profile**:
+The author's stated writing preferences and accepted examples used to guide future drafts. Suggested changes require the author's acceptance.

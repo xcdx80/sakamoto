@@ -1,0 +1,160 @@
+platform: linkedin
+as_of: 2026-11-05 (Europe/Lisbon). LinkedIn's ranking code is not public; every algorithm note here is practitioner-reported.
+summary: LinkedIn text posts cap at 3,000 characters with a short visible 'opener' before 'see more'. Practitioners
+  treat it as a 'greatest hits' platform for ideas that already worked elsewhere, favor short and medium posts,
+  carousels, and links placed at the bottom or in the first comment.
+length:
+- claim: Posts allow 3,000 characters; about 210 show above the fold on desktop.
+  confidence: medium
+  source_refs:
+  - web-welsh-anatomy-viral-linkedin
+  - web-linkedin-char-limits
+  note: Welsh (April 2022); a 2026 third-party summary gives the same 3,000/210.
+- claim: About 140 characters show before 'see more' on mobile; the cutoff varies with screen width and line breaks.
+  confidence: medium
+  source_refs:
+  - web-linkedin-char-limits
+- claim: Medium-form posts of 250-500 words work well alongside screenshots of short X posts.
+  confidence: medium
+  source_refs:
+  - x-2111846030396293349
+- claim: Short-form posts are currently doing well on LinkedIn; Bush's short-form test generated 2x more leads than
+    usual.
+  confidence: low
+  source_refs:
+  - web-li-cole-trend
+  note: Self-reported by the authors.
+formatting:
+- claim: Use 3 short lines with spaces for the opener (the 'trailer'), then the meat, then a TL;DR and a call-to-conversation.
+  confidence: medium
+  source_refs:
+  - web-welsh-anatomy-viral-linkedin
+  - web-welsh-writing-process
+- claim: Welsh's own posts use numbered sections with a header line each and a TL;DR list.
+  confidence: high
+  source_refs:
+  - web-li-welsh-starting
+  - web-li-welsh-8moves
+links:
+- claim: Put the link at the bottom of a long post and close the preview image; Welsh reports '20% reduction in
+    impressions doesn't matter when your CTR is improved 6x!'
+  confidence: low
+  source_refs:
+  - x-1552291907845365760
+  note: 2022, single practitioner.
+- claim: Put the CTA link in the post itself or in the first comment.
+  confidence: medium
+  source_refs:
+  - x-2111846030396293349
+- claim: Use the profile URL link (custom CTA) to drive site traffic.
+  confidence: medium
+  source_refs:
+  - x-1552291857920565254
+media:
+- claim: Carousels are the highest-performing content type on LinkedIn, but need more resources.
+  confidence: medium
+  source_refs:
+  - x-2035422609639395777
+- claim: Carousels as 4x5 PDFs made in Canva.
+  confidence: medium
+  source_refs:
+  - x-1552291870457331712
+- claim: Screenshots of your own (or relevant viral) X posts are the lowest-barrier LinkedIn content; cross-post
+    high-performing videos natively.
+  confidence: medium
+  source_refs:
+  - x-2035422609639395777
+timing:
+- claim: 'Buffer (4.8M posts, 2026): best window 3-8pm weekdays; best slot Wednesday 4pm, then Friday 3pm and 4pm.'
+  confidence: medium
+  source_refs:
+  - web-buffer-linkedin-2026
+- claim: 'Sprout Social (2026): Tuesday 11am-5pm, Wednesday 11am-4pm, Thursday 11am and 1-5pm are strongest; avoid
+    weekends.'
+  confidence: medium
+  source_refs:
+  - web-sprout-linkedin-2026
+- claim: 'Cole: post yesterday''s best X post on LinkedIn at 9am the next morning.'
+  confidence: medium
+  source_refs:
+  - x-2035422609639395777
+- claim: Welsh (Jan 2024) posted twice daily at 8:15am and 11:15pm EST.
+  confidence: medium
+  source_refs:
+  - web-li-welsh-starting
+cadence:
+- claim: If you post more than 2x per day on LinkedIn, Cole says the algorithm works against you.
+  confidence: low
+  source_refs:
+  - x-2035422609639395777
+- claim: 'Bush''s plan: 3 screenshot posts and 2 medium posts per week, kept up for 52 weeks.'
+  confidence: medium
+  source_refs:
+  - x-2111846030396293349
+- claim: Launch a LinkedIn newsletter once you have about 10-15k followers (Welsh, 2022).
+  confidence: low
+  source_refs:
+  - x-1552291896101322752
+algorithm_signals:
+- signal: comments from a call-to-conversation
+  effect: positive
+  confidence: low
+  source_refs:
+  - web-welsh-writing-process
+  note: 'Practitioner claim: a CTC increases comments and gives the post more traction.'
+- signal: external link in post body
+  effect: negative
+  confidence: low
+  source_refs:
+  - x-1552291907845365760
+  note: Welsh reports ~20% fewer impressions with a bottom link; LinkedIn has not published weights.
+- signal: posting more than 2x per day
+  effect: negative
+  confidence: low
+  source_refs:
+  - x-2035422609639395777
+- signal: carousels (PDF documents)
+  effect: positive
+  confidence: low
+  source_refs:
+  - x-2035422609639395777
+  - x-1552291870457331712
+disagreements:
+- topic: Best time to post
+  positions:
+  - who: Buffer 2026
+    position: Afternoons, 3-8pm weekdays (Wednesday 4pm best).
+    source_refs:
+    - web-buffer-linkedin-2026
+  - who: Sprout Social 2026
+    position: Late morning to afternoon, Tuesday-Thursday.
+    source_refs:
+    - web-sprout-linkedin-2026
+  - who: Nicolas Cole
+    position: 9am local, reposting yesterday's best X post.
+    source_refs:
+    - x-2035422609639395777
+  - who: Justin Welsh
+    position: 8:15am and 11:15pm EST, twice daily (2024).
+    source_refs:
+    - web-li-welsh-starting
+  takeaway: The datasets disagree; default to a weekday slot between late morning and late afternoon and let the
+    user's analytics decide.
+- topic: What to post
+  positions:
+  - who: Nicolas Cole
+    position: 'Treat LinkedIn as the ''greatest hits'' of X: screenshots, carousels, cross-posted videos.'
+    source_refs:
+    - x-2035422609639395777
+  - who: Justin Welsh
+    position: Write native long posts with a trailer, meat, TL;DR and CTC; repurpose your best posts ('play your
+      hits often').
+    source_refs:
+    - web-welsh-writing-process
+    - web-li-welsh-8moves
+  takeaway: Both reuse proven ideas. The engine can propose a LinkedIn rewrite (linkedin-long-post) of a post that
+    already did well on X.
+engine_rules:
+- Put the hook and its promise in the first ~140 characters.
+- Never place a URL above the fold; offer 'first comment' placement.
+- Suggest at most 2 LinkedIn posts per day.
