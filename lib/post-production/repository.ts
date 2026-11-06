@@ -78,9 +78,14 @@ export async function saveRevision(owner: string, id: string, content: DraftCont
   owned(owner);
   if (!["author", "writer", "revision"].includes(origin)) throw new Error("Invalid revision origin.");
   const normalized = normalizeDraftContent(content);
+  if (origin === "author") {
+    const wording = [...normalized.variants.flatMap(variant => variant.posts), ...normalized.hooks];
+    normalized.claimSources = normalized.claimSources.filter(claim => wording.some(text => text.includes(claim.claim)));
+  }
   const revisionId = randomUUID();
   const rows = await db().query(`with changed as (
     update post_productions set latest_revision_id=$3,approved_revision_id=null,planned_at=null,status='review',
+      checkpoint=case when $5='author' then checkpoint || jsonb_build_object('reviewOnlyRevisionId',$3::text,'reviewPin',null,'authorRequest',null) else checkpoint end,
       stage=case when $5='author' and coalesce(checkpoint->>'frameworkId','')=''
         and checkpoint->>'catalogVersion' is not null and checkpoint->'evidence' is not null
         then 'selection' else 'review' end,

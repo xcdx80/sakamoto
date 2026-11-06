@@ -471,9 +471,9 @@ test("a failing review-policy refresh preserves exact wording until an explicit 
   const edited = (await saveRevision(owner, repeated.production.id, { ...content, hooks: ["An author-edited opening."] }, "author", repeated.production.version))!;
   assert.notEqual(edited.production.latestRevisionId, repeated.production.checkpoint.reviewOnlyRevisionId);
   const editedReview = (await advanceProduction(owner, edited.production.id, edited.production.version))!;
-  assert.equal(editedReview.production.stage, "revision");
-  assert.equal(editedReview.production.status, "draft");
-  assert.equal(editedReview.production.checkpoint.reviewOnlyRevisionId, null);
+  assert.equal(editedReview.production.stage, "review");
+  assert.equal(editedReview.production.status, "needs_input");
+  assert.equal(editedReview.production.checkpoint.reviewOnlyRevisionId, edited.production.latestRevisionId);
   assert.equal(writes, 0);
   const requested = (await requestProductionRevision(owner, editedReview.production.id, editedReview.production.version, "Clarify why the attribution repair came first."))!;
   assert.equal(requested.production.stage, "writing");

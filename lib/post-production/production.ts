@@ -4,6 +4,8 @@ import { PaidWorkError } from "../paid-work";
 import { loadCatalog, type PostCatalog } from "./catalog";
 import { collectProductionContext, productionEvidenceIsCurrent } from "./context";
 import { isRecentSavedEvidence } from "./freshness";
+import { authorIdeaEvidence, authorIdeaSupportsSignal, isAuthorIdea } from "./intent";
+import { PinnedSourceLimitError } from "./limits";
 import { requiresCurrentReview } from "./review-policy";
 import {
   approveRevision, claimProduction, completeProduction, getProduction, getProfile, listHistory,
@@ -85,7 +87,7 @@ async function runStage(
     saved = await action(detail, token);
   } catch (error) {
     const current = await getProduction(owner, id);
-    const needsInput = error instanceof InputNeeded || (error instanceof Error && error.message === "A selected source is unavailable in this account.");
+    const needsInput = error instanceof InputNeeded || error instanceof PinnedSourceLimitError || (error instanceof Error && error.message === "A selected source is unavailable in this account.");
     const stoppedStage = {
       context: "Source gathering", selection: "Structure selection", writing: "Draft writing",
       review: "Independent review", revision: "Draft revision", complete: "Generation",
@@ -114,7 +116,14 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
     await freshContext(owner, detail, catalog);
     if (production.stage === "complete") return Boolean(await updateProduction(owner, id, token, "review", "draft", { reviewPin: null }, "Review guidance changed. Check this saved revision again before approving it."));
     if (production.stage === "selection") {
-      if (!production.checkpoint.signals) {
+      if (!production.latestRevisionId && !production.checkpoint.evidence!.some(isAuthorIdea)) {
+        if (production.checkpoint.evidence!.length >= 20) throw new InputNeeded("The existing context is full. Reduce selected sources before adding the author's intended structure.");
+        return Boolean(await updateProduction(owner, id, token, "selection", "draft", {
+          evidence: [...production.checkpoint.evidence!, authorIdeaEvidence(production.brief.idea)], signals: [], recommendations: [],
+          frameworkId: null, hookPatternId: null,
+        }, null));
+      }
+      if (!production.checkpoint.signals?.length) {
         const signals = await decidePostSignals(providerContext(owner, detail, "signals", signal));
         signal.throwIfAborted();
         await freshContext(owner, detail, loadCatalog());
@@ -152,14 +161,14 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
       const revision = detail.revisions.find(r => r.id === production.latestRevisionId);
       if (!revision) throw new InputNeeded("Save a draft before requesting independent review.");
       const publishedText = [...revision.content.variants.flatMap(variant => variant.posts), ...revision.content.hooks];
-      if (revision.content.claimSources.some(claim => !publishedText.some(text => text.includes(claim.claim))))
+      if (revision.origin !== "author" && revision.content.claimSources.some(claim => !publishedText.some(text => text.includes(claim.claim))))
         throw new InputNeeded("This saved draft has older citation annotations. Ask for a revision to refresh its citations before approval; your saved wording and history are preserved.");
       const framework = selectedFramework(detail);
       if (!framework) throw new InputNeeded("Choose an eligible framework before reviewing this draft.");
       const writerModel = revision.origin === "author" ? "author" : production.checkpoint.writerModel;
       if (!writerModel) throw new PaidWorkError("configuration", "The saved draft has no pinned writer model. Preserve it and request a fresh attributed revision.");
-      const mechanical = validateDraft(catalog, revision.content, production.checkpoint.evidence!, production.checkpoint.profile!, framework.frameworkId);
       const reviewed = await reviewPost(providerContext(owner, detail, "review", signal), revision.content, writerModel);
+      const mechanical = validateDraft(catalog, revision.content, production.checkpoint.evidence!, production.checkpoint.profile!, framework.frameworkId, reviewed);
       signal.throwIfAborted();
       await freshContext(owner, detail, loadCatalog());
       const combined = aggregateReview(catalog, framework, reviewed, mechanical);
@@ -211,6 +220,8 @@ function authorAssessments(catalog: PostCatalog, evidence: ProductionEvidence[],
     const referenced = evidence.filter(e => assessment.evidenceIds.includes(e.id));
     if (assessment.strength > 0) {
       if (!referenced.length || !rationale) throw new InputNeeded("A supported signal requires current evidence and the author's rationale.");
+      if (referenced.some(isAuthorIdea) && !authorIdeaSupportsSignal(assessment.signal))
+        throw new InputNeeded("Author intent supports proposed structure only, never observed results or personal experience.");
       if (["personal_story", "mistakes_or_regrets", "author_has_credibility"].includes(assessment.signal)
         && referenced.some(e => e.kind !== "author_note")) throw new InputNeeded("Personal author signals require author notes, never a saved source author's experience.");
       if (assessment.signal === "multiple_sources_same_topic" && new Set(referenced.filter(e => e.kind === "saved_source").map(e => e.itemId)).size < 2)
@@ -280,7 +291,7 @@ async function hasCurrentPassingReview(owner: string, detail: ProductionDetail):
     || pin.reviewPromptVersion !== POST_PROMPT_VERSION) return false;
   try { await freshContext(owner, detail, catalog); }
   catch { return false; }
-  const mechanical = validateDraft(catalog, revision.content, detail.production.checkpoint.evidence!, detail.production.checkpoint.profile!, framework.frameworkId);
+  const mechanical = validateDraft(catalog, revision.content, detail.production.checkpoint.evidence!, detail.production.checkpoint.profile!, framework.frameworkId, detail.review);
   return aggregateReview(catalog, framework, detail.review, mechanical).status === "passed";
 }
 

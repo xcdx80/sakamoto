@@ -1,12 +1,67 @@
 import { afterEach, mock, test } from "node:test";
 import assert from "node:assert/strict";
-import { calendarProductions, createWriteClient, WriteRequestError } from "../lib/post-production/client";
-import type { ProductionDetail, ProductionStage, ProductionStatus } from "../lib/post-production/types";
+import { calendarProductions, createWriteClient, projectClaimSources, WriteRequestError } from "../lib/post-production/client";
+import type { DraftContent, ProductionDetail, ProductionEvidence, ProductionStage, ProductionStatus } from "../lib/post-production/types";
 
 function detail(stage: ProductionStage, status: ProductionStatus, version: number): ProductionDetail {
   return { production: { id: "one", version, stage, status, brief: { idea: "An author idea", notes: "A concrete experience", audience: "Readers", goal: "trust", pillar: "engineering", platforms: ["x"], delivery: "single", sourceIds: [] }, checkpoint: {}, latestRevisionId: null, approvedRevisionId: null, plannedAt: null, notice: null, createdAt: "2026-11-05T00:00:00Z", updatedAt: "2026-11-05T00:00:00Z" }, revisions: [], review: null };
 }
 afterEach(() => mock.restoreAll());
+
+test("current independent review mappings replace obsolete writer hints without changing saved wording", () => {
+  const claim = "The provider released a memory feature.";
+  const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: [claim] }], hooks: [], claimSources: [{ claim, evidenceIds: ["WEB3"] }] };
+  const evidence: ProductionEvidence[] = [
+    { id: "WEB1", itemId: "", sourceRevision: 0, kind: "web_source", title: "Official release", excerpt: claim },
+    { id: "WEB3", itemId: "", sourceRevision: 0, kind: "web_source", title: "Different release", excerpt: "The provider released a separate API feature." },
+  ];
+  const review: NonNullable<ProductionDetail["review"]> = { revisionId: "revision", status: "passed", issues: [], writerModel: "writer", reviewerModel: "reviewer", criteria: [{ id: "grounded-in-sources", score: 5, reason: "The official release directly supports the named memory feature.", support: [{ claim, evidenceId: "WEB1", quote: claim, reason: "The official release explicitly identifies the memory feature.", claimKind: "fact" }] }] };
+  const before = structuredClone({ content, evidence, review });
+  assert.deepEqual(projectClaimSources({ content, evidence, review, revisionId: "revision" }), { verified: true, claims: [{ claim, evidenceIds: ["WEB1"] }] });
+  assert.deepEqual({ content, evidence, review }, before);
+});
+
+test("source projections group reviewed facts and interpretations using only actual claims and quoted known sources", () => {
+  const claim = "The release supplies a memory feature.";
+  const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: [claim] }], hooks: [], claimSources: [] };
+  const evidence: ProductionEvidence[] = ["WEB1", "WEB2"].map(id => ({ id, itemId: "", sourceRevision: 0, kind: "web_source", title: id, excerpt: "The release supplies a memory feature. It retains prior context." }));
+  const proof = { claim, evidenceId: "WEB1", quote: claim, reason: "The source explicitly names the memory feature released here.", claimKind: "fact" as const };
+  const review: NonNullable<ProductionDetail["review"]> = { revisionId: "revision", status: "passed", issues: [], writerModel: "writer", reviewerModel: "reviewer", criteria: [{ id: "grounded-in-sources", score: 5, reason: proof.reason, support: [
+    proof, proof, { ...proof, evidenceId: "WEB2", claimKind: "interpretation" },
+    { ...proof, evidenceId: "UNKNOWN" }, { ...proof, quote: "An invented source quote." },
+    { ...proof, claim: "A claim that is absent from this draft." }, { ...proof, reason: "" },
+  ] }] };
+  assert.deepEqual(projectClaimSources({ content, evidence, review, revisionId: "revision" }), { verified: true, claims: [{ claim, evidenceIds: ["WEB1", "WEB2"] }] });
+});
+
+test("dirty, mismatched, absent and insufficient reviews leave writer hints explicitly unverified", () => {
+  const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: ["A saved finding."] }], hooks: [], claimSources: [{ claim: "A saved finding.", evidenceIds: ["WEB3"] }] };
+  const review: NonNullable<ProductionDetail["review"]> = { revisionId: "revision", status: "passed", issues: [], writerModel: "writer", reviewerModel: "reviewer", criteria: [{ id: "grounded-in-sources", score: 5, reason: "The source supports the saved finding." }] };
+  const base = { content, evidence: [], review, revisionId: "revision" };
+  for (const input of [
+    { ...base, hasUnsavedChanges: true }, { ...base, revisionId: "different" }, { ...base, revisionId: null },
+    { ...base, review: null }, { ...base, review: { ...review, status: "blocked" as const } },
+    { ...base, review: { ...review, criteria: [{ ...review.criteria[0], score: 4 }] } },
+    { ...base, review: { ...review, criteria: [{ ...review.criteria[0], decision: "jev_failure" as const }] } },
+  ]) assert.deepEqual(projectClaimSources(input), { verified: false, claims: content.claimSources });
+});
+
+test("an author's topic verifies only explicit interpretations, never factual source proof", () => {
+  const claim = "I would test memory before expanding its scope.";
+  const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: [claim] }], hooks: [], claimSources: [] };
+  const evidence: ProductionEvidence[] = [{ id: "AUTHOR_IDEA", itemId: "", sourceRevision: 0, kind: "author_note", title: "Author topic", excerpt: claim }];
+  const review: NonNullable<ProductionDetail["review"]> = { revisionId: "revision", status: "passed", issues: [], writerModel: "writer", reviewerModel: "reviewer", criteria: [{ id: "grounded-in-sources", score: 5, reason: "This passage expresses the author's proposed test, without asserting an observed result.", support: [{ claim, evidenceId: "AUTHOR_IDEA", quote: claim, reason: "The topic explicitly proposes this test rather than claiming it happened.", claimKind: "fact" }] }] };
+  const input = { content, evidence, review, revisionId: "revision" };
+  assert.deepEqual(projectClaimSources(input), { verified: true, claims: [] });
+  review.criteria[0].support![0].claimKind = "interpretation";
+  assert.deepEqual(projectClaimSources(input), { verified: true, claims: [{ claim, evidenceIds: ["AUTHOR_IDEA"] }] });
+  evidence[0] = { ...evidence[0], id: "TOPIC", kind: "author_idea" };
+  review.criteria[0].support![0].evidenceId = "TOPIC";
+  review.criteria[0].support![0].claimKind = "fact";
+  assert.deepEqual(projectClaimSources(input), { verified: true, claims: [] });
+  review.criteria[0].support![0].claimKind = "interpretation";
+  assert.deepEqual(projectClaimSources(input), { verified: true, claims: [{ claim, evidenceIds: ["TOPIC"] }] });
+});
 
 test("the calendar shows current planned drafts in publication order and excludes cancelled plans", () => {
   const earlier = detail("complete", "planned", 10).production;

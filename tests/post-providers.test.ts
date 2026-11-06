@@ -725,7 +725,7 @@ test("reviewer wire schemas require a known post or evidence anchor and runtime 
       const packet = JSON.parse(body.messages[1].content), schema = body.response_format.json_schema.schema;
       const validate = new Ajv2020({ strict: false }).compile(schema);
       const issue = { code: "clarity", severity: "revise", message: "Make this observation concrete.", platform: null as string | null, postIndex: null as number | null, evidenceIds: [] as string[] };
-      const result = { status: "changes_requested", issues: [issue], criteria: packet.rubricDecisions.map((c: any) => reviewerCriterion(c.id, c.score)), factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The published evaluation finding is an externally checkable factual claim.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol" };
+      const result = { status: "changes_requested", issues: [issue], criteria: packet.rubricDecisions.map((c: any) => reviewerCriterion(c.id, c.score)), factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The published evaluation finding is an externally checkable factual claim.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }], nonfactualSupport: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol" };
       assert.equal(validate(result), false, "A schema must reject an issue with neither an existing post nor evidence.");
       assert.equal(validate({ ...result, issues: [{ ...issue, platform: "x", postIndex: 9 }] }), false);
       assert.equal(validate({ ...result, issues: [{ ...issue, evidenceIds: ["invented-evidence"] }] }), false);

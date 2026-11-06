@@ -1,5 +1,6 @@
-import type { AuthorSignalAssessment, BrandProfile, DraftContent, Production, ProductionBrief, ProductionDetail, WeeklyIdea, WriteWorkspace } from "./types";
+import type { AuthorSignalAssessment, BrandProfile, DraftContent, Production, ProductionBrief, ProductionDetail, ProductionEvidence, WeeklyIdea, WriteWorkspace } from "./types";
 import { deliveryForPlatform } from "./delivery";
+import { isAuthorIdea } from "./intent";
 
 export function blankDraft(brief: ProductionBrief): DraftContent {
   return { variants: brief.platforms.map(platform => ({ platform, delivery: deliveryForPlatform(platform, brief.delivery), posts: deliveryForPlatform(platform, brief.delivery) === "thread" ? ["", ""] : [""] })), hooks: [], claimSources: [] };
@@ -8,6 +9,37 @@ export function blankDraft(brief: ProductionBrief): DraftContent {
 export function calendarProductions(productions: Production[]): Production[] {
   return productions.filter(production => production.status === "planned" && production.plannedAt)
     .sort((first, second) => Date.parse(first.plannedAt!) - Date.parse(second.plannedAt!));
+}
+
+/** Display review provenance separately from immutable writer annotations. This grants no approval. */
+export function projectClaimSources({ content, evidence, review, revisionId, hasUnsavedChanges = false }: {
+  content: DraftContent;
+  evidence: ProductionEvidence[];
+  review: ProductionDetail["review"];
+  revisionId: string | null;
+  hasUnsavedChanges?: boolean;
+}): { verified: boolean; claims: DraftContent["claimSources"] } {
+  const grounding = review?.criteria.find(criterion => criterion.id === "grounded-in-sources");
+  if (hasUnsavedChanges || !revisionId || review?.revisionId !== revisionId || review.status !== "passed"
+    || !grounding || !(grounding.score >= 5) || grounding.decision === "jev_failure"
+    || review.issues.some(issue => issue.severity === "block" || issue.severity === "revise")) {
+    return { verified: false, claims: content.claimSources.map(claim => ({ ...claim, evidenceIds: [...claim.evidenceIds] })) };
+  }
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  const published = [...content.variants.flatMap(variant => variant.posts), ...content.hooks].map(normalize);
+  const sources = new Map(evidence.map(source => [source.id, source]));
+  const claims = new Map<string, DraftContent["claimSources"][number]>();
+  for (const support of grounding.support ?? []) {
+    const source = sources.get(support.evidenceId);
+    const claim = normalize(support.claim);
+    if (!source || (isAuthorIdea(source) && support.claimKind !== "interpretation")
+      || !claim || !published.some(text => text.includes(claim)) || !support.quote.trim()
+      || !source.excerpt.includes(support.quote) || !support.reason.trim()) continue;
+    const entry = claims.get(claim) ?? { claim: support.claim, evidenceIds: [] };
+    if (!entry.evidenceIds.includes(source.id)) entry.evidenceIds.push(source.id);
+    claims.set(claim, entry);
+  }
+  return { verified: true, claims: [...claims.values()] };
 }
 
 export async function copyDraft(text: string) { await navigator.clipboard.writeText(text); }

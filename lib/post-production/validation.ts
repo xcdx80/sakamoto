@@ -1,10 +1,11 @@
 import type { PostCatalog } from "./catalog";
-import type { BrandProfile, DraftContent, ProductionEvidence, ReviewIssue } from "./types";
+import type { BrandProfile, DraftContent, DraftReview, ProductionEvidence, ReviewIssue } from "./types";
 import { postCharacterLimit } from "./delivery";
+import { isNonfactualDraftSupport } from "./draft-support";
 
 /** Mechanical editorial checks precede the rubric judge. Source prose is data, never a rule. */
 export function validateDraft(
-  catalog: PostCatalog, content: DraftContent, evidence: ProductionEvidence[], profile: BrandProfile, frameworkId?: string,
+  catalog: PostCatalog, content: DraftContent, evidence: ProductionEvidence[], profile: BrandProfile, frameworkId?: string, review?: DraftReview,
 ): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const framework = catalog.frameworks.find(item => item.id === frameworkId);
@@ -22,6 +23,28 @@ export function validateDraft(
   }
   const allText = [...content.variants.flatMap(variant => variant.posts), ...content.hooks].join("\n");
   const claims = content.claimSources.filter(claim => claim.claim.trim() && normalized(allText).includes(normalized(claim.claim)));
+  // Independently verified provenance lives on the review; immutable wording
+  // and the writer's original annotations remain available in its revision.
+  const grounding = review?.criteria.find(criterion => criterion.id === "grounded-in-sources");
+  const verifiedFacts: string[] = [];
+  const reviewedCitations: typeof claims = [];
+  if (grounding?.score === 5 && review?.factualAssessment?.length === content.variants.length
+    && content.variants.every(variant => review.factualAssessment?.some(assessment => assessment.platform === variant.platform))) {
+    for (const support of grounding.support ?? []) {
+      if (support.claim.trim() && [...content.variants.flatMap(variant => variant.posts), ...content.hooks].some(text => text.includes(support.claim))
+        && grounding.evidenceIds?.includes(support.evidenceId) && support.quote.trim() && evidenceById.get(support.evidenceId)?.excerpt.includes(support.quote)
+        && support.reason.trim().length >= 20 && support.reason.trim().split(/\s+/).length >= 4)
+        reviewedCitations.push({ claim: support.claim, evidenceIds: [support.evidenceId] });
+      if (support.claim.trim() && [...content.variants.flatMap(variant => variant.posts), ...content.hooks].some(text => text.includes(support.claim))
+        && grounding.evidenceIds?.includes(support.evidenceId) && support.quote.trim() && evidenceById.get(support.evidenceId)?.excerpt.includes(support.quote)
+        && (support.claimKind === "fact" || support.claimKind === undefined)
+        && (review.factualAssessment.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim.claim)))
+          || (content.hooks.some(hook => hook.includes(support.claim)) && !content.variants.some(variant => variant.posts.some(post => post.includes(support.claim)))))) {
+        claims.push({ claim: support.claim, evidenceIds: [support.evidenceId] });
+        if (support.reason.trim().length >= 20 && support.reason.trim().split(/\s+/).length >= 4) verifiedFacts.push(support.claim);
+      }
+    }
+  }
   for (const claim of content.claimSources) {
     if (!claim.evidenceIds.length || claim.evidenceIds.some(id => !evidenceById.has(id))) issues.push({ code: "invalid_citation", severity: "block", message: "A claim cites missing or unknown saved passages.", evidenceIds: claim.evidenceIds });
   }
@@ -35,18 +58,49 @@ export function validateDraft(
     if (variant && text.length > maxCharacters) issues.push({ code: "platform_length", severity: "block", message: `Draft exceeds the ${maxCharacters}-character ${variant.platform} ${variant.delivery} delivery limit.`, ...at });
     const listHeading = verifiedListHeading(text) || (!variant && content.variants.some(v => v.posts.some(post =>
       verifiedListHeading(post) && normalized(post.split("\n")[0]) === normalized(text))) ? text.split("\n")[0] : undefined);
-    // A count of this draft's own enumerated items is verifiable locally, not a
-    // numerical source claim. All other numbers still need cited source spans.
-    const numberedText = listHeading ? text.replace(/^([^\d\n]*)\d+/, "$1") : text;
-    const prose = numberedText.replace(/^\s*\d+[.)]\s+/gm, "").replace(/https?:\/\/\S+/g, "");
-    const supported = (fragment: string, kind: "number" | "quote") => claims.some(claim => normalized(text).includes(normalized(claim.claim)) && normalized(claim.claim).includes(normalized(fragment)) && claim.evidenceIds.some(id => {
+    // Locate every exception in the original text. Removing characters first
+    // can turn an unsupported number or quotation into a different fragment.
+    const formatting: TextRange[] = [...text.matchAll(/^\s*\d+[.)]\s+/gm), ...text.matchAll(/https?:\/\/\S+/g)]
+      .map(match => ({ start: match.index, end: match.index + match[0].length }));
+    const count = listHeading ? /^[^\d\n]*(\d+)/.exec(text) : null;
+    if (count) formatting.push({ start: count[0].length - count[1].length, end: count[0].length });
+    const nonfactual: TextRange[] = [];
+    const openingPosts = variant ? [] : content.variants.flatMap(item => {
+      const post = item.posts[0];
+      return post !== undefined && post.split("\n")[0] === text ? [{ platform: item.platform, post }] : [];
+    });
+    const classifiedAtOpening = (platform: string, claim: string) => review?.factualAssessment?.find(assessment => assessment.platform === platform)?.factualClaims.some(fact => fact.postIndex === 0 && claim.includes(fact.claim));
+    if (grounding?.score === 5) for (const support of review?.nonfactualSupport ?? []) {
+      if (!isNonfactualDraftSupport(content, support, review?.factualAssessment, grounding)) continue;
+      if (support.platform === (variant?.platform ?? null) && support.postIndex === postIndex) nonfactual.push(...literalRanges(text, support.quote));
+      if (!variant && support.platform !== null && support.postIndex === 0) {
+        const opening = content.variants.find(item => item.platform === support.platform)?.posts[0]?.split("\n")[0];
+        if (text === opening && opening.includes(support.quote)
+          && isNonfactualDraftSupport(content, { ...support, platform: null, postIndex }, review?.factualAssessment, grounding))
+          nonfactual.push(...literalRanges(text, support.quote));
+      }
+    }
+    const factual: TextRange[] = [];
+    for (const claim of verifiedFacts) {
+      const classifiedHere = variant ? review?.factualAssessment?.find(assessment => assessment.platform === variant.platform)?.factualClaims.some(fact => fact.postIndex === postIndex && claim.includes(fact.claim)) : content.hooks[postIndex].includes(claim);
+      if (classifiedHere) factual.push(...literalRanges(text, claim));
+      for (const opening of openingPosts) if (classifiedAtOpening(opening.platform, claim)) factual.push(...openingRanges(opening.post, claim, text.length));
+    }
+    const cited = claims.flatMap(claim => literalRanges(text, claim.claim).map(range => ({ ...range, claim })));
+    for (const opening of openingPosts) for (const claim of reviewedCitations) {
+      if (verifiedFacts.includes(claim.claim) && !classifiedAtOpening(opening.platform, claim.claim)) continue;
+      cited.push(...openingRanges(opening.post, claim.claim, text.length).map(range => ({ ...range, claim })));
+    }
+    const supported = (fragment: TextFragment, kind: "number" | "quote") => cited.some(range => contains(range, fragment) && range.claim.evidenceIds.some(id => {
       const excerpt = evidenceById.get(id)?.excerpt;
-      return excerpt !== undefined && (kind === "number" ? numbers(excerpt).includes(normalized(fragment)) : excerpt.includes(fragment));
+      return excerpt !== undefined && (kind === "number" ? numbers(excerpt).includes(normalized(fragment.text)) : excerpt.includes(fragment.text));
     }));
-    for (const number of [...new Set(numbers(prose))]) if (!supported(number, "number")) issues.push({ code: "unsupported_number", severity: "block", message: `Number ${number} has no supporting cited source span.`, ...at });
-    for (const quote of quotes(prose)) if (!supported(quote, "quote")) issues.push({ code: "unsupported_quote", severity: "block", message: `Quoted text has no verbatim supporting cited source span: ${quote}`, ...at });
+    for (const number of numberFragments(text)) if (![...formatting, ...nonfactual, ...factual].some(range => contains(range, number)) && !supported(number, "number"))
+      issues.push({ code: "unsupported_number", severity: "block", message: `Number ${normalized(number.text)} has no supporting cited source span.`, ...at });
+    for (const quote of quoteFragments(text).filter(quote => quote.text.trim())) if (![...formatting, ...nonfactual].some(range => contains(range, quote)) && !supported(quote, "quote"))
+      issues.push({ code: "unsupported_quote", severity: "block", message: `Quoted text has no verbatim supporting cited source span: ${quote.text}`, ...at });
     let authorText = text;
-    for (const quote of quotes(text)) if (supported(quote, "quote")) authorText = authorText.replace(quote, " ".repeat(quote.length));
+    for (const quote of quoteFragments(text)) if (supported(quote, "quote")) authorText = authorText.slice(0, quote.start) + " ".repeat(quote.text.length) + authorText.slice(quote.end);
     for (const rule of catalog.shared.lint.ai_tells) {
       const subject = (rule.id === "turn-x-into-y" ? authorText.split("\n")[0] : authorText).replace(/[’]/g, "'");
       const matches = [...subject.matchAll(new RegExp(rule.pattern, "gim"))];
@@ -78,6 +132,18 @@ export function validateDraft(
   return issues;
 }
 function normalized(text: string): string { return text.toLowerCase().replace(/\s+/g, " ").trim(); }
+type TextRange = { start: number; end: number };
+type TextFragment = TextRange & { text: string };
+function contains(outer: TextRange, inner: TextRange): boolean { return outer.start <= inner.start && outer.end >= inner.end; }
+function literalRanges(text: string, quote: string): TextRange[] {
+  if (!quote) return [];
+  const ranges: TextRange[] = [];
+  for (let start = text.indexOf(quote); start !== -1; start = text.indexOf(quote, start + 1)) ranges.push({ start, end: start + quote.length });
+  return ranges;
+}
+function openingRanges(post: string, quote: string, length: number): TextRange[] {
+  return literalRanges(post, quote).filter(range => range.start < length).map(range => ({ start: range.start, end: Math.min(range.end, length) }));
+}
 function verifiedListHeading(text: string): string | undefined {
   const heading = text.split("\n")[0];
   const count = /^(?:[^\d\n]*:\s*)?(?:A\s+)?\s*(\d{1,2})(?:-part)?\s+(?:(?:separate|simple|practical|concrete|proposed|QA)\s+){0,2}(?:checklist|checks|steps|ways|tips|questions|lessons|ideas|tests)\b/i.exec(heading);
@@ -86,8 +152,15 @@ function verifiedListHeading(text: string): string | undefined {
   return items.length === Number(count[1]) && items.length >= 2 && items.every((item, index) => item === index + 1) ? heading : undefined;
 }
 function numbers(text: string): string[] {
-  return [...text.matchAll(/(?:[$€£]\s*)?\b\d+(?:[.,]\d+)*(?:\s?(?:%|percent\b|million\b|billion\b|thousand\b|[kmb]\b))?/gi)].map(match => normalized(match[0]));
+  return numberFragments(text).map(fragment => normalized(fragment.text));
 }
-function quotes(text: string): string[] {
-  return [...text.matchAll(/"([^"\n]+)"|“([^”]+)”|‘([^’]+)’|(?:^|[\s(])'([^'\n]+)'(?=$|[\s.,!?;)])/g)].map(match => match[1] ?? match[2] ?? match[3] ?? match[4]);
+function numberFragments(text: string): TextFragment[] {
+  return [...text.matchAll(/(?:[$€£]\s*)?\b\d+(?:[.,]\d+)*(?:\s?(?:%|percent\b|million\b|billion\b|thousand\b|[kmb]\b))?/gi)]
+    .map(match => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
+}
+function quoteFragments(text: string): TextFragment[] {
+  return [...text.matchAll(/"([^"\n]+)"|“([^”]+)”|‘([^’]+)’|(?:^|[\s(])'([^'\n]+)'(?=$|[\s.,!?;)])/g)].map(match => {
+    const quote = match[1] ?? match[2] ?? match[3] ?? match[4], start = match.index + match[0].indexOf(quote);
+    return { text: quote, start, end: start + quote.length };
+  });
 }

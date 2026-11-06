@@ -41,7 +41,7 @@ export type ProductionEvidence = {
   readUrl?: string;
   address?: Record<string, unknown>;
   publishedAt?: string;
-  kind: "saved_source" | "author_note" | "web_source";
+  kind: "saved_source" | "author_note" | "author_idea" | "web_source";
   retrievedAt?: string;
 };
 
@@ -110,6 +110,14 @@ export type PlatformFactualAssessment = {
   rationale: string;
   factualClaims: { postIndex: number; claim: string }[];
 };
+export type NonfactualSupport = {
+  /** null addresses an alternate hook; postIndex then selects its hook index. */
+  platform: PostPlatform | null;
+  postIndex: number;
+  quote: string;
+  kind: "proposal" | "label" | "draft_structure";
+  reason: string;
+};
 export type DraftReview = {
   status: "passed" | "changes_requested" | "blocked";
   issues: ReviewIssue[];
@@ -117,6 +125,7 @@ export type DraftReview = {
   writerModel: string;
   reviewerModel: string;
   factualAssessment?: PlatformFactualAssessment[];
+  nonfactualSupport?: NonfactualSupport[];
   sharedScore?: number;
   frameworkScore?: number;
   totalScore?: number;

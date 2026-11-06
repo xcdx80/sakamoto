@@ -1,4 +1,5 @@
 import type { BrandProfile, ProductionBrief, DraftContent } from "./types";
+import { assertPinnedSourceLimit } from "./limits";
 
 /** Provisional public voice. Only an explicit save changes an account's profile. */
 export function defaultProfile(): BrandProfile {
@@ -42,6 +43,8 @@ export function normalizeBrief(input: ProductionBrief): ProductionBrief {
   if (!idea) throw new Error("An idea is required.");
   const platforms = [...new Set(input.platforms)].filter((p) => p === "x" || p === "linkedin");
   if (!platforms.length) throw new Error("Choose at least one platform.");
+  const sourceIds = [...new Set(texts(input.sourceIds, Array.isArray(input.sourceIds) ? input.sourceIds.length : 0, 200))];
+  assertPinnedSourceLimit(sourceIds);
   return {
     idea,
     notes: text(input.notes, 12000),
@@ -50,7 +53,7 @@ export function normalizeBrief(input: ProductionBrief): ProductionBrief {
     pillar: ["engineering", "transformation", "education", "other"].includes(input.pillar) ? input.pillar : "other",
     platforms,
     delivery: ["single", "thread", "long"].includes(input.delivery) ? input.delivery : "single",
-    sourceIds: [...new Set(texts(input.sourceIds, 20, 200))],
+    sourceIds,
   };
 }
 export function normalizeDraftContent(input: DraftContent): DraftContent {
