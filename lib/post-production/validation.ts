@@ -117,7 +117,8 @@ export function validateDraft(
     for (const rule of profileRules) if (rule.setting.test(banned) && rule.pattern.test(authorText)) issues.push({ code: rule.code, severity: "revise", message: rule.message, ...at });
     // This framework deliberately develops an idea in one paragraph, overriding shared 1/3/1 guidance.
     if (framework?.id !== "single-paragraph-insight") {
-      const denseParagraph = text.split(/\n\s*\n/).some(paragraph => (paragraph.replace(/^\s*\d+[.)]\s+/gm, "").match(/[.!?]+(?:\s|$)/g)?.length ?? 0) > 4);
+      // Emphasis must not hide sentence endings or exempt ordinary numbered prose.
+      const denseParagraph = text.split(/\n\s*\n/).some(paragraph => (paragraph.replace(/\*\*|__/g, "").replace(/^\s*\d+[.)]\s+/gm, "").match(/[.!?]+(?:\s|$)/g)?.length ?? 0) > 4);
       const lines = text.split("\n").filter(line => line.trim());
       const longLines = framework?.form === "short" && variant && variant.delivery !== "long" && lines.reduce((sum, line) => sum + line.length, 0) / Math.max(1, lines.length) > 120;
       if (denseParagraph || longLines) issues.push({ code: "readability", severity: "revise", message: "Use shorter paragraphs or line breaks for this framework.", ...at });

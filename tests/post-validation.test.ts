@@ -85,3 +85,17 @@ test("numbered list markers are not sentences and LinkedIn long adaptations keep
   const wall: DraftContent = { ...draft, variants: [{ platform: "linkedin", delivery: "long", posts: ["First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."] }] };
   assert.ok(validateDraft(catalog, wall, evidence, defaultProfile(), "listicle").some(issue => issue.code === "readability"));
 });
+
+test("paragraph limits are identical with Markdown emphasis and ordinary numbered prose", () => {
+  const body = "Find where calls are made. What happens after a timeout? Could a retry repeat a charge or action? Is the failure surfaced clearly?";
+  for (const heading of ["5. Inspect paid API boundaries.", "5. **Inspect paid API boundaries.**", "5. __Inspect paid API boundaries.__"]) {
+    const draft: DraftContent = { variants: [{ platform: "x", delivery: "long", posts: [heading + " " + body] }], hooks: [], claimSources: [] };
+    assert.ok(validateDraft(catalog, draft, evidence, defaultProfile(), "how-to-step-by-step").some(issue => issue.code === "readability"));
+    const spaced: DraftContent = { ...draft, variants: [{ ...draft.variants[0], posts: [heading + "\n\n" + body] }] };
+    assert.equal(validateDraft(catalog, spaced, evidence, defaultProfile(), "how-to-step-by-step").some(issue => issue.code === "readability"), false);
+    const dense: DraftContent = { ...draft, variants: [{ ...draft.variants[0], posts: [heading + "\n\n" + body + " Record another separate decision."] }] };
+    assert.ok(validateDraft(catalog, dense, evidence, defaultProfile(), "how-to-step-by-step").some(issue => issue.code === "readability"));
+  }
+  const numberedProse: DraftContent = { variants: [{ platform: "x", delivery: "long", posts: ["1. The service retries when its request fails. It logs the retry. It preserves the draft. It checks the budget. It returns a result."] }], hooks: [], claimSources: [] };
+  assert.ok(validateDraft(catalog, numberedProse, evidence, defaultProfile(), "how-to-step-by-step").some(issue => issue.code === "readability"));
+});

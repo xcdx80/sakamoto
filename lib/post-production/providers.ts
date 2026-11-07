@@ -14,7 +14,7 @@ import { isNonfactualDraftSupport } from "./draft-support";
 import { authorIdeaSupportsSignal, isAuthorIdea } from "./intent";
 import { paidFailureDetails, type PaidFailureContext } from "../paid-diagnostics";
 
-export const POST_PROMPT_VERSION = "post-production-v16";
+export const POST_PROMPT_VERSION = "post-production-v17";
 const DELIVERY_POLICY = "The deliveryContract overrides conflicting framework platform notes and review suggestions. X single and X long each contain exactly one post; long means a longer single post, never a thread. Only X thread contains 2–30 posts. LinkedIn always contains one long post. Put numbered steps and headings inside a long post's text instead of splitting it into extra posts or duplicate channel variants. Never request multiple posts for single or long delivery. Produce each requested channel exactly once.";
 // These gates judge presentation in the draft, rather than factual support in sources.
 const DRAFT_REVIEW_GATES = new Set(["no-ai-tells", "answerable-question", "sponsor-disclosed"]);
