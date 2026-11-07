@@ -6,6 +6,7 @@ import { providerStatus, writePost, decidePostSignals, choosePostStructure, revi
 import { loadCatalog, summarizeCatalog } from "../lib/post-production/catalog";
 import { budgetStatus } from "../lib/paid-work";
 import { blankDraft } from "../lib/post-production/client";
+import { validateDraft } from "../lib/post-production/validation";
 import Ajv2020 from "ajv/dist/2020";
 import { evaluateFrameworks } from "../lib/post-production/selection";
 import type { DraftContent } from "../lib/post-production/types";
@@ -42,6 +43,9 @@ function configureKeys() {
   process.env.OPENAI_API_KEY = "fixture-no-live-dispatch";
   process.env.TYPESAFE_API_KEY = "fixture-no-live-dispatch";
   process.env.SAKAMOTO_POST_REVIEWER_MODEL = "gpt-6-sol";
+}
+function structureSupport(questions: Record<string, unknown>, probability = 0.99) {
+  return Object.fromEntries(Object.keys(questions).filter(id => id.startsWith("supported_")).map(id => [id, { type: "noul", noul: probability }]));
 }
 
 test("Write pauses when writer and reviewer resolve to the same model", () => {
@@ -120,7 +124,7 @@ test("the same twelve-source context fits structure, every catalog framework's w
       const stage = body.questions.framework ? "framework" : body.questions.hook ? "hook" : "rubric";
       stages.push(stage);
       return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id,
-        q.type === "noul" ? { type: "noul", noul: id === "supported" ? 0.99 : 0 }
+        q.type === "noul" ? { type: "noul", noul: id.startsWith("supported_") ? 0.99 : 0 }
           : q.type === "choice" ? { type: "choice", choice: Object.keys(q.criteria)[0], confidence: 1, probabilities: Object.fromEntries(Object.keys(q.criteria).map((key, index) => [key, index === 0 ? 1 : 0])) }
             : { type: "score", score: 4, confidence: 1, probabilities: { "0": 0, "1": 0, "2": 0, "3": 0, "4": 1 } },
       ])), usage: { input_tokens: 1000, output_tokens: 300 } });
@@ -216,7 +220,7 @@ test("Jev selects a hook only after the eligible framework decision has complete
     if (id === "hook") assert.equal(stages[0], "framework");
     const criteria = body.questions[id].criteria;
     const selected = id === "framework" ? framework.frameworkId : chosenHook;
-    return Response.json({ model: "jev-1.14.0", answers: { supported: { type: "noul", noul: 0.99 }, [id]: { type: "choice", choice: selected, confidence: 1, probabilities: Object.fromEntries(Object.keys(criteria).map(key => [key, key === selected ? 1 : 0])) } }, usage: { input_tokens: 200, output_tokens: 100 } });
+    return Response.json({ model: "jev-1.14.0", answers: { ...structureSupport(body.questions), [id]: { type: "choice", choice: selected, confidence: 1, probabilities: Object.fromEntries(Object.keys(criteria).map(key => [key, key === selected ? 1 : 0])) } }, usage: { input_tokens: 200, output_tokens: 100 } });
   };
   try {
     const selected = await choosePostStructure(ctx, [framework]);
@@ -234,11 +238,11 @@ test("independent structure support questions can inspect the finite eligible op
     const body = JSON.parse(String(options?.body)), state = JSON.parse(body.state);
     const stage = body.questions.framework ? "framework" : "hook", criteria = body.questions[stage].criteria;
     stages.push(stage);
-    // Jev questions run independently: supported cannot inspect its sibling's criteria.
+    // Independent feasibility questions inspect their own option in shared state.
     const visibleOptions = Array.isArray(state.eligibleOptions) && state.eligibleOptions.length === Object.keys(criteria).length
       && state.eligibleOptions.every((option: any) => Object.hasOwn(criteria, option.id) && typeof option.description === "string" && option.description.length > 0);
     return Response.json({ model: "jev-1.14.0", answers: {
-      supported: { type: "noul", noul: visibleOptions ? 0.99 : 0.1 },
+      ...structureSupport(body.questions, visibleOptions ? 0.99 : 0.1),
       [stage]: { type: "choice", choice: Object.keys(criteria)[0], confidence: 1, probabilities: Object.fromEntries(Object.keys(criteria).map((id, index) => [id, index === 0 ? 1 : 0])) },
     }, usage: { input_tokens: 500, output_tokens: 200 } });
   };
@@ -263,7 +267,7 @@ test("diffuse editorial preferences automatically select eligible structure whil
     const body = JSON.parse(String(options?.body)), id = body.questions.framework ? "framework" : "hook";
     const keys = Object.keys(body.questions[id].criteria);
     return Response.json({ model: "jev-1.14.0", answers: {
-      supported: { type: "noul", noul: 0.99 },
+      ...structureSupport(body.questions),
       [id]: { type: "choice", choice: keys[0], confidence: 0, probabilities: Object.fromEntries(keys.map(key => [key, 1 / keys.length])) },
     }, usage: { input_tokens: 200, output_tokens: 100 } });
   };
@@ -275,6 +279,98 @@ test("diffuse editorial preferences automatically select eligible structure whil
     assert.equal(selected.decisions?.framework.model, "jev-latest");
     assert.equal(selected.decisions?.framework.probabilities[framework.frameworkId], 0.5);
     assert.equal(selected.decisions?.hook?.mode, framework.hookPatternIds.length > 1 ? "editorial_tiebreak" : "jev");
+  } finally { globalThis.fetch = original; }
+});
+
+test("a preferred framework cannot borrow another candidate's evidence or ignore its required sections and delivery", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch, catalog = loadCatalog();
+  ctx.brief.idea = "Building an autonomous software factory for engineering teams";
+  ctx.evidence[0].excerpt = "An AI software factory coordinates agents across implementation, testing and review while engineers retain the release decision. Enterprises are moving from AI-assisted coding toward autonomous engineering.";
+  const candidates = ["old-vs-new", "single-paragraph-insight"].map(id => {
+    const item = summarizeCatalog(catalog).frameworks.find(f => f.id === id)!;
+    return { ...framework, frameworkId: id, name: item.name, family: item.family, outline: item.outline, hookPatternIds: item.hookPatternIds };
+  });
+  const states: any[] = [];
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://api.typesafe.ai/v1/systemone");
+    const body = JSON.parse(String(options?.body)), stage = body.questions.framework ? "framework" : "hook";
+    states.push(JSON.parse(body.state));
+    return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id,
+      q.type === "noul" ? { type: "noul", noul: id === "supported_old-vs-new" ? 0.1 : 0.99 }
+        : { type: "choice", choice: Object.keys(q.criteria)[0], confidence: 1, probabilities: Object.fromEntries(Object.keys(q.criteria).map((key, index) => [key, index === 0 ? 1 : 0])) },
+    ])), usage: { input_tokens: 500, output_tokens: 200 } });
+  };
+  try {
+    const selected = await choosePostStructure(ctx, candidates);
+    assert.equal(selected.frameworkId, "single-paragraph-insight");
+    assert.equal(selected.decisions?.framework.supportProbability, 0.99);
+    assert.equal(selected.decisions?.framework.probabilities["old-vs-new"], 1);
+    assert.equal(states.length, 2, "A supported alternative reuses the existing decision requests.");
+    const comparison = states[0].eligibleOptions.find((option: any) => option.id === "old-vs-new");
+    assert.ok(comparison.avoidWhen.some((avoid: { condition: string }) => /only describe one side concretely/.test(avoid.condition)));
+    assert.deepEqual(comparison.requiredStructure.map((section: any) => section.section), ["old", "new"]);
+    assert.equal(states[0].deliveryContract.x.maxCharactersPerPost, 280);
+  } finally { globalThis.fetch = original; }
+});
+
+test("a preferred hook cannot borrow another hook's feasibility or invent an unsupported outcome", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch;
+  const item = summarizeCatalog(loadCatalog()).frameworks.find(f => f.id === "listicle")!;
+  const candidate = { ...framework, frameworkId: item.id, name: item.name, family: item.family, outline: item.outline, hookPatternIds: item.hookPatternIds };
+  let requests = 0;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://api.typesafe.ai/v1/systemone"); requests++;
+    const body = JSON.parse(String(options?.body)), stage = body.questions.framework ? "framework" : "hook";
+    const preferred = stage === "framework" ? item.id : "outcome-number";
+    const keys = Object.keys(body.questions[stage].criteria);
+    const answers = structureSupport(body.questions);
+    if (stage === "hook") {
+      assert.equal(JSON.parse(body.state).selectedFramework.id, "listicle");
+      for (const id of Object.keys(answers)) answers[id].noul = id === "supported_label-opener" ? 0.99 : 0.1;
+      assert.match(body.questions["supported_label-opener"].instructions, /deliveryContract/);
+    }
+    return Response.json({ model: "jev-1.14.0", answers: { ...answers,
+      [stage]: { type: "choice", choice: preferred, confidence: 1, probabilities: Object.fromEntries(keys.map(key => [key, key === preferred ? 1 : 0])) },
+    }, usage: { input_tokens: 500, output_tokens: 200 } });
+  };
+  try {
+    const selected = await choosePostStructure(ctx, [candidate]);
+    assert.equal(selected.hookPatternId, "label-opener");
+    assert.equal(selected.decisions?.hook?.probabilities["outcome-number"], 1);
+    assert.equal(selected.decisions?.hook?.supportProbability, 0.99);
+    assert.equal(requests, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test("uncertain adjudication cannot restore a confidently unsupported framework", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch;
+  const candidates = ["old-vs-new", "single-paragraph-insight"].map(id => {
+    const item = summarizeCatalog(loadCatalog()).frameworks.find(f => f.id === id)!;
+    return { ...framework, frameworkId: id, name: item.name, family: item.family, outline: item.outline, hookPatternIds: item.hookPatternIds };
+  });
+  let requests = 0;
+  globalThis.fetch = async (url, options) => {
+    requests++;
+    const body = JSON.parse(String(options?.body));
+    if (url === "https://api.typesafe.ai/v1/systemone") return Response.json({ model: "jev-1.14.0", answers: {
+      ...Object.fromEntries(candidates.map(candidate => [`supported_${candidate.frameworkId}`, { type: "noul", noul: candidate.frameworkId === "old-vs-new" ? 0.1 : 0.5 }])),
+      framework: { type: "choice", choice: "old-vs-new", confidence: 1, probabilities: { "old-vs-new": 1, "single-paragraph-insight": 0 } },
+    }, usage: { input_tokens: 500, output_tokens: 200 } });
+    assert.equal(url, "https://api.openai.com/v1/chat/completions");
+    const packet = JSON.parse(body.messages[1].content);
+    assert.deepEqual(packet.eligibleOptions.map((option: any) => option.id), ["single-paragraph-insight"]);
+    assert.deepEqual(body.response_format.json_schema.schema.properties.selectedId.anyOf[0].enum, ["single-paragraph-insight"]);
+    return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
+      selectedId: "old-vs-new", rationale: "This adversarial response attempts to restore an excluded contrast despite the only uncertain option being an insight.",
+      support: [{ evidenceId: "evidence-1", quote: "evaluation catches defects.", reason: "The supplied source locates an evaluation finding but cannot restore a rejected option." }],
+    }) } }], usage: { prompt_tokens: 600, completion_tokens: 200 } });
+  };
+  try {
+    await assert.rejects(choosePostStructure(ctx, candidates), /ineligible choice/i);
+    assert.equal(requests, 2, "The excluded option cannot trigger hook selection or writing.");
   } finally { globalThis.fetch = original; }
 });
 
@@ -399,7 +495,7 @@ test("uncertain structure support requires grounded independent adjudication whi
       if (url === "https://api.typesafe.ai/v1/systemone") {
         const id = body.questions.framework ? "framework" : "hook", keys = Object.keys(body.questions[id].criteria);
         return Response.json({ model: "jev-1.14.0", answers: {
-          supported: { type: "noul", noul: id === "framework" ? mode === "unsupported" ? 0.1 : 0.5 : 0.99 },
+          ...structureSupport(body.questions, id === "framework" ? mode === "unsupported" ? 0.1 : 0.5 : 0.99),
           [id]: { type: "choice", choice: keys[0], confidence: 1, probabilities: Object.fromEntries(keys.map(key => [key, key === keys[0] ? 1 : 0])) },
         }, usage: { input_tokens: 200, output_tokens: 100 } });
       }
@@ -725,7 +821,7 @@ test("reviewer wire schemas require a known post or evidence anchor and runtime 
       const packet = JSON.parse(body.messages[1].content), schema = body.response_format.json_schema.schema;
       const validate = new Ajv2020({ strict: false }).compile(schema);
       const issue = { code: "clarity", severity: "revise", message: "Make this observation concrete.", platform: null as string | null, postIndex: null as number | null, evidenceIds: [] as string[] };
-      const result = { status: "changes_requested", issues: [issue], criteria: packet.rubricDecisions.map((c: any) => reviewerCriterion(c.id, c.score)), factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The published evaluation finding is an externally checkable factual claim.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }], nonfactualSupport: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol" };
+      const result = { status: "changes_requested", issues: [issue], criteria: packet.rubricDecisions.map((c: any) => reviewerCriterion(c.id, c.score)), factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The published evaluation finding is an externally checkable factual claim.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }], hookFactualAssessment: [{ hookIndex: 0, hasFactualClaims: false, rationale: "The alternate opening offers testing advice without reporting an externally checkable finding.", factualClaims: [] }], nonfactualSupport: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol" };
       assert.equal(validate(result), false, "A schema must reject an issue with neither an existing post nor evidence.");
       assert.equal(validate({ ...result, issues: [{ ...issue, platform: "x", postIndex: 9 }] }), false);
       assert.equal(validate({ ...result, issues: [{ ...issue, evidenceIds: ["invented-evidence"] }] }), false);
@@ -797,12 +893,15 @@ test("uncertain grounding can pass only with exact quoted support for every clai
   const uncertain = { type: "score", score: 3.5, confidence: 0, probabilities: { "0": 0, "1": 0, "2": 0, "3": 0.5, "4": 0.5 } };
   for (const bad of [
     (c: any) => ({ ...c, score: 5, evidenceIds: [] }),
-    (c: any) => ({ ...c, score: 5, support: [] }),
     (c: any) => ({ ...c, score: 5, support: [{ ...c.support[0], quote: "A quote that does not occur in the source." }] }),
     (c: any) => ({ ...c, score: 5, support: [{ ...c.support[0], evidenceId: "invented-source" }] }),
     (c: any) => ({ ...c, score: 5, support: [{ ...c.support[0], claim: "An unsupported author experience." }] }),
     (c: any) => ({ ...c, score: 5, support: [{ ...c.support[0], reason: " " }] }),
   ]) await assert.rejects(reviewWithScore("grounded-in-sources", uncertain, "passed", undefined, c => c.id === "grounded-in-sources" ? bad(c) : c), /support|evidence|quote/i);
+  const incomplete = await reviewWithScore("grounded-in-sources", uncertain, "passed", undefined,
+    c => c.id === "grounded-in-sources" ? { ...c, score: 5, support: [] } : c);
+  assert.equal(incomplete.status, "blocked");
+  assert.ok(incomplete.issues.some(issue => issue.code === "incomplete_grounding" && issue.severity === "block" && issue.message.includes("Evaluation catches defects.")));
   const resolved = await reviewWithScore("grounded-in-sources", uncertain, "passed", undefined, c => c.id === "grounded-in-sources" ? { ...c, score: 5 } : c);
   assert.equal(resolved.status, "passed");
   assert.equal(resolved.criteria.find(c => c.id === "grounded-in-sources")?.decision, "reviewer_resolved_uncertainty");
@@ -870,7 +969,11 @@ async function classifiedReview(draft: DraftContent, assessment: unknown, option
     if (options.emptySupport) grounding.support = [];
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
       status: options.status ?? "passed", issues: options.issue ? [{ code: "unsupported_efficacy", severity: "block", message: "The proposed wording still asserts an unsupported efficacy result.", platform: "x", postIndex: 0, evidenceIds: [] }] : [],
-      criteria, factualAssessment: assessment, writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
+      criteria, factualAssessment: assessment,
+      hookFactualAssessment: draft.hooks.map((hook, hookIndex) => {
+        const facts = options.factualGrounding ? (options.groundingSupport ?? reviewerCriterion("grounded-in-sources").support).filter(proof => proof.claimKind !== "interpretation" && hook.includes(proof.claim)).map(proof => proof.claim) : [];
+        return { hookIndex, hasFactualClaims: facts.length > 0, factualClaims: facts, rationale: facts.length ? "The alternate opening reports the exact externally checkable observation identified by this fixture." : "The alternate opening is proposed advice or an interpretive invitation without a reported observation or outcome." };
+      }), writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
     }) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
   };
   try { return await reviewPost(ctx, draft, "gpt-6-luna"); }
@@ -886,10 +989,13 @@ test("an independently assessed proposal-only draft can pass grounding without f
   }
 });
 
-test("factual content on either platform requires registered claims and source support even beside an explicit proposal", async () => {
+test("factual content on either platform requires independent source proof even beside an explicit proposal", async () => {
   const mixed: DraftContent = { ...proposedDraft, variants: [...proposedDraft.variants, { platform: "linkedin", delivery: "long", posts: ["Evaluation catches defects."] }] };
   const assessment = [...proposalAssessment, { platform: "linkedin", hasFactualClaims: true, rationale: "This platform reports an externally checkable evaluation finding that needs source support.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }];
-  await assert.rejects(classifiedReview(mixed, assessment), /grounding|registered/i);
+  const incomplete = await classifiedReview(mixed, assessment);
+  assert.equal(incomplete.status, "blocked");
+  assert.ok(incomplete.issues.some(issue => issue.code === "incomplete_grounding" && issue.severity === "block"));
+  assert.ok(incomplete.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block" && issue.platform === "linkedin" && issue.postIndex === 0));
   const factual = [{ platform: "x", hasFactualClaims: true, rationale: "The first sentence states an evaluation finding; the remaining advice is a proposed action.", factualClaims: [{ postIndex: 0, claim: "Evaluation catches defects." }] }];
   assert.equal((await classifiedReview(content, factual, { factualGrounding: true })).status, "passed");
   for (const mapped of [false, true]) {
@@ -905,10 +1011,13 @@ test("factual content on either platform requires registered claims and source s
 test("a hook-only factual claim retains quoted grounding without inventing a published-post assessment span", async () => {
   const draft: DraftContent = { ...proposedDraft, hooks: ["Evaluation catches defects."], claimSources: content.claimSources };
   assert.equal((await classifiedReview(draft, proposalAssessment, { factualGrounding: true })).status, "passed");
-  await assert.rejects(classifiedReview(draft, proposalAssessment, { factualGrounding: true, emptySupport: true }), /grounding|quoted support/i);
+  const incomplete = await classifiedReview(draft, proposalAssessment, { factualGrounding: true, emptySupport: true });
+  const mechanical = validateDraft(loadCatalog(), draft, context().evidence, defaultProfile(), framework.frameworkId, incomplete);
+  assert.ok(mechanical.some(issue => issue.code === "missing_hook_proof" && issue.severity === "block" && issue.message.includes("Evaluation catches defects.")));
+  assert.deepEqual(incomplete.hookFactualAssessment?.[0].factualClaims, ["Evaluation catches defects."]);
   await assert.rejects(classifiedReview(draft, proposalAssessment, { factualGrounding: true, groundingQuote: "This quote is not in the evidence." }), /exact source quote/i);
   const mirrored: DraftContent = { ...draft, variants: content.variants };
-  await assert.rejects(classifiedReview(mirrored, proposalAssessment, { factualGrounding: true }), /factual assessment claims.*registered/i);
+  await assert.rejects(classifiedReview(mirrored, proposalAssessment, { factualGrounding: true }), /factual support.*classified/i);
 });
 
 test("an independently supported interpretive ending may be cited without being mislabeled as a factual claim", async () => {
@@ -927,7 +1036,10 @@ test("an independently supported interpretive ending may be cited without being 
   const hookInterpretation: DraftContent = { ...draft, variants: draft.variants.map(variant => ({ ...variant, posts: [fact] })), hooks: [interpretation] };
   assert.equal((await classifiedReview(hookInterpretation, assessment, { factualGrounding: true, evidence, groundingSupport: support })).status, "passed");
   await assert.rejects(classifiedReview({ ...hookInterpretation, hooks: [] }, assessment, { factualGrounding: true, evidence, groundingSupport: support }), /exact.*span/i);
-  await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(0, 1) }), /quoted support|grounding/i);
+  const incomplete = await classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(0, 1) });
+  assert.equal(incomplete.status, "blocked");
+  assert.ok(incomplete.issues.some(issue => issue.code === "incomplete_grounding" && issue.severity === "block" && issue.message.includes(interpretation)));
+  assert.ok(incomplete.issues.some(issue => issue.code === "unclassified_hint" && issue.severity === "block" && issue.message.includes(interpretation)));
   await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.map(entry => entry.claimKind === "interpretation" ? { ...entry, quote: "An invented source quote." } : entry) }), /exact source quote/i);
   await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.map(entry => ({ ...entry, claimKind: "interpretation" })) }), /factual.*kind|fact-kind/i);
   const unregistered = await classifiedReview({ ...draft, claimSources: draft.claimSources.slice(1) }, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(1) });
@@ -940,7 +1052,9 @@ test("proposal classification cannot override fresh Jev failures or independent 
   assert.equal(failed.status, "blocked");
   assert.equal(failed.criteria.find(criterion => criterion.id === "grounded-in-sources")?.decision, "jev_failure");
   assert.equal((await classifiedReview(proposedDraft, proposalAssessment, { issue: true })).status, "blocked");
-  await assert.rejects(classifiedReview(proposedDraft, undefined), /grounding|evidence/i);
+  const unassessed = await classifiedReview(proposedDraft, undefined);
+  assert.equal(unassessed.status, "blocked");
+  assert.ok(unassessed.issues.some(issue => issue.code === "incomplete_grounding" && issue.severity === "block"));
 });
 
 test("factual assessment rejects omitted, duplicate, contradictory or non-exact published-platform classifications", async () => {

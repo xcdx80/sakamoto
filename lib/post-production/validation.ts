@@ -2,6 +2,8 @@ import type { PostCatalog } from "./catalog";
 import type { BrandProfile, DraftContent, DraftReview, ProductionEvidence, ReviewIssue } from "./types";
 import { postCharacterLimit } from "./delivery";
 import { isNonfactualDraftSupport } from "./draft-support";
+import { isAuthorIdea } from "./intent";
+import { coversDraftSpan } from "./proof-coverage";
 
 /** Mechanical editorial checks precede the rubric judge. Source prose is data, never a rule. */
 export function validateDraft(
@@ -38,8 +40,9 @@ export function validateDraft(
       if (support.claim.trim() && [...content.variants.flatMap(variant => variant.posts), ...content.hooks].some(text => text.includes(support.claim))
         && grounding.evidenceIds?.includes(support.evidenceId) && support.quote.trim() && evidenceById.get(support.evidenceId)?.excerpt.includes(support.quote)
         && (support.claimKind === "fact" || support.claimKind === undefined)
-        && (review.factualAssessment.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim.claim)))
-          || (content.hooks.some(hook => hook.includes(support.claim)) && !content.variants.some(variant => variant.posts.some(post => post.includes(support.claim)))))) {
+        && !isAuthorIdea(evidenceById.get(support.evidenceId)!)
+        && (review.factualAssessment.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim.claim) || claim.claim.includes(support.claim)))
+          || review.hookFactualAssessment?.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim) || claim.includes(support.claim))))) {
         claims.push({ claim: support.claim, evidenceIds: [support.evidenceId] });
         if (support.reason.trim().length >= 20 && support.reason.trim().split(/\s+/).length >= 4) verifiedFacts.push(support.claim);
       }
@@ -80,21 +83,20 @@ export function validateDraft(
     });
     const classifiedAtOpening = (platform: string, claim: string) => review?.factualAssessment?.find(assessment => assessment.platform === platform)?.factualClaims.some(fact => fact.postIndex === 0 && claim.includes(fact.claim));
     if (grounding?.score === 5) for (const support of review?.nonfactualSupport ?? []) {
-      if (!isNonfactualDraftSupport(content, support, review?.factualAssessment, grounding)) continue;
+      if (!isNonfactualDraftSupport(content, support, review?.factualAssessment, grounding, review?.hookFactualAssessment)) continue;
       if (support.platform === (variant?.platform ?? null) && support.postIndex === postIndex) nonfactual.push(...literalRanges(text, support.quote));
       if (!variant && support.platform !== null && support.postIndex === 0) {
         const opening = content.variants.find(item => item.platform === support.platform)?.posts[0]?.split("\n")[0];
         if (text === opening && opening.includes(support.quote)
-          && isNonfactualDraftSupport(content, { ...support, platform: null, postIndex }, review?.factualAssessment, grounding))
+          && isNonfactualDraftSupport(content, { ...support, platform: null, postIndex }, review?.factualAssessment, grounding, review?.hookFactualAssessment))
           nonfactual.push(...literalRanges(text, support.quote));
       }
     }
     const factual: TextRange[] = [];
-    for (const claim of verifiedFacts) {
-      const classifiedHere = variant ? review?.factualAssessment?.find(assessment => assessment.platform === variant.platform)?.factualClaims.some(fact => fact.postIndex === postIndex && claim.includes(fact.claim)) : content.hooks[postIndex].includes(claim);
-      if (classifiedHere) factual.push(...literalRanges(text, claim));
-      for (const opening of openingPosts) if (classifiedAtOpening(opening.platform, claim)) factual.push(...openingRanges(opening.post, claim, text.length));
-    }
+    const assessedHere = variant
+      ? review?.factualAssessment?.find(assessment => assessment.platform === variant.platform)?.factualClaims.filter(fact => fact.postIndex === postIndex).map(fact => fact.claim) ?? []
+      : review?.hookFactualAssessment?.find(assessment => assessment.hookIndex === postIndex)?.factualClaims ?? [];
+    for (const fact of assessedHere) if (coversDraftSpan(fact, [text], verifiedFacts)) factual.push(...literalRanges(text, fact));
     const cited = claims.flatMap(claim => literalRanges(text, claim.claim).map(range => ({ ...range, claim })));
     for (const opening of openingPosts) for (const claim of reviewedCitations) {
       if (verifiedFacts.includes(claim.claim) && !classifiedAtOpening(opening.platform, claim.claim)) continue;
@@ -138,6 +140,22 @@ export function validateDraft(
       const lines = text.split("\n");
       if (lines.slice(0, -2).some(line => /https?:\/\//.test(line))) issues.push({ code: "link_placement", severity: "suggestion", message: "Consider placing the LinkedIn source link in the last two lines or first comment. Ranking claims about links remain uncertain.", ...at });
     }
+  }
+  // Writer hints are optional; alternate openings need their own independent
+  // classification rather than borrowing the published post's factual audit.
+  if (review?.factualAssessment && grounding?.score === 5) for (const [postIndex, hook] of content.hooks.entries()) {
+    const assessments = review.hookFactualAssessment?.filter(assessment => assessment.hookIndex === postIndex) ?? [];
+    const assessment = assessments[0];
+    if (assessments.length !== 1 || !assessment || assessment.rationale.trim().length < 20 || assessment.rationale.trim().split(/\s+/).length < 4
+      || assessment.hasFactualClaims !== (assessment.factualClaims.length > 0)
+      || assessment.factualClaims.some(claim => !claim.trim() || !hook.includes(claim))) {
+      issues.push({ code: "unreviewed_hook", severity: "block", postIndex,
+        message: "Independently classify this alternate opening and identify every factual assertion in its exact wording before approval." });
+      continue;
+    }
+    for (const claim of assessment.factualClaims) if (!coversDraftSpan(claim, [hook], verifiedFacts))
+      issues.push({ code: "missing_hook_proof", severity: "block", postIndex,
+        message: `This alternate opening's factual assertion lacks exact quoted source proof: ${claim.slice(0, 900)}.` });
   }
   return issues;
 }

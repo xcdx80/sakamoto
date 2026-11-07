@@ -630,19 +630,64 @@ test("resuming selection refreshes an old shortlist without gathering sources or
   assert.equal(resumed.revisions.length, 0);
 });
 
-test("a saved draft with older non-literal citation annotations requests author revision before paid review", async () => {
+test("independent review proves actual claims in a saved generated draft with stale annotations without changing history or approving it", async () => {
   const owner = account(); fixtures();
   const selected = await prepared(owner);
   const attributed = (await advanceProduction(owner, selected.production.id, selected.production.version))!;
-  const legacy = { ...content, claimSources: [{ claim: "The evaluation surfaced an attribution failure, a paraphrased historical annotation.", evidenceIds: ["AUTHOR_NOTE"] }] };
+  const legacy = { ...content, hooks: [], claimSources: [{ claim: "The evaluation surfaced an attribution failure, a paraphrased historical annotation.", evidenceIds: ["AUTHOR_NOTE"] }] };
   const saved = (await saveRevision(owner, selected.production.id, legacy, "writer", attributed.production.version))!;
   let reviewerCalls = 0;
-  configurePostProviders({ reviewPost: async () => { reviewerCalls++; throw new Error("The malformed citation map must be caught before dispatch."); } });
-  const guarded = (await advanceProduction(owner, saved.production.id, saved.production.version))!;
-  assert.equal(guarded.production.status, "needs_input");
-  assert.match(guarded.production.notice!, /older citation|citation annotations/i);
-  assert.match(guarded.production.notice!, /revision/i);
-  assert.equal(guarded.production.latestRevisionId, saved.production.latestRevisionId);
-  assert.deepEqual(guarded.revisions.find(revision => revision.id === guarded.production.latestRevisionId)!.content, legacy);
-  assert.equal(reviewerCalls, 0);
+  configurePostProviders({ reviewPost: async (ctx, draft, writerModel) => {
+    reviewerCalls++;
+    assert.deepEqual(draft, legacy);
+    const catalog = loadCatalog(), framework = catalog.frameworks.find(f => f.id === ctx.framework?.frameworkId)!;
+    return {
+      status: "passed", issues: [], writerModel, reviewerModel: "gpt-6-sol", nonfactualSupport: [],
+      factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The published draft reports the author's retained workflow and the evaluation finding documented in the supplied author note.", factualClaims: content.claimSources.map(claim => ({ postIndex: 0, claim: claim.claim })) }],
+      criteria: [...catalog.shared.criteria, ...framework.rubric.criteria].map(c => ({ id: c.id, score: 5,
+        reason: "The actual published wording is independently supported by the known author note despite the stale writer annotation.",
+        evidenceIds: ["AUTHOR_NOTE"], support: c.id === "grounded-in-sources" ? fixtureSupport(ctx).map(proof => ({ ...proof, claimKind: "fact" as const })) : [] })),
+    };
+  } });
+  const reviewed = (await advanceProduction(owner, saved.production.id, saved.production.version))!;
+  assert.equal(reviewerCalls, 1);
+  assert.equal(reviewed.production.status, "ready");
+  assert.equal(reviewed.review?.status, "passed");
+  assert.equal(reviewed.review?.revisionId, saved.production.latestRevisionId);
+  assert.deepEqual(reviewed.review?.criteria.find(c => c.id === "grounded-in-sources")?.support?.map(proof => proof.claim), content.claimSources.map(claim => claim.claim));
+  assert.equal(reviewed.production.latestRevisionId, saved.production.latestRevisionId);
+  assert.deepEqual(reviewed.revisions, saved.revisions);
+  assert.deepEqual(reviewed.revisions.find(revision => revision.id === reviewed.production.latestRevisionId)!.content, legacy);
+  assert.equal(reviewed.production.approvedRevisionId, null);
+});
+
+test("stale generated annotations cannot replace missing independent factual proof or permit approval", async () => {
+  const owner = account(); fixtures();
+  const selected = await prepared(owner);
+  const attributed = (await advanceProduction(owner, selected.production.id, selected.production.version))!;
+  const legacy = { ...content, hooks: [], claimSources: [{ claim: "The evaluation surfaced an attribution failure, a paraphrased historical annotation.", evidenceIds: ["AUTHOR_NOTE"] }] };
+  const saved = (await saveRevision(owner, selected.production.id, legacy, "writer", attributed.production.version))!;
+  let reviewerCalls = 0;
+  configurePostProviders({ reviewPost: async (ctx, draft, writerModel) => {
+    reviewerCalls++;
+    assert.deepEqual(draft, legacy);
+    const catalog = loadCatalog(), framework = catalog.frameworks.find(f => f.id === ctx.framework?.frameworkId)!;
+    return {
+      status: "passed", issues: [], writerModel, reviewerModel: "gpt-6-sol", nonfactualSupport: [],
+      factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "Both published factual assertions require their own independent proof; the old annotation does not match either actual assertion.", factualClaims: content.claimSources.map(claim => ({ postIndex: 0, claim: claim.claim })) }],
+      criteria: [...catalog.shared.criteria, ...framework.rubric.criteria].map(c => ({ id: c.id, score: 5,
+        reason: "This adversarial review supplies proof for the workflow decision but omits the separately identified evaluation finding.",
+        evidenceIds: ["AUTHOR_NOTE"], support: c.id === "grounded-in-sources" ? fixtureSupport(ctx).slice(0, 1).map(proof => ({ ...proof, claimKind: "fact" as const })) : [] })),
+    };
+  } });
+  const reviewed = (await advanceProduction(owner, saved.production.id, saved.production.version))!;
+  assert.equal(reviewerCalls, 1);
+  assert.equal(reviewed.production.status, "draft");
+  assert.equal(reviewed.production.stage, "revision");
+  assert.equal(reviewed.review?.status, "blocked");
+  assert.ok(reviewed.review?.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block" && issue.message.includes("Evaluation exposed missing source attribution.")));
+  assert.equal(reviewed.production.latestRevisionId, saved.production.latestRevisionId);
+  assert.deepEqual(reviewed.revisions, saved.revisions);
+  assert.equal(reviewed.production.approvedRevisionId, null);
+  assert.equal(await approveProduction(owner, reviewed.production.id, reviewed.production.latestRevisionId!, reviewed.production.version), null);
 });

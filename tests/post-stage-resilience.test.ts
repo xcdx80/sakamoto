@@ -80,7 +80,7 @@ function isolatedJourney(owner: string, scenario: Scenario) {
       const state = JSON.parse(body.state);
       const answers = Object.fromEntries(Object.entries(body.questions).map(([id, value]) => {
         const question = value as { type: string; criteria: Record<string, unknown> | unknown[] };
-        if (question.type === "noul") return [id, { type: "noul", noul: id === "supported" ? 1 : 0 }];
+        if (question.type === "noul") return [id, { type: "noul", noul: id.startsWith("supported_") ? 1 : 0 }];
         if (question.type === "choice") {
           const keys = Object.keys(question.criteria);
           const evidence = state.untrustedBoundedExcerpts?.find((entry: { id: string }) => entry.id === "AUTHOR_IDEA")?.decisionSourceId;
@@ -102,6 +102,7 @@ function isolatedJourney(owner: string, scenario: Scenario) {
       ? { ...scenario.content, variants: Object.fromEntries(scenario.content.variants.map(variant => [variant.platform, variant])) }
       : {
         status: "passed", issues: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
+        hookFactualAssessment: scenario.content.hooks.map((_, hookIndex) => ({ hookIndex, hasFactualClaims: false, rationale: "The fixture's opening explicitly proposes future engineering work and reports no result or externally checkable observation.", factualClaims: [] })),
         factualAssessment: scenario.content.variants.map(variant => ({
           platform: variant.platform, hasFactualClaims: Boolean(scenario.fact),
           rationale: scenario.fact ? "The author's supplied note establishes the reported action, while the remaining design is explicitly prospective." : "Every statement describes a proposed future engineering process; no completed work, result or efficacy is asserted.",

@@ -110,12 +110,18 @@ export type PlatformFactualAssessment = {
   rationale: string;
   factualClaims: { postIndex: number; claim: string }[];
 };
+export type HookFactualAssessment = {
+  hookIndex: number;
+  hasFactualClaims: boolean;
+  rationale: string;
+  factualClaims: string[];
+};
 export type NonfactualSupport = {
   /** null addresses an alternate hook; postIndex then selects its hook index. */
   platform: PostPlatform | null;
   postIndex: number;
   quote: string;
-  kind: "proposal" | "label" | "draft_structure";
+  kind: "proposal" | "label" | "draft_structure" | "opinion" | "question";
   reason: string;
 };
 export type DraftReview = {
@@ -125,6 +131,7 @@ export type DraftReview = {
   writerModel: string;
   reviewerModel: string;
   factualAssessment?: PlatformFactualAssessment[];
+  hookFactualAssessment?: HookFactualAssessment[];
   nonfactualSupport?: NonfactualSupport[];
   sharedScore?: number;
   frameworkScore?: number;

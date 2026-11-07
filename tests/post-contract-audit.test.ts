@@ -183,7 +183,7 @@ test("author-edited factual wording receives independent source proof without re
   assert.equal(reviewCalls, 1);
 });
 
-test("independent author provenance preserves exact source quotes, factual coverage and the generated-writer registration guard", async () => {
+test("independent provenance preserves exact source quotes and factual coverage for author and generated drafts", async () => {
   const catalog = loadCatalog(), entry = summarizeCatalog(catalog).frameworks.find(item => item.id === "source-takeaways")!;
   const fact = 'The test used 2 prompts and the author said "Check attribution."';
   const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: [fact] }], hooks: [], claimSources: [] };
@@ -205,10 +205,10 @@ test("independent author provenance preserves exact source quotes, factual cover
   const review = await reviewPost(context, content, "author");
   assert.equal(review.status, "passed");
   assert.equal(validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review).some(issue => ["unsupported_number", "unsupported_quote"].includes(issue.code)), false);
-  await assert.rejects(reviewPost(context, content, "gpt-6-luna"), /match a cited claim/i);
+  assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed");
   for (const support of [[], [{ ...proof, quote: "An invented source quotation." }], [{ ...proof, claim: "The test used 2 prompts" }], [{ ...proof, claimKind: "interpretation" as "fact" }]]) {
     configurePostProviders({ reviewPost: async () => result("author", support) });
-    if (!support.length) {
+    if (!support.length || support[0].claim !== fact) {
       const incomplete = await reviewPost(context, content, "author");
       assert.equal(incomplete.status, "blocked");
       assert.ok(incomplete.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block"));
@@ -219,7 +219,7 @@ test("independent author provenance preserves exact source quotes, factual cover
   const missingAssessment = result("author");
   delete missingAssessment.factualAssessment;
   configurePostProviders({ reviewPost: async () => missingAssessment });
-  await assert.rejects(reviewPost(context, content, "author"), /match a cited claim/i);
+  await assert.rejects(reviewPost(context, content, "author"), /exact actual.*span/i);
 });
 
 test("local proposal exceptions do not excuse reported results, mismatched counts or reported quotations", () => {
@@ -272,6 +272,7 @@ test("author-only factual hook proof satisfies numeric provenance while the publ
   };
   configurePostProviders({ reviewPost: async () => ({
     status: "passed", issues: [], writerModel: "author", reviewerModel: "gpt-6-sol",
+    hookFactualAssessment: [{ hookIndex: 0, hasFactualClaims: true, rationale: "The alternate opening reports the precise prompt count established by the supplied evaluation report.", factualClaims: [fact] }],
     factualAssessment: [{ platform: "x", hasFactualClaims: false, rationale: "The published wording proposes inspecting test prompts without claiming any test was run or effective.", factualClaims: [] }],
     criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === entry.id)!.rubric.criteria].map(criterion => ({
       id: criterion.id, score: 5, reason: "The published post is an explicit proposal and the factual alternate hook is independently supported by the report.", evidenceIds: ["source-finding"],
@@ -283,7 +284,7 @@ test("author-only factual hook proof satisfies numeric provenance while the publ
   assert.equal(validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review).some(issue => issue.code === "unsupported_number"), false);
 });
 
-test("writer whitespace reconciliation preserves all literal variants and rejects cross-post or substantive changes", async () => {
+test("writer citation hints never rewrite literal variants or invent cross-post and substantive matches", async () => {
   const entry = summarizeCatalog(loadCatalog()).frameworks.find(item => item.id === "story-lesson")!;
   const first = "Evaluation exposed missing attribution.", second = "I repaired the source mapping.";
   const context: PostProviderContext = {
@@ -299,11 +300,15 @@ test("writer whitespace reconciliation preserves all literal variants and reject
   assert.deepEqual(written.content.claimSources.map(claim => claim.claim), [first + " " + second, first + "\n\n" + second]);
   for (const claim of [first + " I repaired the source mapping!", "Evaluation exposed no attribution problem.", "evaluation exposed missing attribution."]) {
     configurePostProviders({ writePost: async () => ({ content: { ...content, claimSources: [{ claim, evidenceIds: ["AUTHOR_NOTE"] }] }, model: "gpt-6-luna", promptVersion: "post-production-v13" }) });
-    await assert.rejects(writePost(context, framework), /actual wording|whitespace differences/i);
+    const unmatched = await writePost(context, framework);
+    assert.deepEqual(unmatched.content.variants, content.variants);
+    assert.deepEqual(unmatched.content.claimSources, []);
   }
   const thread: DraftContent = { variants: [{ platform: "x", delivery: "thread", posts: [first, second] }], hooks: [], claimSources: [{ claim: first + " " + second, evidenceIds: ["AUTHOR_NOTE"] }] };
   configurePostProviders({ writePost: async () => ({ content: thread, model: "gpt-6-luna", promptVersion: "post-production-v13" }) });
-  await assert.rejects(writePost({ ...context, brief: { ...context.brief, platforms: ["x"], delivery: "thread" } }, framework), /actual wording|whitespace differences/i);
+  const unmatched = await writePost({ ...context, brief: { ...context.brief, platforms: ["x"], delivery: "thread" } }, framework);
+  assert.deepEqual(unmatched.content.variants, thread.variants);
+  assert.deepEqual(unmatched.content.claimSources, []);
 });
 
 async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], options: { fact?: string; hook?: string; writerModel?: string; sourceExcerpt?: string; sourceQuote?: string; intentKind?: "author_idea" | "author_note"; delivery?: "single" | "long"; groundingScore?: number; additionalFact?: string } = {}) {
@@ -318,6 +323,7 @@ async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], op
   };
   configurePostProviders({ reviewPost: async (_ctx, _draft, writerModel) => ({
     status: options.groundingScore ? "changes_requested" : "passed", issues: [], writerModel, reviewerModel: "gpt-6-sol", nonfactualSupport: nonfactualSupport as NonfactualSupport[],
+    hookFactualAssessment: options.hook ? [{ hookIndex: 0, hasFactualClaims: false, rationale: "This alternate opening proposes a future protocol or a description of the draft rather than a reported event.", factualClaims: [] }] : [],
     factualAssessment: [{ platform: "x", hasFactualClaims: Boolean(options.fact), rationale: options.fact ? "The published observation is factual; the separately proposed future protocol does not assert observed efficacy." : "The wording explicitly proposes a future protocol or newly assigned label without reporting use or established efficacy.", factualClaims: options.fact ? [{ postIndex: 0, claim: options.fact }, ...(options.additionalFact ? [{ postIndex: 0, claim: options.additionalFact }] : [])] : [] }],
     criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === entry.id)!.rubric.criteria].map(criterion => ({
       id: criterion.id, score: criterion.id === "grounded-in-sources" ? options.groundingScore ?? 5 : 5, reason: "The proposed protocol is explicitly future-facing and any separately reported observation has exact source support.", evidenceIds: options.fact ? [sourceId] : [],
@@ -412,8 +418,8 @@ test("author provenance mode reaches both independent grounding and unsupported-
     assert.equal((await reviewPost(context, content, "author")).status, "passed");
     assert.equal(origin, "author");
     assert.match(groundingInstructions, /claimRegistrationPolicy/);
-    assert.match(groundingInstructions, /missing writer annotations alone do not/i);
-    assert.match(riskInstructions, /missing writer annotations alone do not/i);
+    assert.match(groundingInstructions, /independently of writer annotation completeness/i);
+    assert.match(riskInstructions, /independently of writer annotation completeness/i);
   } finally {
     globalThis.fetch = originalFetch;
     for (const [name, value] of [["OPENAI_API_KEY", prior.key], ["TYPESAFE_API_KEY", prior.typesafe], ["SAKAMOTO_POST_REVIEWER_MODEL", prior.reviewer]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
@@ -512,7 +518,7 @@ test("partial nonfactual proof never changes the original number or quotation in
   assert.ok(quotation.issues.some(issue => issue.code === "unsupported_quote" && issue.message.includes("15% improved")));
 });
 
-test("generated review wire schemas permit registered full claims and forbid unregistered support clauses", async () => {
+test("generated review wire schemas permit independent exact-span support with or without writer hints", async () => {
   const catalog = loadCatalog(), entry = summarizeCatalog(catalog).frameworks.find(item => item.id === "source-takeaways")!;
   const fact = "The evaluation caught a missing citation and the team repaired attribution.", clause = "The evaluation caught a missing citation";
   const context: PostProviderContext = {
@@ -532,6 +538,7 @@ test("generated review wire schemas permit registered full claims and forbid unr
     const packet = JSON.parse(body.messages[1].content), registered = packet.content.claimSources.length > 0;
     const result: DraftReview = {
       status: "passed", issues: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol", nonfactualSupport: [],
+      hookFactualAssessment: [],
       factualAssessment: [{ platform: "x", hasFactualClaims: registered, rationale: registered ? "The sentence reports two documented observations; its individual factual clauses belong to the registered full sentence." : "The wording proposes inspecting attribution without reporting an actual event, efficacy or completed author experience.", factualClaims: registered ? [{ postIndex: 0, claim: clause }, { postIndex: 0, claim: "the team repaired attribution." }] : [] }],
       criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === entry.id)!.rubric.criteria].map(criterion => ({ id: criterion.id, score: 5, reason: "The registered full sentence is directly supported, while a proposal makes no reported factual assertion.", evidenceIds: registered ? ["source-finding"] : [], draftSupport: [], support: criterion.id === "grounded-in-sources" && registered ? [{ claim: fact, claimKind: "fact", evidenceId: "source-finding", quote: fact, reason: "The supplied report documents both factual clauses of the full registered sentence exactly." }] : [] })),
     };
@@ -547,10 +554,10 @@ test("generated review wire schemas permit registered full claims and forbid unr
   try {
     assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed");
     assert.equal(validFull, true);
-    assert.equal(validClause, false, "Generated source support must select a registered full claim, while factualAssessment may identify its clauses.");
+    assert.equal(validClause, true, "The reviewer may prove an actual clause independently; runtime validation still requires complete exact source proof.");
     const proposal: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: ["I would inspect the attribution before choosing a test."] }], hooks: [], claimSources: [] };
     await reviewPost({ ...context, operationId: "post:" + crypto.randomUUID(), attemptId: crypto.randomUUID() }, proposal, "gpt-6-luna");
-    assert.equal(maximumWithoutRegistration, 0);
+    assert.equal(maximumWithoutRegistration, 60);
   } finally {
     globalThis.fetch = originalFetch;
     for (const [name, value] of [["OPENAI_API_KEY", prior.key], ["TYPESAFE_API_KEY", prior.typesafe], ["SAKAMOTO_POST_REVIEWER_MODEL", prior.reviewer]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
@@ -622,6 +629,7 @@ test("an exact opening-line hook inherits clipped reviewed factual and quotation
   const evidence: PostProviderContext["evidence"] = [{ id: "source-finding", itemId: "source-1", sourceRevision: 1, title: "Evaluation report", excerpt: body, kind: "saved_source" }];
   const review: DraftReview = {
     status: "passed", issues: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
+    hookFactualAssessment: [{ hookIndex: 0, hasFactualClaims: true, rationale: "The opening repeats the precise test conditions and attributed quotation documented by the retained report.", factualClaims: [first] }],
     factualAssessment: [{ platform: "x", hasFactualClaims: true, rationale: "The report documents both the opening observations and the retained traces; each is independently identified.", factualClaims: [{ postIndex: 0, claim: first }, { postIndex: 0, claim: second }] }],
     criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === "single-paragraph-insight")!.rubric.criteria].map(criterion => ({ id: criterion.id, score: 5, reason: "The exact supplied report supports both factual sentences and the verbatim attributed quotation.", evidenceIds: ["source-finding"], support: criterion.id === "grounded-in-sources" ? [{ claim: body, claimKind: "fact", evidenceId: "source-finding", quote: body, reason: "The report directly documents all clauses of this full registered claim, including the count and attributed quotation." }] : [] })),
   };

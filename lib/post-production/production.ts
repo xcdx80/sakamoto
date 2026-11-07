@@ -163,9 +163,6 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
     if (production.stage === "review") {
       const revision = detail.revisions.find(r => r.id === production.latestRevisionId);
       if (!revision) throw new InputNeeded("Save a draft before requesting independent review.");
-      const publishedText = [...revision.content.variants.flatMap(variant => variant.posts), ...revision.content.hooks];
-      if (revision.origin !== "author" && revision.content.claimSources.some(claim => !publishedText.some(text => text.includes(claim.claim))))
-        throw new InputNeeded("This saved draft has older citation annotations. Ask for a revision to refresh its citations before approval; your saved wording and history are preserved.");
       const framework = selectedFramework(detail);
       if (!framework) throw new InputNeeded("Choose an eligible framework before reviewing this draft.");
       const writerModel = revision.origin === "author" ? "author" : production.checkpoint.writerModel;
