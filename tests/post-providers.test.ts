@@ -930,7 +930,9 @@ test("an independently supported interpretive ending may be cited without being 
   await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(0, 1) }), /quoted support|grounding/i);
   await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.map(entry => entry.claimKind === "interpretation" ? { ...entry, quote: "An invented source quote." } : entry) }), /exact source quote/i);
   await assert.rejects(classifiedReview(draft, assessment, { factualGrounding: true, evidence, groundingSupport: support.map(entry => ({ ...entry, claimKind: "interpretation" })) }), /factual.*kind|fact-kind/i);
-  await assert.rejects(classifiedReview({ ...draft, claimSources: draft.claimSources.slice(1) }, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(1) }), /factual assessment claims.*registered/i);
+  const unregistered = await classifiedReview({ ...draft, claimSources: draft.claimSources.slice(1) }, assessment, { factualGrounding: true, evidence, groundingSupport: support.slice(1) });
+  assert.equal(unregistered.status, "blocked");
+  assert.ok(unregistered.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block"));
 });
 
 test("proposal classification cannot override fresh Jev failures or independent reviewer issues", async () => {

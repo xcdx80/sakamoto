@@ -1,4 +1,5 @@
 import type { CatalogFramework, PostCatalog, SignalId } from "./catalog";
+import { authorIdeaSupportsSignal } from "./intent";
 import type { EvidenceSignal, FrameworkRecommendation, ProductionBrief, ProductionHistory } from "./types";
 
 export type FrameworkRejection = { frameworkId: string; reasons: string[] };
@@ -10,8 +11,10 @@ export function evaluateFrameworks(
 ): FrameworkSelection {
   const known = new Set<string>(catalog.signals.map(signal => signal.id));
   const detected = new Map<string, EvidenceSignal>();
+  const intended = new Set<string>();
   for (const signal of signals) {
     if (!known.has(signal.signal) || ![1, 2].includes(signal.strength) || !signal.evidenceIds.length) continue;
+    if (authorIdeaSupportsSignal(signal.signal) && signal.evidenceIds.includes("AUTHOR_IDEA")) intended.add(signal.signal);
     const previous = detected.get(signal.signal);
     detected.set(signal.signal, {
       signal: signal.signal, strength: Math.max(previous?.strength ?? 0, signal.strength) as 1 | 2,
@@ -83,17 +86,29 @@ export function evaluateFrameworks(
     return essential.length ? Math.min(...essential.map(s => detected.get(s.signal)!.strength)) : 1;
   };
   ranked.sort((left, right) => essentialSupport(right) - essentialSupport(left) || right.score - left.score || left.frameworkId.localeCompare(right.frameworkId));
-  const recommendations: FrameworkRecommendation[] = [];
+  // Research findings can support other forms without replacing the author's
+  // proposed form. Reserve one eligible option whose essentials all come from
+  // intent; existing cadence ranking chooses which truthful option survives.
+  const intendedCandidate = ranked.find(candidate => {
+    const essential = essentialSignals(catalog.frameworks.find(framework => framework.id === candidate.frameworkId)!);
+    return essential.length > 0 && essential.every(signal => intended.has(signal.signal));
+  });
+  const selected = new Set<string>(intendedCandidate ? [intendedCandidate.frameworkId] : []);
   const familyCounts = new Map<string, number>();
+  if (intendedCandidate) familyCounts.set(intendedCandidate.family, 1);
   for (const candidate of ranked) {
+    if (selected.has(candidate.frameworkId)) continue;
     const count = familyCounts.get(candidate.family) ?? 0;
-    if (count >= Math.min(2, defaults.max_per_family)) rejected.push({ frameworkId: candidate.frameworkId, reasons: ["Family diversity cap reached by better-ranked eligible frameworks."] });
-    else if (recommendations.length >= Math.min(3, defaults.max_candidates)) rejected.push({ frameworkId: candidate.frameworkId, reasons: ["Other eligible frameworks ranked higher for the evidence, goal and production history."] });
+    if (count >= Math.min(2, defaults.max_per_family)) rejected.push({ frameworkId: candidate.frameworkId, reasons: ["Family diversity cap reached by selected eligible frameworks."] });
+    else if (selected.size >= Math.min(3, defaults.max_candidates)) rejected.push({ frameworkId: candidate.frameworkId, reasons: [intendedCandidate
+      ? "The bounded shortlist preserves a form supported by author intent alongside the best-ranked eligible alternatives."
+      : "Other eligible frameworks ranked higher for the evidence, goal and production history."] });
     else {
-      recommendations.push(candidate);
+      selected.add(candidate.frameworkId);
       familyCounts.set(candidate.family, count + 1);
     }
   }
+  const recommendations = ranked.filter(candidate => selected.has(candidate.frameworkId));
   rejected.sort((left, right) => left.frameworkId.localeCompare(right.frameworkId));
   return { recommendations, rejected };
 }

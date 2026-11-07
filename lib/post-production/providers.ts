@@ -14,7 +14,7 @@ import { isNonfactualDraftSupport } from "./draft-support";
 import { authorIdeaSupportsSignal, isAuthorIdea } from "./intent";
 import { paidFailureDetails, type PaidFailureContext } from "../paid-diagnostics";
 
-export const POST_PROMPT_VERSION = "post-production-v17";
+export const POST_PROMPT_VERSION = "post-production-v19";
 const DELIVERY_POLICY = "The deliveryContract overrides conflicting framework platform notes and review suggestions. X single and X long each contain exactly one post; long means a longer single post, never a thread. Only X thread contains 2–30 posts. LinkedIn always contains one long post. Put numbered steps and headings inside a long post's text instead of splitting it into extra posts or duplicate channel variants. Never request multiple posts for single or long delivery. Produce each requested channel exactly once.";
 // These gates judge presentation in the draft, rather than factual support in sources.
 const DRAFT_REVIEW_GATES = new Set(["no-ai-tells", "answerable-question", "sponsor-disclosed"]);
@@ -243,11 +243,27 @@ function exactDraftSpans(claim: string, texts: string[]): string[] {
   const pattern = claim.trim().split(/\s+/u).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
   return [...new Set(texts.flatMap(text => [...text.matchAll(new RegExp(pattern, "gu"))].map(match => match[0])))];
 }
+function canonicalDraftQuote(quote: unknown, text: string | undefined): unknown {
+  if (typeof quote !== "string" || !quote.trim() || text === undefined || text.includes(quote)) return quote;
+  const spans = exactDraftSpans(quote, [text]);
+  return spans.length === 1 && spans[0].length <= 1000 ? spans[0] : quote;
+}
 function canonicalSourceQuote(quote: unknown, evidenceId: unknown, evidence: { id: string; excerpt: string }[]): unknown {
   if (typeof quote !== "string" || !quote.trim()) return quote;
   const source = evidence.find(item => item.id === evidenceId);
   if (!source || source.excerpt.includes(quote)) return quote;
-  const spans = exactDraftSpans(quote, [source.excerpt]);
+  let spans = exactDraftSpans(quote, [source.excerpt]);
+  if (!spans.length) {
+    // Web extraction can remove spaces beside punctuation. Keep every word,
+    // case and punctuation mark exact; never join separate word/number tokens.
+    const parts = quote.trim().match(/\s+|[^\p{L}\p{N}\s_]|[\p{L}\p{N}_]+/gu)!;
+    const punctuation = (part: string) => /^[^\p{L}\p{N}\s_]$/u.test(part);
+    const escape = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = parts.map((part, index) => /^\s+$/.test(part)
+      ? (punctuation(parts[index - 1] ?? "") || punctuation(parts[index + 1] ?? "") ? "" : "\\s+")
+      : punctuation(part) ? "\\s*" + escape(part) + "\\s*" : escape(part)).join("");
+    spans = [...new Set([...source.excerpt.matchAll(new RegExp(pattern, "gu"))].map(match => match[0].trim()))];
+  }
   return spans.length === 1 && spans[0].length <= 1200 ? spans[0] : quote;
 }
 function canonicalWriterClaims(content: DraftContent): DraftContent {
@@ -709,7 +725,7 @@ function validateReview(value: unknown, context: PostProviderContext, content: D
     const cited = criterion.evidenceIds ?? [];
     const rawSupport = criterion.support ?? [];
     if (!evidenceIds(cited, context) || !Array.isArray(rawSupport) || rawSupport.length > 60) invalid("The reviewer criterion contains invalid evidence or claim support.");
-    const support = rawSupport.flatMap(entry => {
+    let support = rawSupport.flatMap(entry => {
       if (!record(entry) || typeof entry.claim !== "string") return [entry];
       const registered = content.claimSources.filter(source => source.claim.replace(/\s+/gu, " ").trim() === (entry.claim as string).replace(/\s+/gu, " ").trim()).map(source => source.claim);
       const spans = registered.length ? registered : authorDraft ? exactDraftSpans(entry.claim, published) : [];
@@ -717,12 +733,19 @@ function validateReview(value: unknown, context: PostProviderContext, content: D
       return spans.length ? spans.map(claim => ({ ...entry, claim, quote })) : [{ ...entry, quote }];
     });
     if (support.length > 60) invalid("The reviewer criterion exceeds the bounded claim-support contract.");
+    // Failed criteria grant no provenance. A reviewer may explain its failure
+    // using a title or unavailable quote; discard those unusable diagnostics
+    // without losing the binding failure and its normal revision path.
+    if (Number(criterion.score) < criteria.find(c => c.id === criterion.id)!.pass_threshold)
+      support = support.filter(entry => record(entry) && typeof entry.quote === "string" && entry.quote.trim()
+        && context.evidence.some(e => e.id === entry.evidenceId && e.excerpt.includes(entry.quote as string)));
     criterion.support = support;
     const draftSupport = criterion.draftSupport ?? [];
     if (!Array.isArray(draftSupport) || draftSupport.length > 20) invalid("The reviewer returned invalid draft evidence.");
     for (const entry of draftSupport) {
       if (!record(entry) || Object.keys(entry).some(key => !["platform", "postIndex", "quote", "reason"].includes(key))) invalid("The reviewer returned invalid draft evidence.");
       const variant = content.variants.find(variant => variant.platform === entry.platform);
+      entry.quote = canonicalDraftQuote(entry.quote, variant?.posts[Number(entry.postIndex)]);
       if (!variant || !Number.isInteger(entry.postIndex) || Number(entry.postIndex) < 0 || Number(entry.postIndex) >= variant.posts.length
         || !boundedText(entry.quote, 1000) || !entry.quote.trim() || !variant.posts[Number(entry.postIndex)].includes(entry.quote)
         || !substantiveReason(entry.reason)) invalid("Draft evidence requires a known platform and post, an exact draft quote and a substantive independent explanation.");
@@ -746,9 +769,12 @@ function validateReview(value: unknown, context: PostProviderContext, content: D
       if (!onlyProposals && (!cited.length || content.claimSources.some(c => !support.some(entry => entry.claim === c.claim))))
         invalid("A passing grounding criterion requires known evidence IDs and quoted support covering every cited draft claim.");
       if (assessment) {
-        if (identified.some(claim => !support.some(entry => (entry.claim as string).includes(claim.claim)
-          && (authorDraft || content.claimSources.some(source => source.claim === entry.claim)))))
-          invalid("Passing factual assessment claims must match registered draft claims and their quoted grounding support.");
+        for (const entry of assessment) for (const claim of entry.factualClaims) {
+          if (!support.some(proof => (proof.claim as string).includes(claim.claim)
+            && (authorDraft || content.claimSources.some(source => source.claim === proof.claim))))
+            value.issues.push({ code: "unregistered_fact", severity: "block", platform: entry.platform, postIndex: claim.postIndex, evidenceIds: [],
+              message: `This factual assertion lacks complete registered source support: ${claim.claim.slice(0, 900)}. Register its exact wording with supporting supplied evidence, or remove the unsupported assertion before approval.` });
+        }
         if (support.some(entry => identified.some(claim => (entry.claim as string).includes(claim.claim)) && (entry.claimKind ?? "fact") !== "fact"))
           invalid("Identified factual claims require fact-kind grounding support.");
         if (authorDraft && support.some(entry => (entry.claimKind ?? "fact") === "fact"
@@ -764,19 +790,27 @@ function validateReview(value: unknown, context: PostProviderContext, content: D
     }
     ids.add(String(criterion.id));
   }
-  const nonfactualSupport = value.nonfactualSupport;
+  let nonfactualSupport = value.nonfactualSupport;
   if (nonfactualSupport !== undefined) {
     if (!Array.isArray(nonfactualSupport) || nonfactualSupport.length > 40) invalid("The reviewer returned invalid nonfactual draft support.");
     const seen = new Set<string>();
     const grounding = value.criteria.find(criterion => criterion.id === "grounded-in-sources");
-    for (const entry of nonfactualSupport) {
+    // These optional annotations can only waive mechanical number/quote checks.
+    // Invalid proof grants no waiver; retain factual judgments and let ordinary
+    // review/revision handle any resulting draft issues instead of losing review.
+    nonfactualSupport = nonfactualSupport.map(entry => {
+      if (!record(entry)) return entry;
+      const text = entry.platform === null ? content.hooks[Number(entry.postIndex)]
+        : content.variants.find(variant => variant.platform === entry.platform)?.posts[Number(entry.postIndex)];
+      return { ...entry, quote: canonicalDraftQuote(entry.quote, text) };
+    }).filter(entry => {
       if (!record(entry) || Object.keys(entry).some(key => !["platform", "postIndex", "quote", "kind", "reason"].includes(key))
-        || !isNonfactualDraftSupport(content, entry as NonfactualSupport, assessment, grounding))
-        invalid("Nonfactual support requires a unique exact draft span, known post or hook, substantive rationale and no overlapping factual assertion.");
+        || !isNonfactualDraftSupport(content, entry as NonfactualSupport, assessment, grounding)) return false;
       const key = JSON.stringify([entry.platform, entry.postIndex, entry.quote]);
-      if (seen.has(key)) invalid("The reviewer returned duplicate nonfactual draft support.");
+      if (seen.has(key)) return false;
       seen.add(key);
-    }
+      return true;
+    });
   }
   const issues = value.issues.map(issue => {
     if (!record(issue) || !boundedText(issue.code, 100) || !boundedText(issue.message, 1500) || !["block", "revise", "suggestion"].includes(String(issue.severity)))
@@ -814,7 +848,7 @@ export async function reviewPost(context: PostProviderContext, content: DraftCon
   const authorGrounding = writerModel === "author"
     ? " Missing writer annotations alone do not reduce grounding scores or make a fact unsupported in an author draft. Independently match each actual assertion in posts and alternate hooks to the known supplied source excerpts or author notes. Judge the unchanged source-mapping anchors using those independent matches. Unsupported assertions, unknown references, borrowed author experience and absent source support still fail."
     : " Independently match every registered generated claim against all collected known sources, not only the writer's proposed evidence IDs. Writer evidence-ID mappings are provisional and may be corrected when exact collected-source quotes support every clause of the full registered claim. A wrong proposed ID alone is not missing factual evidence when the correct collected source establishes the claim. Missing generated claim registrations, unknown IDs and genuinely unsupported assertions still fail; never invent a generated claim registration or source.";
-  for (const criterion of criteria) questions[criterion.id] = { type: "score", instructions: `Judge this one criterion: ${criterion.description}. Interpret it within the selected framework's form and required structure. Apply deliveryContract and deliveryPolicy from state over conflicting framework packaging suggestions. Apply authorExperiencePolicy when assessing the draft's framing against the brief; unsupported personal details must not be required or invented. A required landing or purposeful summary may reinforce the central idea when it serves that structure; unnecessary repetition still fails. Apply the public profile over generic framework CTA suggestions. Only evidence supports factual claims.${criterion.id === "grounded-in-sources" ? " Apply factualClaimPolicy and claimRegistrationPolicy from state: this criterion's source-mapping anchors concern externally checkable factual assertions. Independently inspect every platform; a wholly explicit proposal, opinion or description of the draft's own structure needs no fabricated source citations. Empty claimSources alone proves nothing. Embedded efficacy assertions remain factual even after 'I propose'." + authorGrounding : ""}`, criteria: rubricLevels(criterion) };
+  for (const criterion of criteria) questions[criterion.id] = { type: "score", instructions: `Judge this one criterion: ${criterion.description}. Check that each adaptation finishes its final thought and list item; a complete provider response does not establish complete prose. Interpret it within the selected framework's form and required structure. Apply deliveryContract and deliveryPolicy from state over conflicting framework packaging suggestions. Apply authorExperiencePolicy when assessing the draft's framing against the brief; unsupported personal details must not be required or invented. A required landing or purposeful summary may reinforce the central idea when it serves that structure; unnecessary repetition still fails. Apply the public profile over generic framework CTA suggestions. Only evidence supports factual claims.${criterion.id === "grounded-in-sources" ? " Apply factualClaimPolicy and claimRegistrationPolicy from state: this criterion's source-mapping anchors concern externally checkable factual assertions. Independently inspect every platform; a wholly explicit proposal, opinion or description of the draft's own structure needs no fabricated source citations. Empty claimSources alone proves nothing. Embedded efficacy assertions remain factual even after 'I propose'." + authorGrounding : ""}`, criteria: rubricLevels(criterion) };
   questions.unsupported_claim = { type: "noul", instructions: "Apply factualClaimPolicy and claimRegistrationPolicy. Does any published platform or alternate hook contain an externally checkable factual assertion not actually supported by the supplied evidence under that registration policy? Explicit proposed advice alone does not assert efficacy or reported outcomes; a proposal prefix never exempts an embedded factual claim. Style examples and reader assumptions are never evidence." + authorGrounding };
   questions.private_intent = { type: "noul", instructions: "Does the draft expose private job-search intent, recruiting availability or confidential author motivation?" };
   questions.examples_as_facts = { type: "noul", instructions: "Does the draft present style-example facts or third-party experiences as the author's own facts or experiences?" };

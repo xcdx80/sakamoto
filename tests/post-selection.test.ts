@@ -12,7 +12,7 @@ test("catalog loads the complete versioned, schema-validated registered framewor
 });
 
 import { evaluateFrameworks, recommendFrameworks } from "../lib/post-production/selection";
-import type { ProductionBrief } from "../lib/post-production/types";
+import type { EvidenceSignal, ProductionBrief } from "../lib/post-production/types";
 const brief: ProductionBrief = {
   idea: "Explain when saved passages help", notes: "", audience: "AI engineers", goal: "trust", pillar: "education",
   platforms: ["x"], delivery: "single", sourceIds: ["evidence-a"],
@@ -109,4 +109,51 @@ test("strong essential evidence keeps a truthful insight available when partial 
   assert.ok(result.some(candidate => candidate.frameworkId === "single-paragraph-insight"));
   assert.ok(!result.some(candidate => candidate.frameworkId === "story-lesson"));
   assert.equal(result.length, 3);
+});
+
+test("a proposed companion evaluation retains an intent-supported form when research and cadence crowd the shortlist", () => {
+  const catalog = loadCatalog();
+  const companionBrief: ProductionBrief = { ...brief, idea: "How I would evaluate memory in an AI companion, comparing recall, appropriate use of context, and forgetting on request", pillar: "engineering", platforms: ["x", "linkedin"], delivery: "thread", sourceIds: [] };
+  // Positive signals from the captured companion stage-02 failure. Proposed
+  // checks establish intended form; the external findings remain external.
+  const signals: EvidenceSignal[] = [
+    { signal: "outcome_with_numbers", strength: 2, evidenceIds: ["WEB1"] },
+    { signal: "third_party_success", strength: 1, evidenceIds: ["WEB1"] },
+    { signal: "discrete_items", strength: 2, evidenceIds: ["AUTHOR_IDEA"] },
+    { signal: "named_framework", strength: 1, evidenceIds: ["WEB1"] },
+    { signal: "multiple_sources_same_topic", strength: 2, evidenceIds: ["WEB1", "WEB5", "E1"] },
+    { signal: "data_or_stats", strength: 2, evidenceIds: ["WEB1"] },
+    { signal: "single_sharp_idea", strength: 2, evidenceIds: ["AUTHOR_IDEA"] },
+    { signal: "open_question", strength: 1, evidenceIds: ["AUTHOR_IDEA"] },
+  ];
+  const history: ProductionHistory[] = [1, 2, 3].map(index => ({
+    id: `recent-proposal-${index}`, idea: "Another engineering idea", pillar: "engineering", frameworkId: index === 3 ? "listicle" : "single-paragraph-insight", family: index === 3 ? "teach" : "opinion", hookPatternId: "label-opener", platforms: ["x"], status: "published", plannedAt: null, createdAt: `2026-11-0${index}T12:00:00Z`,
+  }));
+  const { recommendations, rejected } = evaluateFrameworks(catalog, companionBrief, signals, history);
+  assert.ok(recommendations.some(candidate => candidate.frameworkId === "listicle"), "A proposed list must remain selectable when reported findings do not establish the author's requested evaluation.");
+  assert.equal(recommendations.some(candidate => candidate.frameworkId === "single-paragraph-insight"), false, "Cadence still chooses the less-repeated supported form.");
+  assert.equal(recommendations.length, 3);
+  for (const family of new Set(recommendations.map(candidate => candidate.family))) assert.ok(recommendations.filter(candidate => candidate.family === family).length <= 2);
+  assert.ok(recommendations.find(candidate => candidate.frameworkId === "listicle")!.reasons.some(reason => reason.includes("Recent production diversity penalty")));
+  assert.ok(rejected.find(candidate => candidate.frameworkId === "story-lesson")!.reasons.some(reason => reason.includes("personal_story")));
+  const withoutIntent = evaluateFrameworks(catalog, companionBrief, signals.map(signal => ({ ...signal, evidenceIds: signal.evidenceIds.map(id => id === "AUTHOR_IDEA" ? "saved-topic" : id) })), history);
+  assert.deepEqual(withoutIntent.recommendations.map(candidate => candidate.frameworkId), ["curation-thread", "case-study-long", "outcome-first"], "Source-backed signals alone retain the established research and cadence ranking.");
+  assert.deepEqual(evaluateFrameworks(catalog, companionBrief, [...signals].reverse(), [...history].reverse()), { recommendations, rejected });
+});
+
+test("retaining an intended form obeys tighter shortlist and family caps without establishing factual history", () => {
+  const catalog = loadCatalog();
+  const boundedCatalog = { ...catalog, selection: { ...catalog.selection, scoring: { ...catalog.selection.scoring, defaults: { ...catalog.selection.scoring.defaults, max_candidates: 2, max_per_family: 1 } } } };
+  const signals = catalog.signals.map(signal => ({ signal: signal.id, strength: 2 as const, evidenceIds: [signal.id === "process_steps" || signal.id === "named_framework" ? "AUTHOR_IDEA" : "saved-source"] }));
+  const bounded = recommendFrameworks(boundedCatalog, brief, signals, []);
+  assert.equal(bounded.length, 2);
+  assert.ok(bounded.some(candidate => ["how-to-step-by-step", "framework-thread", "what-how-why"].includes(candidate.frameworkId)));
+  assert.equal(new Set(bounded.map(candidate => candidate.family)).size, 2);
+  const intentOnly = evaluateFrameworks(catalog, brief, [
+    { signal: "discrete_items", strength: 2, evidenceIds: ["AUTHOR_IDEA"] },
+    { signal: "single_sharp_idea", strength: 2, evidenceIds: ["AUTHOR_IDEA"] },
+  ], []);
+  assert.ok(intentOnly.recommendations.some(candidate => candidate.frameworkId === "listicle"));
+  for (const frameworkId of ["story-lesson", "case-study-long", "outcome-first", "how-to-step-by-step"])
+    assert.match(intentOnly.rejected.find(candidate => candidate.frameworkId === frameworkId)!.reasons.join(" "), /Missing essential evidence signal/);
 });

@@ -208,7 +208,11 @@ test("independent author provenance preserves exact source quotes, factual cover
   await assert.rejects(reviewPost(context, content, "gpt-6-luna"), /match a cited claim/i);
   for (const support of [[], [{ ...proof, quote: "An invented source quotation." }], [{ ...proof, claim: "The test used 2 prompts" }], [{ ...proof, claimKind: "interpretation" as "fact" }]]) {
     configurePostProviders({ reviewPost: async () => result("author", support) });
-    await assert.rejects(reviewPost(context, content, "author"), /exact source quote|factual|fact-kind/i);
+    if (!support.length) {
+      const incomplete = await reviewPost(context, content, "author");
+      assert.equal(incomplete.status, "blocked");
+      assert.ok(incomplete.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block"));
+    } else await assert.rejects(reviewPost(context, content, "author"), /exact source quote|factual|fact-kind/i);
   }
   configurePostProviders({ reviewPost: async () => ({ ...result("author"), factualAssessment: [{ platform: "x", hasFactualClaims: false, factualClaims: [], rationale: "The reviewer incorrectly calls this documented numeric result and reported quotation a mere proposal." }] }) });
   await assert.rejects(reviewPost(context, content, "author"), /factual|fact-kind/i);
@@ -302,7 +306,7 @@ test("writer whitespace reconciliation preserves all literal variants and reject
   await assert.rejects(writePost({ ...context, brief: { ...context.brief, platforms: ["x"], delivery: "thread" } }, framework), /actual wording|whitespace differences/i);
 });
 
-async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], options: { fact?: string; hook?: string; writerModel?: string; sourceExcerpt?: string; sourceQuote?: string; intentKind?: "author_idea" | "author_note"; delivery?: "single" | "long" } = {}) {
+async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], options: { fact?: string; hook?: string; writerModel?: string; sourceExcerpt?: string; sourceQuote?: string; intentKind?: "author_idea" | "author_note"; delivery?: "single" | "long"; groundingScore?: number; additionalFact?: string } = {}) {
   const catalog = loadCatalog(), entry = summarizeCatalog(catalog).frameworks.find(item => item.id === "single-paragraph-insight")!;
   const sourceId = options.intentKind ? "AUTHOR_IDEA" : "source-finding";
   const content: DraftContent = { variants: [{ platform: "x", delivery: options.delivery ?? "single", posts: [text] }], hooks: options.hook ? [options.hook] : [], claimSources: options.fact ? [{ claim: options.fact, evidenceIds: [sourceId] }] : [] };
@@ -313,10 +317,10 @@ async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], op
     framework: { frameworkId: entry.id, name: entry.name, family: entry.family, score: 1, reasons: [], outline: entry.outline, hookPatternIds: entry.hookPatternIds, warnings: [] },
   };
   configurePostProviders({ reviewPost: async (_ctx, _draft, writerModel) => ({
-    status: "passed", issues: [], writerModel, reviewerModel: "gpt-6-sol", nonfactualSupport: nonfactualSupport as NonfactualSupport[],
-    factualAssessment: [{ platform: "x", hasFactualClaims: Boolean(options.fact), rationale: options.fact ? "The published observation is factual; the separately proposed future protocol does not assert observed efficacy." : "The wording explicitly proposes a future protocol or newly assigned label without reporting use or established efficacy.", factualClaims: options.fact ? [{ postIndex: 0, claim: options.fact }] : [] }],
+    status: options.groundingScore ? "changes_requested" : "passed", issues: [], writerModel, reviewerModel: "gpt-6-sol", nonfactualSupport: nonfactualSupport as NonfactualSupport[],
+    factualAssessment: [{ platform: "x", hasFactualClaims: Boolean(options.fact), rationale: options.fact ? "The published observation is factual; the separately proposed future protocol does not assert observed efficacy." : "The wording explicitly proposes a future protocol or newly assigned label without reporting use or established efficacy.", factualClaims: options.fact ? [{ postIndex: 0, claim: options.fact }, ...(options.additionalFact ? [{ postIndex: 0, claim: options.additionalFact }] : [])] : [] }],
     criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === entry.id)!.rubric.criteria].map(criterion => ({
-      id: criterion.id, score: 5, reason: "The proposed protocol is explicitly future-facing and any separately reported observation has exact source support.", evidenceIds: options.fact ? [sourceId] : [],
+      id: criterion.id, score: criterion.id === "grounded-in-sources" ? options.groundingScore ?? 5 : 5, reason: "The proposed protocol is explicitly future-facing and any separately reported observation has exact source support.", evidenceIds: options.fact ? [sourceId] : [],
       support: criterion.id === "grounded-in-sources" && options.fact ? [{ claim: options.fact, claimKind: "fact", evidenceId: sourceId, quote: options.sourceQuote ?? options.fact, reason: "The supplied evaluation report explicitly documents this separately identified observation." }] : [],
     })),
   }) });
@@ -445,18 +449,25 @@ test("independent review corrects a registered claim's known-source mapping and 
   assert.equal(validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review).some(issue => issue.code === "unsupported_number"), false);
 });
 
-test("nonfactual proof rejects unknown, ambiguous, non-exact and contradictory passages", async () => {
+test("invalid optional nonfactual annotations cannot abort review or waive numeric guards", async () => {
   const text = "I would run a 3-day test.";
   const proof = { platform: "x", postIndex: 0, quote: text, kind: "proposal", reason: "The passage proposes a future test duration without reporting a completed test or claiming established efficacy." };
   for (const entry of [
     { ...proof, platform: "linkedin" }, { ...proof, platform: null }, { ...proof, postIndex: 1 },
     { ...proof, quote: "I would run a 4-day test." }, { ...proof, quote: "" },
     { ...proof, reason: "Looks good." }, { ...proof, kind: "fact" },
-  ]) await assert.rejects(reviewProposedSpan(text, [entry]), /nonfactual|exact draft span/i);
-  await assert.rejects(reviewProposedSpan(text, [proof, proof]), /duplicate nonfactual/i);
-  await assert.rejects(reviewProposedSpan(text + " " + text, [proof]), /unique exact draft span/i);
+  ]) {
+    const result = await reviewProposedSpan(text, [entry]);
+    assert.deepEqual(result.review.nonfactualSupport, []);
+    assert.ok(result.issues.some(issue => issue.code === "unsupported_number"));
+  }
+  assert.equal((await reviewProposedSpan(text, [proof, proof])).review.nonfactualSupport?.length, 1);
+  assert.ok((await reviewProposedSpan(text + " " + text, [proof])).issues.some(issue => issue.code === "unsupported_number"));
   const fact = "The method improves mastery by 90%.";
-  await assert.rejects(reviewProposedSpan(fact, [{ ...proof, quote: fact, reason: "The annotation incorrectly tries to call the independently identified efficacy assertion a nonfactual proposal." }], { fact }), /overlapping factual assertion/i);
+  const factual = await reviewProposedSpan(fact, [{ ...proof, quote: fact, reason: "The annotation incorrectly tries to call the independently identified efficacy assertion a nonfactual proposal." }], { fact });
+  assert.deepEqual(factual.review.nonfactualSupport, []);
+  assert.equal(factual.review.factualAssessment?.[0].hasFactualClaims, true);
+  assert.ok(factual.review.criteria.find(item => item.id === "grounded-in-sources")?.support?.some(item => item.claimKind === "fact"));
 });
 
 test("nonfactual proof excuses only its exact occurrence and leaves reported numbers, quotations and promotion guarded", async () => {
@@ -619,4 +630,26 @@ test("an exact opening-line hook inherits clipped reviewed factual and quotation
     const issues = validateDraft(catalog, { ...content, hooks: [hook] }, evidence, defaultProfile(), "single-paragraph-insight", review);
     assert.ok(issues.some(issue => issue.code === "unsupported_number" && issue.platform === undefined));
   }
+});
+
+
+test("a failing factual review retains its failure without aborting on unusable diagnostic source quotes", async () => {
+  const fact = "The reported test lasted 3 days.";
+  const result = await reviewProposedSpan(fact, [], { fact, sourceExcerpt: "The report did not publish a measured duration.", sourceQuote: "Test report title", groundingScore: 1 });
+  assert.equal(result.review.status, "changes_requested");
+  const grounding = result.review.criteria.find(criterion => criterion.id === "grounded-in-sources")!;
+  assert.equal(grounding.score, 1);
+  assert.deepEqual(grounding.support, []);
+  assert.equal(result.review.factualAssessment?.[0].hasFactualClaims, true);
+  assert.ok(result.issues.some(issue => issue.code === "unsupported_number"));
+  await assert.rejects(reviewProposedSpan(fact, [], { fact, sourceExcerpt: "The report did not publish a measured duration.", sourceQuote: "Test report title" }), /exact source quote/i);
+});
+
+
+test("an independently detected unregistered generated assertion becomes a blocking revision issue", async () => {
+  const fact = "Agents implement the change.", additionalFact = "Engineers decide what ships.";
+  const result = await reviewProposedSpan(fact + " " + additionalFact, [], { fact, additionalFact, writerModel: "gpt-6-luna" });
+  assert.equal(result.review.status, "blocked");
+  assert.ok(result.review.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block" && issue.platform === "x" && issue.postIndex === 0));
+  assert.equal(result.review.factualAssessment?.[0].factualClaims.length, 2);
 });

@@ -56,6 +56,15 @@ export function validateDraft(
     const at = { platform: variant?.platform, postIndex };
     const maxCharacters = variant ? postCharacterLimit(variant.platform, variant.delivery) : 280;
     if (variant && text.length > maxCharacters) issues.push({ code: "platform_length", severity: "block", message: `Draft exceeds the ${maxCharacters}-character ${variant.platform} ${variant.delivery} delivery limit.`, ...at });
+    // A short adaptation can stop inside its last list item even when the
+    // provider reports completion. Flag inconsistent near-limit list endings,
+    // while allowing ordinary headings and lists intentionally using fragments.
+    if (variant && text.length >= maxCharacters - 40) {
+      const items = [...text.matchAll(/^\s*\d+[.)]\s+(.+)$/gm)].map(match => match[1].trim());
+      const endsSentence = (item: string) => /[.!?]["'”’)*_]*$/.test(item);
+      if (items.length >= 2 && text.trim().endsWith(items.at(-1)!) && items.slice(0, -1).every(endsSentence) && !endsSentence(items.at(-1)!))
+        issues.push({ code: "unfinished_list_item", severity: "revise", message: "The final list item appears unfinished at the delivery limit. Rewrite the adaptation with complete items within the limit.", ...at });
+    }
     const listHeading = verifiedListHeading(text) || (!variant && content.variants.some(v => v.posts.some(post =>
       verifiedListHeading(post) && normalized(post.split("\n")[0]) === normalized(text))) ? text.split("\n")[0] : undefined);
     // Locate every exception in the original text. Removing characters first

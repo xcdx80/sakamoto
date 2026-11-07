@@ -99,3 +99,15 @@ test("paragraph limits are identical with Markdown emphasis and ordinary numbere
   const numberedProse: DraftContent = { variants: [{ platform: "x", delivery: "long", posts: ["1. The service retries when its request fails. It logs the retry. It preserves the draft. It checks the budget. It returns a result."] }], hooks: [], claimSources: [] };
   assert.ok(validateDraft(catalog, numberedProse, evidence, defaultProfile(), "how-to-step-by-step").some(issue => issue.code === "readability"));
 });
+
+test("a near-limit numbered adaptation with a uniquely unfinished final item requests revision", () => {
+  const clipped = "5 reads on AI software factories for engineering leaders:\n\n1. McKinsey: economics beyond faster coding.\n2. LaunchDarkly: a repeatable factory model.\n3. YourStory: review, testing and deployment bottlenecks.\n4. The New Stack: why delivery needs a sensor.\n5. Express Computer: agent";
+  assert.ok(validateDraft(catalog, content(clipped), evidence, defaultProfile(), "curation-thread").some(issue => issue.code === "unfinished_list_item" && issue.severity === "revise"));
+  for (const text of [
+    "A short list:\n1. Specifications\n2. Tests\n3. Review",
+    clipped.replace("5. Express Computer: agent", "5. Express Computer: agents."),
+    "Two reads:\n1. A factory model.\n2. Agent governance",
+    "A".repeat(275),
+    "Two checks for the factory:\n\n1. Define acceptance before implementation.\n\n2. Review the evidence\nEvery change needs a reviewer who can inspect its checks, understand its intended effect, and decide whether the evidence justifies accepting the change before release.",
+  ]) assert.equal(validateDraft(catalog, content(text), evidence, defaultProfile(), "curation-thread").some(issue => issue.code === "unfinished_list_item"), false, text);
+});
