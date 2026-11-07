@@ -66,6 +66,22 @@ test("saved article passages are searchable with exact source addresses before p
   assert.equal(result.results[0].originalUrl, "https://example.com/discovery");
 });
 
+test("passage evidence search does not reuse unchanged titles or tags after its source body changes", async () => {
+  const { searchEvidence } = await import("../lib/retrieval");
+  const owner = "current-body-reader";
+  await shelveForUser(owner, { id: "current-body", title: "Cobalt source", tags: ["alignment"] }, {
+    id: "current-body", title: "Cobalt source", blocks: [{ id: "body", type: "p", runs: [{ text: "Supernova alignment uses a reference chart." }] }],
+  });
+  await shelveForUser(owner, { id: "current-body", title: "Cobalt source", tags: ["alignment"] }, {
+    id: "current-body", title: "Cobalt source", blocks: [{ id: "body", type: "p", runs: [{ text: "Replacement evidence without the old claim." }] }],
+  });
+  for (const query of ["cobalt", "Supernova alignment"])
+    assert.deepEqual((await searchEvidence(owner, { query, semantic: false })).results, [], query);
+  const current = await searchEvidence(owner, { query: "Replacement evidence", semantic: false });
+  assert.equal(current.results[0].sourceRevision, 2);
+  assert.equal(current.results[0].excerpt, "Replacement evidence without the old claim.");
+});
+
 test("multiword prefix search ranks distinct term coverage above repetition and includes current metadata matches", async () => {
   const { searchEvidence } = await import("../lib/retrieval");
   const owner = "prefix-ranking-reader";
@@ -83,7 +99,7 @@ test("multiword prefix search ranks distinct term coverage above repetition and 
       id: "unrelated-" + index, type: "p", runs: [{ text: "Orchids bloom beside the river under the winter sun." }],
     })),
   });
-  const result = await searchEvidence(owner, { query: "autonom evalu deploy", semantic: false, limit: 8 });
+  const result = await searchEvidence(owner, { query: "autonom evalu deploy", semantic: false, limit: 8 }, undefined, "discovery");
   assert.deepEqual(result.results.map(item => item.itemId), ["all-terms", "two-terms", "one-term"]);
   assert.ok(result.results.every(item => item.lexical && !item.semantic && item.sourceRevision === 1));
   assert.equal(result.semanticStatus, "disabled");

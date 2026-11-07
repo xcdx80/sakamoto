@@ -32,7 +32,7 @@ export async function collectProductionEvidence(owner: string, brief: Production
     }
   }
   {
-    const found = await searchEvidence(owner, { query: boundedText(brief.idea, 1000), semantic: false, limit: 8 }, signal);
+    const found = await searchEvidence(owner, { query: boundedText(brief.idea, 1000), semantic: false, limit: 8 }, signal, "discovery");
     const dates = found.results.length ? await db().query(
       "select id,source_revision,doc->>'published' as published from articles where user_id=$1 and id=any($2::text[]) and not deleted",
       [owner, [...new Set(found.results.map(passage => passage.itemId))]],

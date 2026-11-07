@@ -47,6 +47,20 @@ test("author notes still retrieve relevant supporting sources automatically with
   assert.match(evidence.find(e => e.itemId === "unselected-policy")!.excerpt, /unrelated company's/);
 });
 
+test("automatic post research explicitly discovers metadata and prefix matches without changing passage-evidence defaults", async () => {
+  const owner = "metadata-discovery-owner";
+  await shelveForUser(owner, { id: "factory-model", title: "Autonomous factory evaluation" }, {
+    id: "factory-model", title: "Autonomous factory evaluation",
+    blocks: [{ id: "body", type: "p", runs: [{ text: "Engineers retain the release decision while agents execute the checks." }] }],
+  });
+  const evidence = await collectProductionEvidence(owner, { ...brief, idea: "autonom factory evalu", sourceIds: [], notes: "" });
+  const candidate = evidence.find(source => source.itemId === "factory-model");
+  assert.equal(candidate?.kind, "saved_source");
+  assert.equal(candidate?.excerpt, "Engineers retain the release decision while agents execute the checks.");
+  assert.equal(candidate?.address?.blockId, "body");
+  assert.ok(evidence.some(source => source.kind === "author_idea"));
+});
+
 test("a proposed protocol retains its intended steps alongside research without becoming author experience", async () => {
   const idea = 'I would run a 3-day test of a chat companion’s memory. Day 1 would check recall; day 2 would check appropriate application; day 3 would check forgetting on request. I would call the checks "recall", "application", and "forgetting". This is a proposed protocol, not an experiment I ran or a claim of improvement.';
   const evidence = await collectProductionEvidence("write-context-owner", { ...brief, idea, notes: "" });
