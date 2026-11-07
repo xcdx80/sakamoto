@@ -59,8 +59,8 @@ export async function preserveOfflineSource(
     });
   try {
     if (original.pendingSource)
-      bindPendingSource(id, original.pendingSource, copy.id, 1);
-    else if (!checkpointLibrary()) throw new OfflineSourceConflictError();
+      await bindPendingSource(id, original.pendingSource, copy.id, 1);
+    else if (!(await checkpointLibrary())) throw new OfflineSourceConflictError();
     if (!current()) throw new OfflineSourceConflictError();
   } catch {
     if (current()) useStore.getState().removeFromLibrary(copy.id);

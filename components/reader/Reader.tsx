@@ -4,8 +4,9 @@ import { annotationMatchesSource, sameSourceRevision, sourceAddress, revisionUrl
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
+import { readerMarkdownBlocks } from "@/lib/reader-markdown";
 import { blockEl, selectBlock, spanIn } from "@/lib/anchor";
-import { displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
+import { contentTypeOf, displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
 import { ARTICLE_QUESTIONS } from "@/lib/actions";
 import { SAMPLE_QUESTIONS } from "@/lib/samples";
 import { fetchBrief } from "@/lib/ask";
@@ -28,9 +29,10 @@ import { Notebook } from "./Notebook";
 import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
 import { LinkedDocuments } from "./LinkedDocuments";
-import { LinkedDiscoveries } from "./LinkedDiscoveries";
+import { ReadingConnections } from "./ReadingConnections";
 import { TopBar } from "./TopBar";
 import { ThreadReading } from "./ThreadReading";
+import { SourceText } from "./SourceText";
 
 export function Reader({ id, initial }: { id: string; initial: Article | null }) {
   const [article, setArticle] = useState<Article | null>(initial);
@@ -112,6 +114,7 @@ const GUTTER_MID = 52;
 function ReaderInner({ article }: { article: Article }) {
   const ix = useMemo(() => indexArticle(article), [article]);
   const articleId = article.id;
+  const markdown = useMemo(() => readerMarkdownBlocks(article.blocks), [article.blocks]);
   const [articleEl, setArticleEl] = useState<HTMLDivElement | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
   const [peek, setPeekState] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -489,6 +492,7 @@ function ReaderInner({ article }: { article: Article }) {
   const paraCount = ix.byNumber.size;
   // A short line above the title: where this came from.
   const kicker = article.source ? article.source.split(/,|\(/)[0].trim() : article.origin === "paste" ? "Pasted text" : undefined;
+  const readingTitle = article.post ? `Post by ${article.post.author.name}` : article.title;
 
   return (
     <ReaderContext.Provider value={api}>
@@ -509,15 +513,15 @@ function ReaderInner({ article }: { article: Article }) {
             <div className="rg-numgap" aria-hidden />
 
             <div className="min-w-0">
-              <header className="mb-14">
+              <header className="reader-source-header mb-7">
                 {kicker && (
-                  <p className="focus-hide rise mb-6 flex items-center gap-2 text-[13px] font-medium text-ink-3">
+                  <p className="focus-hide rise mb-4 flex items-center gap-2 text-[13px] font-medium text-ink-3">
                     <span aria-hidden className="size-1.5 rounded-full bg-[var(--rubric)]" />
                     <span className="truncate">{kicker}</span>
                   </p>
                 )}
-                <h1 className={`rise font-serif font-[380] tracking-[-0.022em] text-ink text-balance [font-variation-settings:'opsz'_72] ${titleClass(article.title)}`} style={{ animationDelay: "40ms" }}>
-                  {article.title}
+                <h1 className={`rise font-serif font-[380] tracking-[-0.022em] text-ink text-balance [font-variation-settings:'opsz'_72] ${titleClass(readingTitle)}`} style={{ animationDelay: "40ms" }}>
+                  {readingTitle}
                 </h1>
                 {article.dek && (
                   <p className="focus-hide rise mt-5 max-w-[38rem] text-[clamp(1.05rem,1.7vw,1.19rem)] leading-[1.55] text-ink-2 text-pretty" style={{ animationDelay: "90ms" }}>
@@ -547,21 +551,19 @@ function ReaderInner({ article }: { article: Article }) {
                     </a>
                   )}
                 </div>
-                <LinkedDiscoveries key={article.id} itemId={article.id} />
-                <LinkedDocuments key={"links-"+article.id} itemId={article.id} />
-                {article.post && <p className="focus-hide mt-4 text-[13px] text-ink-3">Completeness reported by agent: {article.post.completeness.status}.{article.post.completeness.reason ? ` ${article.post.completeness.reason}` : ""}</p>}
-                <CarefulRead article={article} />
                 <div className="focus-hide rise" style={{ animationDelay: "200ms" }}>
-                  <Brief />
+                  <Brief compact />
                 </div>
               </header>
 
+              <SourceText contentType={article.post ? "post" : contentTypeOf(article)} completeness={article.post?.completeness}>
               <ThreadReading itemId={article.id} sourceRevision={article.sourceRevision} enabled={Boolean(article.post)}>
               <div ref={setArticleEl} className="prose-read" onClick={onTextClick} onMouseOver={onTextOver} onMouseLeave={() => setUI({ hoverGloss: null })}>
                 {article.blocks.map((b) => (
                   <Block
                     key={b.id}
                     block={b}
+                    markdown={markdown.get(b.id)}
                     n={ix.numbers.get(b.id)}
                     first={b.id === firstPara}
                     marks={marksByBlock.get(b.id) ?? EMPTY}
@@ -577,6 +579,11 @@ function ReaderInner({ article }: { article: Article }) {
               </div>
 
               </ThreadReading>
+              </SourceText>
+
+              <ReadingConnections key={article.id} itemId={article.id} />
+              <LinkedDocuments key={"links-"+article.id} itemId={article.id} />
+              <CarefulRead article={article} />
 
               <footer className="focus-hide mt-16 border-t border-rule pt-10 text-[13.5px] leading-relaxed text-ink-3">
                 <p aria-hidden className="mb-8 text-center font-serif text-[26px] leading-none text-[var(--rubric)]">

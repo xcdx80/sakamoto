@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { SignInButton } from "@clerk/nextjs";
+import { ArrowUpRight, BookOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { askSavedLibrary } from "@/lib/library-answer-client";
 import { answerRetrievalNotice } from "@/lib/library-answer-format";
@@ -11,9 +13,11 @@ import type {
 export function LibraryAnswer({
   owner,
   filters,
+  presentation = "library",
 }: {
-  owner: string;
+  owner: string | null;
   filters: Omit<AnswerOptions, "query">;
+  presentation?: "library" | "home";
 }) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<Answer | null>(null);
@@ -29,6 +33,7 @@ export function LibraryAnswer({
     return () => controller.current?.abort();
   }, [owner, identity]);
   async function run() {
+    if (!owner || busy || !question.trim()) return;
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
@@ -52,16 +57,19 @@ export function LibraryAnswer({
   }
   return (
     <section
-      className="my-5 rounded-xl border border-ink/15 p-5"
+      className={presentation === "home" ? "home-answer" : "library-answer-panel"}
       aria-label="Ask your library"
     >
-      <h2 className="font-medium">Ask your library</h2>
-      <p className="mt-1 text-sm text-ink-3">
+      <div className={presentation === "home" ? undefined : "library-answer-heading"}>
+        {presentation === "library" && <span className="library-answer-mark"><BookOpen size={20} strokeWidth={1.6} aria-hidden /></span>}
+        <h2 className={presentation === "home" ? "sr-only" : undefined}>Ask your library</h2>
+      </div>
+      {presentation === "library" && <p className="library-answer-description">
         Answers from your saved posts, articles and documents, using the
         selected content type, topic and tags.
-      </p>
+      </p>}
       <form
-        className="mt-3 flex flex-wrap items-end gap-3"
+        className={presentation === "home" ? "home-question-form" : "library-question-form"}
         onSubmit={(event) => {
           event.preventDefault();
           void run();
@@ -70,10 +78,10 @@ export function LibraryAnswer({
         <label className="min-w-0 flex-1">
           <span className="sr-only">Library question</span>
           <textarea
-            className="w-full rounded-lg border border-ink/20 bg-transparent p-3"
-            rows={2}
+            className={presentation === "home" ? "w-full rounded-lg border border-ink/20 bg-transparent p-3" : "library-question-input"}
+            rows={presentation === "home" ? 3 : 2}
             maxLength={1000}
-            placeholder="What have I saved about…?"
+            placeholder={presentation === "home" ? "Ask anything about what you’ve saved…" : "What have I saved about…?"}
             value={question}
             onChange={(event) => {
               controller.current?.abort();
@@ -84,21 +92,23 @@ export function LibraryAnswer({
             }}
           />
         </label>
-        <button
+        {owner ? <button
           type="submit"
           disabled={busy || !question.trim()}
-          className="rounded-lg border border-ink/25 px-4 py-3 disabled:opacity-50"
+          className={presentation === "home" ? "rounded-lg border border-ink/25 px-4 py-3 disabled:opacity-50" : "library-question-submit"}
         >
-          {busy ? "Finding a supported answer…" : "Ask saved sources"}
-        </button>
+          {busy ? "Finding a supported answer…" : presentation === "home" ? "Ask your knowledge base" : "Ask saved sources"}
+          {presentation === "library" && <ArrowUpRight size={16} aria-hidden />}
+        </button> : <SignInButton mode="modal"><button type="button" className={presentation === "home" ? "rounded-lg border border-ink/25 px-4 py-3" : "library-question-submit"}>Sign in to ask</button></SignInButton>}
       </form>
+      {!owner && <p className="mt-3 text-sm text-ink-3">Sign in to ask questions across your private library.</p>}
       {error && (
-        <p role="alert" className="mt-3">
+        <p role="alert" className="library-answer-error mt-3">
           {error}
         </p>
       )}
       {result && (
-        <div className="mt-4" aria-live="polite">
+        <div className="library-answer-result mt-4" aria-live="polite">
           <p role="status" className="text-sm text-ink-3">
             {result.status === "partial"
               ? "Partial answer. "
@@ -110,7 +120,7 @@ export function LibraryAnswer({
           <p className="mt-1 text-xs text-ink-3">
             {answerRetrievalNotice(result)}
           </p>
-          <div className="mt-3 space-y-3">
+          <div className="library-answer-claims mt-3 space-y-3">
             {result.claims.map((claim, index) => (
               <p key={index} className="whitespace-pre-wrap">
                 {claim.text}{" "}
@@ -118,7 +128,7 @@ export function LibraryAnswer({
                   const source = result.citations.find((c) => c.id === id)!;
                   return (
                     <Link
-                      className="mr-2 underline"
+                      className="library-answer-citation mr-2 underline"
                       key={id}
                       href={source.readUrl}
                       aria-label={`Open source ${id}: ${source.title}`}
@@ -138,13 +148,13 @@ export function LibraryAnswer({
             </ul>
           )}
           {result.citations.length > 0 && (
-            <details className="mt-4" open>
+            <details className="library-answer-sources mt-4" open>
               <summary className="cursor-pointer font-medium">
                 Supporting saved passages
               </summary>
               <ol className="mt-3 space-y-4">
                 {result.citations.map((source) => (
-                  <li key={source.id}>
+                  <li key={source.id} className="library-answer-source">
                     <Link className="underline" href={source.readUrl}>
                       [{source.id}] {source.title}
                     </Link>

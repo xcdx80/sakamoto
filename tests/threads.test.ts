@@ -190,3 +190,25 @@ test('thread responses bound serialized UTF8 bytes and retain whole selected sou
   assert.equal(view.ordering,'uncertain');
  }
 });
+
+test('unknown source completeness is a notice, not a missing thread post', async () => {
+ const a=await account();
+ const [saved]=await a.save([post('11001',{threadPosts:[post('11002',{replyToPostId:'11001',completeness:{status:'unknown',reason:'Exact archived text; coverage not independently established.'}})]})]);
+ const view=await (await a.read(saved.itemId)).json();
+ assert.equal(view.posts.length,2);
+ assert.deepEqual(view.gaps,[]);
+ assert.equal(view.sourceNotices.length,1);
+ assert.equal(view.sourceNotices[0].postId,'11002');
+});
+
+test('missing-post observations survive reimport without rewriting the bookmarked source', async () => {
+ const a=await account();const [first]=await a.save([post('12001')]);
+ const [retry]=await a.save([post('12001',{threadCoverage:{status:'partial',observedAt:'2026-10-18T11:00:00Z',missingPostIds:['12002']}})]);
+ assert.equal(retry.itemId,first.itemId);
+ const partial=await (await a.read(first.itemId)).json();
+ assert.ok(partial.gaps.some((g:any)=>g.kind==='missing'&&g.postId==='12002'));
+ await a.save([post('12001',{threadCoverage:{status:'exhausted',observedAt:'2026-10-18T12:00:00Z',missingPostIds:[]}})]);
+ await a.save([post('12001',{threadCoverage:{status:'partial',observedAt:'2026-10-18T11:00:00Z',missingPostIds:['12002']}})]);
+ const recovered=await (await a.read(first.itemId)).json();assert.deepEqual(recovered.gaps,[]);
+ assert.equal(recovered.posts[0].sourceRevision,1);
+});

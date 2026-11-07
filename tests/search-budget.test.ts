@@ -154,6 +154,21 @@ test("malformed Exa billing cannot turn search results into a refundable reserva
   }
 });
 
+test("a denied forced-search reservation releases Luna before either transport dispatches", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("No provider may dispatch."); };
+  process.env.SAKAMOTO_EXA_MAX_USD = "2";
+  try {
+    const before = await budget();
+    const response = await answer();
+    assert.match(await response.text(), /"type":"error"/);
+    const after = await budget();
+    assert.equal(calls, 0);
+    assert.equal(after.reservedUsd, before.reservedUsd);
+    assert.equal(after.attempts.find((a: any) => a.model === "gpt-6-luna").status, "released");
+  } finally { process.env.SAKAMOTO_EXA_MAX_USD = "0.05"; }
+});
+
 test("a credible over-bound operator receipt durably halts authorization instead of only returning a paused message", async () => {
   const { reconcilePaidWork } = await import("../lib/paid-work");
   globalThis.fetch = async () =>

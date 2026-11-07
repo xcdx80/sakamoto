@@ -1,4 +1,5 @@
 /** Structured source intake. The authenticated caller supplies the owner, never the payload. */
+import { threadCoverageOf } from "./thread-coverage";
 import { createHash } from "node:crypto";
 import { wordCount, type Article } from "./article";
 import { db } from "./db";
@@ -55,9 +56,10 @@ function webUrl(v: unknown): string {
 }
 function sourceOf(raw: unknown, via: string, context = false): PostSource {
   const p = object(raw);
-  only(p, context ? [...fields, "contextPosts", "threadPosts"] : fields);
+  only(p, context ? [...fields, "contextPosts", "threadPosts", "threadCoverage"] : fields);
   if (p.contextPosts !== undefined && (!Array.isArray(p.contextPosts) || p.contextPosts.length > 8)) throw new Error("Send at most 8 parent or quote context posts with a bookmark.");
   if (p.threadPosts !== undefined && (!Array.isArray(p.threadPosts) || p.threadPosts.length > 8)) throw new Error("Send at most 8 connected author-thread descendants with a bookmark.");
+  if (context) threadCoverageOf(p.threadCoverage);
   const id = postId(p.postId), url = webUrl(p.url);
   if (xPostIdentity(url)?.postId !== id) throw new Error("Post URL must identify the supplied X post ID.");
   const author = object(p.author);
@@ -86,7 +88,7 @@ const rejected = (raw: unknown, error: unknown): BookmarkReceipt => ({ receiptId
 async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context"): Promise<BookmarkReceipt> {
   // A post has no inferred document title: every supplied character belongs to its body.
   const blocks: Article["blocks"] = source.fullText.split(/\n\s*\n/).filter((text) => text.trim()).map((text, i) => ({ id: `b${i + 1}`, type: "p", runs: [{ text }] }));
-  const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? source.fullText.trim().slice(0, 100), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
+  const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? Array.from(source.fullText.trim()).slice(0, 100).join(""), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
   const processing: ProcessingState = { classification: "pending", indexing: "pending" };
   const item = { id: a.id, title: a.title, author: a.author, source: "X", sourceUrl: a.sourceUrl, origin: "paste", contentType: "post", words: wordCount(a), addedAt: Date.now(), addedBy: "agent", addedVia: source.provenance.via, processing, postId: source.postId };
   const rows = await db().query("select intake_bookmark($1,$2,$3,$4::jsonb,$5::jsonb,$6) as receipt", [owner, source.postId, source.url, JSON.stringify(item), JSON.stringify(a), role]);
@@ -140,6 +142,9 @@ export async function importBookmarks(owner: string, args: Record<string, unknow
       const source = sourceOf(raw, via, true);
       const receipt = await persistSource(owner, source, "bookmark");
       const threadInputs = object(raw).threadPosts as unknown[] | undefined;
+      const coverage = threadCoverageOf(object(raw).threadCoverage);
+      if (coverage && receipt.status !== 'removed') await db().query(`update post_sources set thread_coverage=$3::jsonb
+        where user_id=$1 and post_id=$2 and (thread_coverage is null or (thread_coverage->>'observedAt')::timestamptz < $4::timestamptz)`,[owner,source.postId,JSON.stringify(coverage),coverage.observedAt]);
       const thread = threadInputs?.length ? await saveThreadPosts(owner,source,threadInputs,via,receipt.status === "removed") : null;
       if (thread) receipt.threadResults = thread.receipts;
       const contexts = object(raw).contextPosts as unknown[] | undefined;

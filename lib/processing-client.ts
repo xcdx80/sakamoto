@@ -4,13 +4,16 @@ import { useStore } from "./store";
 import { retrySync } from "./sync";
 import type { ProcessingJob } from "./processing";
 export type ProcessingStatus = {
+  summary?: {pending:number;ready:number;running?:number;complete:number;attention:number};
+  worker?: {active:boolean;lastHeartbeatAt:string|null};
+  processed?:number;
   jobs: ProcessingJob[];
   next: string | null;
   description: string;
 };
 /** Owner binding and network I/O stay out of the rendering component. */
 export async function receivedProcessing(
-  action?: { retryJobId?: string },
+  action?: { retryJobId?: string; limit?: number },
   after?: string,
   sourceId?: string,
 ): Promise<ProcessingStatus> {
@@ -28,7 +31,7 @@ export async function receivedProcessing(
         "X-Sakamoto-Owner": owner,
         "Content-Type": "application/json",
       },
-      ...(action ? { body: JSON.stringify(action) } : {}),
+      ...(action ? { body: JSON.stringify({limit:48,...action}) } : {}),
     },
   );
   const result = await response.json();

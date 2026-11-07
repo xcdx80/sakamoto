@@ -1,6 +1,5 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TopBar } from "@/components/ui/TopBar";
@@ -12,37 +11,29 @@ import { SAMPLES } from "@/lib/samples";
 import { applySettings } from "@/lib/settings";
 import { useStore } from "@/lib/store";
 import { Hero } from "./Hero";
-import { HomeBelow } from "./HomeBelow";
-import { ImportBar, type Busy } from "./ImportBar";
-import { PasteSheet } from "./PasteSheet";
+import type { Busy } from "./ImportBar";
 import { LibraryLine, type Saved } from "./LibraryLine";
 import { ShelfSheet, type ShelfItem } from "./ShelfSheet";
+import { LibraryAnswer } from "@/components/library/LibraryAnswer";
 
-/** One screen: a headline that shows what it does, a place to paste, and your shelf. */
-export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boolean }) {
+/** Questions lead; manual imports and existing share links remain available. */
+export function Landing() {
   const router = useRouter();
-  // Known on the server at load, so a signed-in reader never sees the demo flash; then live, for a sign-in from this page.
-  const { isLoaded, isSignedIn } = useAuth();
-  const signedIn = isLoaded ? Boolean(isSignedIn) : signedInAtLoad;
   const hydrate = useStore((s) => s.hydrate);
   const hydrated = useStore((s) => s.hydrated);
   const library = useStore((s) => s.library);
+  const account = useStore((s) => s.scope);
   const progress = useStore((s) => s.progress);
   const glosses = useStore((s) => s.glosses);
   const removeFromLibrary = useStore((s) => s.removeFromLibrary);
   const shelve = useStore((s) => s.shelve);
   const { hiddenSamples } = useLibraryPrefs();
 
-  const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
-  const [errorNeedsKey, setErrorNeedsKey] = useState(false);
-  const [pasteOpen, setPasteOpen] = useState(false);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [dragging, setDragging] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
   useEffect(() => {
@@ -86,7 +77,6 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
       const r = await importFromUrl(raw, (p, label) => setBusy({ label: label ?? `Reading ${host}`, pct: p }));
       if (!r.ok) {
         setError(r.error);
-        setErrorNeedsKey(Boolean(r.needKey));
         setBusy(null);
         return;
       }
@@ -94,7 +84,6 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
       const err = await keep(r.article, r.file);
       setBusy(null);
       if (err) return setError(err);
-      setUrl("");
       setSaved({ id: r.article.id, title: r.article.title });
     },
     [finish]
@@ -114,21 +103,18 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
     if (!looksLikeUrl(raw)) return setError("That does not look like a link.");
     const known = useStore.getState().library.find((x) => x.sourceUrl && normalizeUrl(x.sourceUrl) === normalizeUrl(raw));
     if (known) return later ? setSaved({ id: known.id, title: known.title }) : go(known.id);
-    setUrl(raw);
     void fromUrl(raw, later);
   }, [hydrated, fromUrl, go]);
 
   const fromFile = useCallback(
     async (f: File) => {
       setError(null);
-      setErrorNeedsKey(false);
       setBusy({ label: `Opening ${f.name}`, pct: f.name.toLowerCase().endsWith(".pdf") ? 0 : undefined });
       // The PDF reader reports what it is doing: "Reading 12 pages", then any scanned ones.
       const r = await importFromFile(f, (p, label) => setBusy({ label: label ?? `Reading ${f.name}`, pct: p }));
       if (r.ok) finish(r.article, r.file);
       else {
         setError(r.error);
-        setErrorNeedsKey(Boolean(r.needKey));
         setBusy(null);
       }
     },
@@ -138,7 +124,6 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
   const fromText = useCallback(
     (text: string) => {
       const r = importFromText(text);
-      setPasteOpen(false);
       if (r.ok) finish(r.article);
       else setError(r.error);
     },
@@ -153,7 +138,6 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
       const t = e.clipboardData?.getData("text") ?? "";
       if (looksLikeUrl(t)) {
         e.preventDefault();
-        setUrl(t.trim());
         fromUrl(t);
       } else if (t.trim().split(/\s+/).length >= 40) {
         e.preventDefault();
@@ -164,7 +148,7 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
       if (inField(e.target) || e.metaKey || e.ctrlKey) return;
       if (e.key === "/") {
         e.preventDefault();
-        inputRef.current?.focus();
+        document.querySelector<HTMLTextAreaElement>('.home-answer textarea')?.focus();
       }
     };
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
@@ -236,26 +220,17 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
     <div className={`landing relative z-[1] flex min-h-dvh flex-col transition-[opacity,filter,transform] duration-300 ease-[var(--ease-out)] ${leaving ? "scale-[0.995] opacity-0 blur-[2px]" : ""}`}>
       <TopBar />
 
-      {/* One screen: the headline and the link bar centred in the room above, and the desk at the foot. */}
       <main className="relative flex flex-1 flex-col pb-[clamp(20px,4vh,44px)]">
-        <div className="flex flex-1 flex-col justify-center pb-[clamp(16px,3vh,36px)] pt-[clamp(28px,8vh,96px)]">
+        <div className="home-primary">
           <Hero>
-            <ImportBar
-              ref={inputRef}
-              url={url}
-              setUrl={setUrl}
-              busy={busy}
-              error={error}
-              errorNeedsKey={errorNeedsKey}
-              onSubmit={fromUrl}
-              onSave={(u) => fromUrl(u, true)}
-              onPickFile={() => fileRef.current?.click()}
-              onPasteText={() => setPasteOpen(true)}
-            />
-            <LibraryLine saved={saved} />
+            <LibraryAnswer key={account ?? "anonymous"} owner={account ?? null} filters={{}} presentation="home" />
           </Hero>
         </div>
-        <HomeBelow signedIn={signedIn} />
+        {(busy || error) && <div className="mx-auto w-full max-w-[740px] px-6 text-sm">
+          {busy && <p role="status">{busy.label}</p>}
+          {error && <p role="alert">{error}</p>}
+        </div>}
+        <div className="home-secondary"><LibraryLine saved={saved} /></div>
       </main>
 
       <ShelfSheet
@@ -264,19 +239,6 @@ export function Landing({ signedIn: signedInAtLoad = false }: { signedIn?: boole
         onRename={(id, title) => shelve(id, { title })}
         onRemove={(it) => (it.sample ? hideSample(it.id) : removeFromLibrary(it.id))}
       />
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) fromFile(f);
-          e.target.value = "";
-        }}
-      />
-      <PasteSheet open={pasteOpen} onClose={() => setPasteOpen(false)} onRead={fromText} />
 
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-[90] grid place-items-center bg-bg/80 backdrop-blur-sm" style={{ animation: "fade 0.15s" }}>

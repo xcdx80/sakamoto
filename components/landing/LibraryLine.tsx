@@ -11,6 +11,24 @@ import { useStore } from "@/lib/store";
 
 export type Saved = { id: string; title: string };
 
+export function ContinueReading({ reading }: { reading: { id: string; title: string; pct: number } }) {
+  return (
+    <section className="home-reading" aria-label="Continue reading">
+      <header className="home-reading-header">
+        <h2>Continue reading</h2>
+        <Link href="/library" className="inline-flex items-center gap-1 hover:text-ink">Your library <ArrowRight size={13} aria-hidden /></Link>
+      </header>
+      <Link href={`/read/${reading.id}`} className="home-reading-card">
+        <div className="min-w-0">
+          <p className="home-reading-title">{reading.title}</p>
+          <p className="home-reading-progress"><Ring pct={reading.pct} /> {Math.round(reading.pct * 100)}% read</p>
+        </div>
+        <ArrowRight size={18} className="shrink-0 text-ink-3" aria-hidden />
+      </Link>
+    </section>
+  );
+}
+
 /** How far along, as a small ring in the pen's colour. */
 function Ring({ pct }: { pct: number }) {
   const r = 5.5;
@@ -24,9 +42,7 @@ function Ring({ pct }: { pct: number }) {
 }
 
 /**
- * One quiet line under the link bar: what you just saved, what you were in the
- * middle of and the way to the library, or, with nothing of your own yet, the
- * bundled samples. Its room is always kept, so the headline above never moves.
+ * Secondary home reading: resume saved progress, a save receipt, or the library.
  */
 export function LibraryLine({ saved }: { saved: Saved | null }) {
   const hydrated = useStore((s) => s.hydrated);
@@ -78,21 +94,13 @@ export function LibraryLine({ saved }: { saved: Saved | null }) {
     );
   }
 
+  if (reading) return <ContinueReading reading={reading} />;
+
   return (
     <p className="lib-line">
-      {reading ? (
-        <Link href={`/read/${reading.id}`} className="lib-line-note group transition-colors hover:text-ink">
-          <Ring pct={reading.pct} />
-          <span className="min-w-0 truncate">
-            Continue <span className="text-ink">{reading.title}</span>
-          </span>
-          <span className="shrink-0 tabular-nums text-ink-4">{Math.round(reading.pct * 100)}%</span>
-        </Link>
-      ) : (
         <span className="lib-line-note">
           {library.length} {library.length === 1 ? "text" : "texts"} on your shelves
         </span>
-      )}
       {library.length > 0 && (
         <Link href="/library" className="lib-line-go">
           Your library <ArrowRight size={13} />

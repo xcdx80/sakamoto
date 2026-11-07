@@ -23,16 +23,17 @@ import { OfflineSourceConflictError, preserveOfflineSource } from "./offline-sou
 import { READER_METADATA_FIELDS } from "./library-ownership";
 import { derivedDocumentMetadata } from "./source-edits";
 import { accountEpoch, accountScope } from "./account-scope";
-import { acknowledgeDocRevision, bindPendingSource, forgetDoc, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
+import { acknowledgeDocRevision, bindPendingSource, checkpointLibrary, cachedDocIds, forgetDocs, loadDoc, saveDoc, useStore, type RemoteChanges } from "./store";
 import type { Article } from "./article";
 import { forgetCover } from "./covers";
+import {readLibraryCache,syncCacheKey} from "./library-cache";
 
 const COLLECTIONS = ["articles", "highlights", "glosses", "briefs", "progress"] as const;
 type Collection = (typeof COLLECTIONS)[number];
 
 type Entity = { articleId: string; data: unknown; key: string };
 type Snapshot = { entities: Record<Collection, Map<string, Entity>>; busy: Set<string> };
-type Baseline = { since: string | null; seen: Record<Collection, Record<string, [key: string, articleId: string, revision?: number, sourceRevision?: number]>> };
+type Baseline = { complete?: boolean; since: string | null; seen: Record<Collection, Record<string, [key: string, articleId: string, revision?: number, sourceRevision?: number]>> };
 type OutRow = {
   id: string;
   articleId: string;
@@ -110,16 +111,18 @@ const emptyBaseline = (): Baseline => ({ since: null, seen: Object.fromEntries(C
 export function startSync(userId: string) {
   const epoch = accountEpoch();
   const current = () => !stopped && accountEpoch() === epoch && accountScope() === userId;
-  const storeKey = `sakamoto:sync:v2:${userId}`;
+  const storeKey = syncCacheKey(userId);
   let base: Baseline = emptyBaseline();
   try {
-    const raw = localStorage.getItem(storeKey);
-    if (raw) base = { ...emptyBaseline(), ...JSON.parse(raw) };
+    const cached = readLibraryCache<Baseline>(storeKey);
+    if (cached) base = structuredClone({ ...emptyBaseline(), ...cached });
   } catch {}
-  const save = () => {
-    try {
-      localStorage.setItem(storeKey, JSON.stringify(base));
-    } catch {}
+  let checkpointed = Boolean(base.complete);
+  const save = async () => {
+    if(!current())return;
+    checkpointed=false;
+    if (!(await checkpointLibrary([{key:storeKey,value:base}]))) throw new Error("Library cache could not be saved.");
+    checkpointed=true;
   };
 
   let stopped = false;
@@ -193,7 +196,7 @@ export function startSync(userId: string) {
         const receipt = result.accepted.find((x) => x.collection === r.c && x.id === r.row.id);
         if (!receipt) continue;
         if (r.c === "articles" && r.row.doc && receipt.sourceRevision !== undefined) {
-          if(r.row.doc.pendingSource)bindPendingSource(r.row.id,r.row.doc.pendingSource,r.row.id,receipt.sourceRevision);
+          if(r.row.doc.pendingSource)await bindPendingSource(r.row.id,r.row.doc.pendingSource,r.row.id,receipt.sourceRevision);
           const acknowledged = await acknowledgeDocRevision(r.row.doc, receipt.sourceRevision, userId);
           if (!current()) return;
           if (acknowledged) window.dispatchEvent(new CustomEvent("gloss:text-replaced", { detail: acknowledged }));
@@ -205,7 +208,7 @@ export function startSync(userId: string) {
       if (result.conflicts.length) {
         useStore.getState().setUI({ syncError: "Some changes conflicted. Your local edits are retained; syncing merges manual fields and keeps the newest source." });
       }
-      save();
+      await save();
       batch = [];
       bytes = 0;
     };
@@ -218,22 +221,43 @@ export function startSync(userId: string) {
   }
 
   async function pull() {
-    let more = true;
+    let more = true, cursor = base.complete ? base.since : null;
+    const latest = Object.fromEntries(COLLECTIONS.map(c=>[c,new Map()])) as Record<Collection,Map<string,NonNullable<RemoteChanges[Collection]>[number]>>;
     while (more && current()) {
-      const res = await fetch(`/api/sync${base.since ? `?cursor=${encodeURIComponent(base.since)}` : ""}`, { headers: { "X-Sakamoto-Owner": userId } });
+      const res = await fetch(`/api/sync${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { headers: { "X-Sakamoto-Owner": userId } });
       if (!res.ok) throw new Error(`pull ${res.status}`);
-      const { cursor, hasMore, changes } = (await res.json()) as { cursor: string; hasMore: boolean; changes: RemoteChanges };
+      const page = (await res.json()) as { cursor: string; hasMore: boolean; changes: RemoteChanges };
       if (!current()) return;
-      const local = snapshot();
+      for(const c of COLLECTIONS)for(const row of page.changes[c]??[])latest[c].set(row.id,row);
+      cursor=page.cursor;more=page.hasMore;
+    }
+    if(!current())return;
+    if(checkpointed && base.complete && cursor===base.since && COLLECTIONS.every(c=>!latest[c].size)){useStore.getState().setUI({syncReady:true});return;}
+    const changes=Object.fromEntries(COLLECTIONS.map(c=>[c,[...latest[c].values()]])) as RemoteChanges;
+      let local = snapshot();
       // Rebase pending field edits onto the latest server metadata. Source text is never replayed over a newer revision.
       const latestArticles = [...new Map((changes.articles ?? []).map((row) => [row.id, row])).values()];
+      let cached: Set<string> | null;
+      try { cached = await cachedDocIds(userId); } catch { cached = null; }
+      if (!current()) return;
+      const invalidated = new Map<string, Article | null>();
+      const sourceStates = () => new Map(useStore.getState().library.map(item => [item.id, stable([item.rev, item.pendingSource, item.sourceRevision])]));
+      const beforeInspection = sourceStates();
+      const inspected = new Map(latestArticles.map(row => [row.id, beforeInspection.get(row.id)]));
+      const unchanged = () => {
+        if (!current()) return false;
+        const latestStates = sourceStates();
+        return [...inspected].every(([id, state]) => latestStates.get(id) === state);
+      };
       for (const row of latestArticles) {
         const prior = base.seen.articles[row.id],
           pending = local.entities.articles.get(row.id);
         if (prior?.[3] !== row.sourceRevision) {
+          const cachedSource = cached === null || cached.has(row.id) ? await loadDoc(row.id, userId) : null;
+          if (!current()) return;
           let unknownCollision = false;
           if (!prior && pending) {
-            const cached = await loadDoc(row.id, userId);
+            const cached = cachedSource;
             if (!current()) return;
             if (cached) {
               const response = await fetch(`/api/articles/${encodeURIComponent(row.id)}`, { headers: { "X-Sakamoto-Owner": userId } });
@@ -249,15 +273,21 @@ export function startSync(userId: string) {
               unknownCollision = !remote || stable(withoutRevision(cached)) !== stable(withoutRevision(remote));
             }
           }
-          if (pending && (unknownCollision || (prior && (pending.data as { rev?: number }).rev !== JSON.parse(prior[0]).rev))) {
+          const latestItem=useStore.getState().library.find(item=>item.id===row.id);
+          const editedDuringRead=latestItem?.rev!==(pending?.data as {rev?:number}|undefined)?.rev;
+          if (latestItem && (unknownCollision || editedDuringRead || (prior && latestItem.rev !== JSON.parse(prior[0]).rev))) {
             const title = await preserveOfflineSource(row.id, userId);
             if (!current()) return;
             useStore.getState().setUI({ syncNotice: `The saved source changed. Your offline copy is saved separately as “${title}”.` });
           }
-          await forgetDoc(row.id, userId);
+          if (cachedSource) invalidated.set(row.id, cachedSource);
         }
       }
       if (!current()) return;
+      if (!(await forgetDocs(invalidated, userId, unchanged)) || !unchanged())
+        throw new Error("A local source changed during sync. Retry with the retained local edit.");
+      if (!current()) return;
+      local = snapshot();
       const rebased: RemoteChanges = {};
       for (const c of COLLECTIONS) {
         const list = [...new Map((changes[c] ?? []).map((r) => [r.id, r])).values()];
@@ -292,9 +322,9 @@ export function startSync(userId: string) {
       }
       useStore.getState().applyRemote(rebased);
       base.since = cursor;
-      more = hasMore;
-      save();
-    }
+      base.complete = true;
+      await save();
+      if(current())useStore.getState().setUI({syncReady:true});
   }
 
   const sync = () =>
