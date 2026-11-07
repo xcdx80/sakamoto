@@ -1,0 +1,1172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sakamoto.local/frameworks/schema.json",
+  "title": "Sakamoto post framework",
+  "description": "Root: one post framework (short-form/*.yaml, long-form/*.yaml). Other files validate against $defs: hooks_file, shared_rubric_file, selection_file, platform_file, sources_file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "form",
+    "family",
+    "summary",
+    "when_to_use",
+    "avoid_when",
+    "better_than",
+    "structure",
+    "length",
+    "hook_patterns",
+    "rubric",
+    "examples",
+    "needs_examples",
+    "platform_notes",
+    "source_refs"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/slug",
+      "description": "Must equal the file name without .yaml."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3
+    },
+    "form": {
+      "enum": [
+        "short",
+        "long"
+      ]
+    },
+    "family": {
+      "$ref": "#/$defs/family"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 400
+    },
+    "when_to_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_signals",
+        "goals"
+      ],
+      "properties": {
+        "source_signals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "signal",
+              "weight"
+            ],
+            "properties": {
+              "signal": {
+                "$ref": "#/$defs/signal"
+              },
+              "weight": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "description": "3 = this framework barely works without the signal; 1 = nice to have."
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "goals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reach",
+            "trust",
+            "convert"
+          ],
+          "properties": {
+            "reach": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "trust": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "convert": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "avoid_when": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "condition"
+        ],
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "signal": {
+            "$ref": "#/$defs/signal",
+            "description": "Optional machine-readable trigger. When the source shows this signal the engine subtracts a penalty."
+          },
+          "missing_signal": {
+            "$ref": "#/$defs/signal",
+            "description": "Optional: penalize when this signal is absent."
+          }
+        }
+      }
+    },
+    "better_than": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "framework",
+          "when"
+        ],
+        "properties": {
+          "framework": {
+            "$ref": "#/$defs/slug"
+          },
+          "when": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "structure": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "section",
+          "purpose",
+          "length"
+        ],
+        "properties": {
+          "section": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "length": {
+            "type": "string",
+            "description": "Human guidance, e.g. '1 line', '3-5 bullets', '150-300 words'."
+          },
+          "optional": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "length": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "unit": {
+          "enum": [
+            "characters",
+            "words",
+            "posts"
+          ]
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "hook_patterns": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pattern",
+          "template"
+        ],
+        "properties": {
+          "pattern": {
+            "$ref": "#/$defs/slug",
+            "description": "Id in hooks/hook-patterns.yaml."
+          },
+          "template": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inherits",
+        "criteria"
+      ],
+      "properties": {
+        "inherits": {
+          "const": "shared",
+          "description": "Every framework is also scored on rubrics/shared.yaml."
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        }
+      }
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/example"
+      }
+    },
+    "needs_examples": {
+      "type": "boolean",
+      "description": "True when fewer than 2 real, fetched examples show this framework in use."
+    },
+    "needs_examples_note": {
+      "type": "string"
+    },
+    "platform_notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "linkedin"
+      ],
+      "properties": {
+        "x": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "linkedin": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source_id"
+      }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^(x-[0-9]+|web-[a-z0-9-]+|code-[a-z0-9-]+)$"
+    },
+    "family": {
+      "enum": [
+        "proof",
+        "teach",
+        "opinion",
+        "story",
+        "news",
+        "curation",
+        "conversation",
+        "remix"
+      ]
+    },
+    "signal": {
+      "enum": [
+        "outcome_with_numbers",
+        "before_after",
+        "personal_story",
+        "third_party_success",
+        "common_belief_to_contradict",
+        "old_vs_new_contrast",
+        "discrete_items",
+        "process_steps",
+        "named_framework",
+        "mistakes_or_regrets",
+        "breaking_news",
+        "proven_format_elsewhere",
+        "multiple_sources_same_topic",
+        "deep_material",
+        "data_or_stats",
+        "single_sharp_idea",
+        "open_question",
+        "quotable_source_post",
+        "case_with_timeline",
+        "author_has_credibility"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "weight",
+        "anchors",
+        "pass_threshold"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug"
+        },
+        "description": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 5
+        },
+        "anchors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "1",
+            "3",
+            "5"
+          ],
+          "properties": {
+            "1": {
+              "type": "string"
+            },
+            "3": {
+              "type": "string"
+            },
+            "5": {
+              "type": "string"
+            }
+          }
+        },
+        "pass_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "gate": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, a score below pass_threshold rejects the draft regardless of total."
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional mechanical checks the engine can run before the LLM judge."
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "author",
+        "url",
+        "date",
+        "platform",
+        "kind",
+        "excerpt",
+        "text",
+        "annotation",
+        "source_ref"
+      ],
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Handle without @, or a name for web sources."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "date": {
+          "type": "string",
+          "description": "Europe/Lisbon local time with zone label (WET/WEST), e.g. '2026-10-28 22:16 WET'; a plain date when the source gives only a date."
+        },
+        "platform": {
+          "enum": [
+            "x",
+            "linkedin",
+            "newsletter",
+            "web"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "post",
+            "long_post",
+            "thread_opener",
+            "thread",
+            "x_article",
+            "quote_post",
+            "reply",
+            "essay_excerpt"
+          ]
+        },
+        "excerpt": {
+          "type": "boolean",
+          "description": "True when text is trimmed; trims are marked with '...'."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 10
+        },
+        "annotation": {
+          "type": "string",
+          "minLength": 20
+        },
+        "fit": {
+          "enum": [
+            "exact",
+            "partial",
+            "template"
+          ],
+          "description": "exact = the post is this framework; partial = shows part of it; template = the author's own template for it."
+        },
+        "metrics_at_fetch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "likes": {
+              "type": "integer"
+            },
+            "bookmarks": {
+              "type": "integer"
+            },
+            "impressions": {
+              "type": "integer"
+            },
+            "fetched": {
+              "type": "string"
+            },
+            "reactions": {
+              "type": "integer"
+            },
+            "comments": {
+              "type": "integer"
+            }
+          }
+        },
+        "caveat": {
+          "type": "string"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_id"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim",
+        "confidence",
+        "source_refs"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "value": {},
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_id"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "disagreement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic",
+        "positions",
+        "takeaway"
+      ],
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "positions": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "who",
+              "position",
+              "source_refs"
+            ],
+            "properties": {
+              "who": {
+                "type": "string"
+              },
+              "position": {
+                "type": "string"
+              },
+              "confidence": {
+                "$ref": "#/$defs/confidence"
+              },
+              "source_refs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/source_id"
+                }
+              }
+            }
+          }
+        },
+        "takeaway": {
+          "type": "string"
+        }
+      }
+    },
+    "platform_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "as_of",
+        "summary",
+        "length",
+        "formatting",
+        "links",
+        "media",
+        "timing",
+        "cadence",
+        "algorithm_signals",
+        "disagreements"
+      ],
+      "properties": {
+        "platform": {
+          "enum": [
+            "x",
+            "linkedin"
+          ]
+        },
+        "as_of": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "length": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "formatting": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "media": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "timing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "cadence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "algorithm_signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "signal",
+              "effect",
+              "confidence",
+              "source_refs"
+            ],
+            "properties": {
+              "signal": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              },
+              "effect": {
+                "enum": [
+                  "positive",
+                  "negative",
+                  "neutral",
+                  "unknown"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "confidence": {
+                "$ref": "#/$defs/confidence"
+              },
+              "source_refs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/source_id"
+                }
+              }
+            }
+          }
+        },
+        "unverified_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "disagreements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/disagreement"
+          }
+        },
+        "engine_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "hook_pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "template",
+        "description",
+        "why_it_works",
+        "pitfalls",
+        "examples",
+        "source_refs"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug"
+        },
+        "name": {
+          "type": "string"
+        },
+        "template": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "why_it_works": {
+          "type": "string"
+        },
+        "pitfalls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "used_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_id"
+          }
+        }
+      }
+    },
+    "hooks_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "patterns"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "general_rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hook_pattern"
+          }
+        }
+      }
+    },
+    "lint_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "pattern",
+        "note"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Python regex, case-insensitive."
+        },
+        "note": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "fail",
+            "warn"
+          ]
+        }
+      }
+    },
+    "shared_rubric_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "scoring",
+        "criteria",
+        "lint"
+      ],
+      "properties": {
+        "id": {
+          "const": "shared"
+        },
+        "description": {
+          "type": "string"
+        },
+        "scoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scale",
+            "method",
+            "pass_rule"
+          ],
+          "properties": {
+            "scale": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "pass_rule": {
+              "type": "string"
+            },
+            "framework_weight": {
+              "type": "number"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 5,
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        },
+        "lint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ai_tells",
+            "em_dash"
+          ],
+          "properties": {
+            "ai_tells": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/lint_rule"
+              }
+            },
+            "em_dash": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "max_per_100_words",
+                "note"
+              ],
+              "properties": {
+                "max_per_100_words": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            },
+            "other": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/lint_rule"
+              }
+            }
+          }
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_id"
+          }
+        }
+      }
+    },
+    "selection_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "scoring",
+        "signals",
+        "matrix",
+        "comparisons"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "scoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "formula",
+            "steps"
+          ],
+          "properties": {
+            "formula": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "defaults": {
+              "type": "object"
+            }
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "description",
+              "detect"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/signal"
+              },
+              "description": {
+                "type": "string"
+              },
+              "detect": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "matrix": {
+          "type": "object",
+          "description": "Generated from framework files: framework id -> {signals, goals, avoid, family, form}.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "form",
+              "family",
+              "signals",
+              "goals"
+            ],
+            "properties": {
+              "form": {
+                "enum": [
+                  "short",
+                  "long"
+                ]
+              },
+              "family": {
+                "$ref": "#/$defs/family"
+              },
+              "signals": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "goals": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "penalize_if": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "penalize_if_missing": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "comparisons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prefer",
+              "over",
+              "when"
+            ],
+            "properties": {
+              "prefer": {
+                "$ref": "#/$defs/slug"
+              },
+              "over": {
+                "$ref": "#/$defs/slug"
+              },
+              "when": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_id"
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "author",
+        "url",
+        "date",
+        "contributed",
+        "confidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "kind": {
+          "enum": [
+            "x_post",
+            "x_article",
+            "linkedin_post",
+            "web",
+            "code"
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "date": {
+          "type": "string"
+        },
+        "contributed": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "used_in": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "sources_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "sources"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "fetched": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        }
+      }
+    }
+  }
+}

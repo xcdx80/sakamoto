@@ -1,0 +1,156 @@
+id: shared
+description: Criteria every draft is scored on, whatever the framework. A draft's final score combines these with
+  the framework's own rubric.criteria. Gate criteria reject a draft outright when they fall below pass_threshold,
+  whatever the total. Lint rules run before the LLM judge and feed the no-ai-tells and readability scores.
+scoring:
+  scale: Integer 1-5 per criterion. The anchors describe 1, 3 and 5; 2 and 4 sit between them.
+  method: criterion_score = judge score 1-5 (mechanical checks first where listed). shared_score = sum(weight *
+    score) / sum(weight) over shared criteria. framework_score = same over the framework's criteria. total = (1
+    - framework_weight) * shared_score + framework_weight * framework_score.
+  pass_rule: Reject if any gate criterion (shared or framework) scores below its pass_threshold. Otherwise rank
+    by total; flag any non-gate criterion below its threshold in the justification.
+  framework_weight: 0.4
+  notes:
+  - Ask the judge for a one-line reason per criterion; the engine shows these with each option.
+  - Scores are relative within a topic; do not compare totals across topics.
+criteria:
+- id: hook-strength
+  description: The first line stops the scroll and makes a specific promise or opens a real gap.
+  weight: 3
+  anchors:
+    '1': Generic opener ('In today's world...', 'Let's talk about X'). No reason to keep reading.
+    '3': Clear topic and some intrigue, but the promise is vague or the line is long.
+    '5': Short, specific, uses a known hook pattern (outcome, contrarian, gap, callout) and the body pays it off.
+  pass_threshold: 3
+  checks:
+  - first line <= 120 characters on X
+  - first ~140 characters on LinkedIn contain the hook (mobile fold)
+- id: specific-payoff
+  description: 'The body delivers what the hook promised, with specifics: numbers, names, steps, examples.'
+  weight: 3
+  anchors:
+    '1': The hook over-promises; the body is generic advice.
+    '3': Payoff is present but thin or partly generic.
+    '5': Every promised item is delivered with a concrete, usable specific.
+  pass_threshold: 3
+- id: rate-of-revelation
+  description: Each line or post adds a new idea or detail; no filler, no restating.
+  weight: 2
+  anchors:
+    '1': Repeats itself; padded intros; throat-clearing.
+    '3': Mostly new information, some filler lines.
+    '5': Every line earns its place; the reader learns something new at every step.
+  pass_threshold: 3
+- id: readability-1-3-1
+  description: 'Scannable layout: short lines, white space, one idea per line or paragraph. The 1/3/1 rhythm (one-sentence
+    line, a 2-3 sentence block, one-sentence line) or bullets break up text. Welsh lists ''Way too wordy, and no
+    white space'' among the top thread mistakes; Cole''s paragraph style mixes long and short sentences.'
+  weight: 2
+  anchors:
+    '1': Wall of text, or paragraphs over 4 sentences.
+    '3': Some white space; a few dense blocks.
+    '5': Every block is 1-3 sentences, varied rhythm, easy to skim on a phone.
+  pass_threshold: 3
+  checks:
+  - no paragraph over 4 sentences
+  - average line length <= 120 characters (short-form)
+- id: grounded-in-sources
+  description: Every factual claim, number and quote traces to a saved source the engine retrieved, and the option
+    lists those citations. Nothing is invented. Second-hand or unverified claims are labeled ('reportedly', 'per
+    {source}').
+  weight: 5
+  anchors:
+    '1': Contains a number, quote or fact not found in any cited saved source.
+    '3': All facts are in sources, but some are paraphrased loosely or unlabeled second-hand claims.
+    '5': Every claim maps to a cited source span; second-hand claims are labeled.
+  pass_threshold: 5
+  gate: true
+  checks:
+  - every number in the draft appears in a cited source span
+  - every quoted string appears verbatim in a cited source
+- id: link-handling
+  description: 'Links follow platform guidance: on X, the post carries the value on its own (summarize what is behind
+    the link) and the link goes at the end or in a reply; on LinkedIn, the link goes at the bottom or in the first
+    comment.'
+  weight: 1
+  anchors:
+    '1': A bare link with little context, or a link in the first line.
+    '3': Link placed sensibly but the post depends on the click to make sense.
+    '5': The post stands alone; the link is optional extra, placed per platform notes.
+  pass_threshold: 3
+  checks:
+  - no URL in the first line
+  - 'LinkedIn: URL only in last 2 lines or marked for first comment'
+- id: no-ai-tells
+  description: Reads like a person wrote it. No stock AI phrasing ('turn X into Y' as a hook, "here's the thing",
+    'game-changer', 'unlock', 'in today's fast-paced world', 'let's dive in'), no em-dash overuse, no triplet-adjective
+    hype, no emoji bullets on every line. Lint rules below run first.
+  weight: 3
+  anchors:
+    '1': Two or more lint hits, or the tone is generic hype.
+    '3': One lint hit or a slightly generic phrase.
+    '5': No lint hits; specific, plain, voice-consistent.
+  pass_threshold: 4
+  gate: true
+- id: clear-ending
+  description: 'Ends on purpose: a takeaway line, a call-to-conversation (question, request for a contrarian take),
+    or one clear CTA.'
+  weight: 2
+  anchors:
+    '1': Trails off, or stacks several CTAs.
+    '3': Has an ending but it is generic ('Thoughts?').
+    '5': 'One clear, specific ending that fits the goal (reach: takeaway or question; convert: one CTA).'
+  pass_threshold: 3
+lint:
+  ai_tells:
+  - id: turn-x-into-y
+    pattern: \bturn(s|ed|ing)?\s+(your\s+)?\w+(\s+\w+){0,3}\s+into\b
+    note: '''Turn X into Y'' hooks. Allowed only when quoting a source verbatim.'
+    severity: warn
+  - id: heres-the-thing
+    pattern: here'?s the thing
+    note: Stock transition.
+    severity: fail
+  - id: game-changer
+    pattern: game[- ]?chang(er|ing)
+    note: Hype word.
+    severity: fail
+  - id: unlock
+    pattern: \bunlock(s|ing)?\b
+    note: Hype verb.
+    severity: warn
+  - id: fast-paced-world
+    pattern: in today'?s (fast[- ]paced|digital|ever[- ]changing)
+    note: Stock opener.
+    severity: fail
+  - id: dive-in
+    pattern: \b(let'?s )?dive (in|into)\b|\bdeep dive\b
+    note: Stock transition.
+    severity: warn
+  - id: not-just-x
+    pattern: \bit'?s not just\b.{0,40}\bit'?s\b
+    note: '''It''s not just X, it''s Y'' construction.'
+    severity: warn
+  - id: delve-leverage
+    pattern: \b(delve|leverage|elevate|supercharge|revolutioniz\w*|seamless(ly)?)\b
+    note: Generic AI vocabulary.
+    severity: warn
+  - id: hashtag-stack
+    pattern: (#\w+\s*){3,}
+    note: Hashtag stacks.
+    severity: warn
+  em_dash:
+    max_per_100_words: 1
+    note: Count '—' and ' - ' used as dashes. More than 1 per 100 words reads machine-written; prefer periods or
+      commas.
+  other:
+  - id: url-first-line
+    pattern: ^[^\n]*https?://
+    note: URL in the first line (see link-handling).
+    severity: warn
+source_refs:
+- x-1538930467021504513
+- web-cole-5-short-form-formats
+- web-welsh-writing-process
+- x-1915806794393457034
+- x-1552291907845365760

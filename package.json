@@ -11,7 +11,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "budget:reconcile": "node --env-file-if-exists=.env.local --import tsx scripts/reconcile-paid.ts",
     "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
-    "test:reader": "node --import tsx --test tests/reader-markdown.test.ts"
+    "test:reader": "node --import tsx --test tests/reader-markdown.test.ts",
+    "frameworks:validate": "node --import tsx scripts/validate-frameworks.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",
@@ -29,7 +30,9 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sql.js": "1.14.1",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "ajv": "8.20.0",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

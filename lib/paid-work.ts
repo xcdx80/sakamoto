@@ -1,5 +1,6 @@
 /** Deployment-wide cumulative paid-work authority. Never falls back to process memory. */
 import { db } from "./db";
+import { paidFailureDetails, type PaidFailureContext } from "./paid-diagnostics";
 
 export class PaidWorkError extends Error {
   constructor(
@@ -8,6 +9,8 @@ export class PaidWorkError extends Error {
       | "budget_paused"
       | "duplicate_attempt"
       | "budget_unavailable"
+      | "reconciliation_required"
+      | "dispatch_deferred"
       | "invalid_usage"
       | "input_too_large"
       | "provider_error"
@@ -15,15 +18,18 @@ export class PaidWorkError extends Error {
       | "invalid_response",
     message: string,
     public status = 503,
+    public operationId?: string,
   ) {
     super(message);
   }
 }
 export type PaidModel =
   | "gpt-6-luna"
+  | "gpt-6-sol"
   | "gemini-embedding-2"
   | "jev-latest"
-  | "exa-instant";
+  | "exa-instant"
+  | "monid-octen-search";
 export type PaidUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -39,7 +45,17 @@ export class PaidBoundExceeded extends PaidWorkError {
   }
 }
 export const PRICE_VERSION = "2026-10-16-standard-v1";
+/** Sol standard rates qualified separately; historical reader receipts retain their price identity. */
+export const POST_PRICE_VERSION = "2026-11-05-post-v1";
+export const POST_RESEARCH_PRICE_VERSION = "2026-11-06-monid-search-v1";
+const priceVersion = (model: PaidModel) => model === "gpt-6-sol" ? POST_PRICE_VERSION : model === "monid-octen-search" ? POST_RESEARCH_PRICE_VERSION : PRICE_VERSION;
 const prices = {
+  // https://developers.openai.com/api/docs/models/gpt-6-sol (2026-11-05).
+  // The bounded input envelope excludes the provider's long-context price tier.
+  "gpt-6-sol": {
+    provider: "openai", input: 2, cached: 0.2, write: 2.5, output: 10,
+    inputLimit: 64000, outputLimit: 12000,
+  },
   "gpt-6-luna": {
     provider: "openai",
     input: 0.1,
@@ -119,6 +135,20 @@ export type PaidReservation = {
   model: PaidModel;
   reservedMicros: number;
 };
+/** Post stages can contain multiple providers; an unresolved later step blocks the entire logical retry. */
+export async function assertPostOperationResolved(owner: string, operationId: string): Promise<void> {
+  if (!owner.trim() || !operationId.startsWith("post:") || operationId.length > 200)
+    throw new PaidWorkError("configuration", "A stable owner-scoped post operation is required.");
+  let rows;
+  try {
+    rows = await db().query(`select 1 from paid_attempts where owner_id=$1
+      and (operation_id=$2 or left(operation_id,length($2)+1)=$2||':')
+      and status in ('reserved','uncertain') limit 1`, [owner, operationId]);
+  } catch {
+    throw new PaidWorkError("budget_unavailable", "Write is paused because its durable paid-operation status is unavailable.");
+  }
+  if (rows.length) throw new PaidWorkError("reconciliation_required", "This post operation has an unresolved paid attempt. Reconcile it before repeating any paid stage step.", 409, operationId);
+}
 export async function reservePaidWork(opts: {
   owner: string;
   operationId: string;
@@ -129,14 +159,14 @@ export async function reservePaidWork(opts: {
 }): Promise<PaidReservation> {
   const { model } = opts;
   let provider: string, maximum: number;
-  if (model === "exa-instant") {
-    const usd = process.env.SAKAMOTO_EXA_MAX_USD;
+  if (model === "exa-instant" || model === "monid-octen-search") {
+    const usd = model === "exa-instant" ? process.env.SAKAMOTO_EXA_MAX_USD : process.env.SAKAMOTO_MONID_MAX_USD;
     if (!usd || !/^\d+(\.\d{1,6})?$/.test(usd) || !(Number(usd) > 0))
       throw new PaidWorkError(
         "configuration",
         "Web search is paused: its maximum price is not configured.",
       );
-    provider = "exa";
+    provider = model === "exa-instant" ? "exa" : "monid";
     maximum = Math.ceil(Number(usd) * 1_000_000);
     if (
       Buffer.byteLength(opts.serializedInput, "utf8") > 4096 ||
@@ -190,7 +220,7 @@ export async function reservePaidWork(opts: {
         opts.attemptId,
         provider,
         model,
-        PRICE_VERSION,
+        priceVersion(model),
         maximum,
         cap,
       ],
@@ -201,6 +231,8 @@ export async function reservePaidWork(opts: {
       "Paid work is paused because the durable budget is unavailable. Saved reading remains available.",
     );
   }
+  if (result[0]?.status === "reconciliation_required")
+    throw new PaidWorkError("reconciliation_required", "This operation has an unresolved paid attempt. Reconcile it before another paid request.", 409, opts.operationId);
   if (result[0]?.status === "duplicate")
     throw new PaidWorkError(
       "duplicate_attempt",
@@ -251,6 +283,7 @@ export async function recordPaidFailure(
   reservation: PaidReservation,
   error: unknown,
   operatorReceipt?: PaidReconciliationReceipt,
+  context?: PaidFailureContext,
 ) {
   if (error instanceof PaidBoundExceeded)
     await db().query("select halt_paid_attempt($1,$2::jsonb)", [
@@ -259,12 +292,18 @@ export async function recordPaidFailure(
         operatorReceipt ? { usage: error.usage, operatorReceipt } : error.usage,
       ),
     ]);
-  else await markPaidWorkUncertain(reservation);
+  else {
+    await markPaidWorkUncertain(reservation, {
+      code: error instanceof PaidWorkError ? error.code : error instanceof Error ? paidFailureDetails(error).errorName : "unknown",
+      ...(error instanceof PaidWorkError ? { status: error.status } : {}),
+      ...paidFailureDetails(error, context),
+    });
+  }
 }
-export async function markPaidWorkUncertain(reservation: PaidReservation) {
+export async function markPaidWorkUncertain(reservation: PaidReservation, receipt?: {code:string;status?:number} & Partial<ReturnType<typeof paidFailureDetails>>) {
   await db().query(
-    "update paid_attempts set status='uncertain',updated_at=now() where id=$1 and status='reserved'",
-    [reservation.id],
+    "update paid_attempts set status='uncertain',failure_receipt=coalesce($2::jsonb,failure_receipt),updated_at=now() where id=$1 and status='reserved'",
+    [reservation.id,receipt ? JSON.stringify({...receipt,at:new Date().toISOString()}) : null],
   );
 }
 export async function budgetStatus(owner?: string) {
@@ -276,7 +315,7 @@ export async function budgetStatus(owner?: string) {
   const [b] = await db().query("select * from paid_budget where id=true");
   const attempts = owner
     ? await db().query(
-        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
+        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,failure_receipt,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
         [owner],
       )
     : [];
@@ -305,6 +344,7 @@ export async function budgetStatus(owner?: string) {
       model: a.model,
       providerRequestId: a.provider_request_id,
       status: a.status,
+      failureReceipt: a.failure_receipt ?? null,
       reservedUsd: Number(a.reserved_micros) / 1e6,
       actualUsd:
         a.actual_micros === null ? null : Number(a.actual_micros) / 1e6,
@@ -333,8 +373,9 @@ export type PaidReconciliationReceipt = {
   reference: string;
 } & (
   | { model: "exa-instant"; costMicros: number; usage?: never }
+  | { model: "monid-octen-search"; costMicros: number; usage?: never }
   | {
-      model: Exclude<PaidModel, "exa-instant">;
+      model: Exclude<PaidModel, "exa-instant" | "monid-octen-search">;
       usage: PaidUsage;
       costMicros?: never;
     }
@@ -359,7 +400,7 @@ export async function reconcilePaidWork(receipt: PaidReconciliationReceipt) {
   if (
     !attempt ||
     attempt.model !== receipt.model ||
-    attempt.price_version !== PRICE_VERSION ||
+    attempt.price_version !== priceVersion(receipt.model) ||
     (attempt.provider_request_id &&
       attempt.provider_request_id !== receipt.providerRequestId)
   )
@@ -368,11 +409,11 @@ export async function reconcilePaidWork(receipt: PaidReconciliationReceipt) {
       "The reconciliation receipt does not match the recorded attempt, model or provider request.",
     );
   let actual: number;
-  if (receipt.model === "exa-instant") {
+  if (receipt.model === "exa-instant" || receipt.model === "monid-octen-search") {
     if (!integer(receipt.costMicros) || Object.hasOwn(receipt, "usage"))
       throw new PaidWorkError(
         "invalid_usage",
-        "Exa reconciliation requires a verified integer microUSD cost receipt, not a token estimate.",
+        "Search reconciliation requires a verified integer microUSD cost receipt, not a token estimate.",
       );
     actual = receipt.costMicros;
   } else {

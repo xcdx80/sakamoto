@@ -53,6 +53,7 @@ export type EvidenceSearch = {
   mode: "hybrid" | "lexical";
   semanticStatus: "disabled" | "pending" | "available" | "paused";
   semanticError?: string;
+  coverage?: { sources: number; indexedSources: number };
   contract: typeof EMBEDDING_CONTRACT;
 };
 export function searchOptions(raw: Record<string, unknown>): SearchOptions {
@@ -88,6 +89,7 @@ export async function searchEvidence(
   owner: string,
   raw: SearchOptions,
   signal?: AbortSignal,
+  matching: "passage" | "discovery" = "passage",
 ): Promise<EvidenceSearch> {
   signal?.throwIfAborted();
   const opts = searchOptions(raw as unknown as Record<string, unknown>);
@@ -95,12 +97,17 @@ export async function searchEvidence(
   let semanticError: string | undefined;
   let semanticStatus: EvidenceSearch["semanticStatus"] =
     opts.semantic === false ? "disabled" : "pending";
+  const [counts] = await db().query(
+    `with eligible as (${ELIGIBLE_SAVED_PASSAGES_SQL})
+     select count(distinct p.source_id)::int as sources,
+     count(distinct i.source_id)::int as indexed_sources from eligible p
+     left join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id
+       and i.source_revision=p.source_revision and i.contract=$5`,
+    [...evidenceFilterParameters(owner, opts), INDEX_CONTRACT],
+  );
+  const coverage = { sources: Number(counts.sources), indexedSources: Number(counts.indexed_sources) };
   if (opts.semantic !== false) {
-    const available = await db().query(
-      `with eligible as (${ELIGIBLE_SAVED_PASSAGES_SQL}) select 1 from eligible p join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id and i.source_revision=p.source_revision and i.contract=$5 limit 1`,
-      [...evidenceFilterParameters(owner, opts), INDEX_CONTRACT],
-    );
-    if (available.length)
+    if (coverage.indexedSources)
       try {
         vector = await embedText(
           owner,
@@ -119,30 +126,72 @@ export async function searchEvidence(
       }
   }
   signal?.throwIfAborted();
+  // Citation evidence matches current passage text. Topic research may also
+  // discover candidates through metadata, prefixes and related saved sources.
+  const discovery = matching === "discovery";
+  const exactVector = discovery
+    ? "p.lexical || to_tsvector('simple',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->>'dek',p.data->'tags'))"
+    : "p.lexical";
+  const searchVector = discovery
+    ? "setweight(to_tsvector('english',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->'tags')),'A') || setweight(to_tsvector('english',coalesce(p.data->>'dek','')),'B') || to_tsvector('english',p.text)"
+    : "p.lexical";
+  const lexicalScore = discovery
+    ? "case when q.explicit_syntax then ts_rank_cd(p.exact_vector,q.exact_query) else (select count(*) from unnest(q.terms) term where p.search_vector @@ (quote_literal(term)||':*')::tsquery) + ts_rank_cd(p.search_vector,q.broad_query,32) end"
+    : "ts_rank_cd(p.exact_vector,q.exact_query)";
+  const lexicalMatch = discovery
+    ? "case when q.explicit_syntax then p.exact_vector @@ q.exact_query else p.search_vector @@ q.broad_query end"
+    : "p.exact_vector @@ q.exact_query";
   const rows = await db().query(
-    `with current_sources as (${ELIGIBLE_SAVED_PASSAGES_SQL}), eligible as (
- select p.*,ts_rank_cd(p.lexical,websearch_to_tsquery('simple',$5)) as lexical_score,
- p.lexical @@ websearch_to_tsquery('simple',$5) as matched,
- case when i.contract=$7 then e.embedding <=> $8::public.vector else null end as distance
+    // Keep full source JSON and passage payloads out of the ranking CTEs. In particular,
+    // extracting coverage from a large document for every passage repeats TOAST reads.
+    `with current_sources as not materialized (${ELIGIBLE_SAVED_PASSAGES_SQL}), searchable as materialized (
+ select p.user_id,p.source_id,p.source_revision,p.ordinal,p.content_fingerprint,
+ ${exactVector} as exact_vector,${searchVector} as search_vector
  from current_sources p
+ ), query_terms as (
+ select websearch_to_tsquery('simple',$5) as exact_query,
+ tsvector_to_array(to_tsvector('english',$5)) as terms
+ ), queries as (
+ select *,to_tsquery('english',array_to_string(array(select quote_literal(term)||':*' from unnest(terms) term),' | ')) as broad_query,
+ $9::boolean as explicit_syntax from query_terms
+ ), eligible as (
+ select p.source_id,p.source_revision,p.ordinal,
+ ${lexicalScore} as lexical_score,${lexicalMatch} as matched,
+ case when i.contract=$7 then e.embedding <=> $8::public.vector else null end as distance
+ from searchable p cross join queries q
  left join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id and i.source_revision=p.source_revision and i.contract=$7
  left join passage_embeddings e on e.user_id=p.user_id and e.contract=i.contract and e.content_fingerprint=p.content_fingerprint
  ), lexical as (select source_id,ordinal,row_number() over(order by lexical_score desc,source_id,ordinal) as r from eligible where matched),
  semantic as (select source_id,ordinal,row_number() over(order by distance,source_id,ordinal) as r from eligible where distance is not null),
- ranked as (select e.*,coalesce(1.0/l.r,0)+coalesce(1.0/s.r,0) as rank from eligible e left join lexical l using(source_id,ordinal) left join semantic s using(source_id,ordinal) where l.r is not null or s.r is not null)
- select * from ranked order by rank desc,matched desc,source_id,ordinal limit $6`,
+ ranked as (select e.*,coalesce(1.0/l.r,0)+coalesce(1.0/s.r,0) as rank from eligible e left join lexical l using(source_id,ordinal) left join semantic s using(source_id,ordinal) where l.r is not null or s.r is not null),
+ seeds as (select source_id,source_revision,max(rank) as rank from ranked group by source_id,source_revision order by max(rank) desc,source_id limit 20),
+ related as (
+   select l.article_id as source_id,max(s.rank)*0.5 as rank from seeds s join linked_sources l
+   on l.user_id=$1 and l.source_id=s.source_id and l.source_revision=s.source_revision
+   where ${discovery ? "not $9::boolean" : "false"} group by l.article_id
+ ), expanded as (
+   select e.*,greatest(coalesce(d.rank,0),coalesce(r.rank,0)) as rank
+   from eligible e left join ranked d using(source_id,ordinal) left join related r using(source_id)
+   where d.rank is not null or r.rank is not null
+ ), diverse as (select *,row_number() over(partition by source_id order by rank desc,lexical_score desc,ordinal) as source_rank from expanded),
+ selected as materialized (select * from diverse where source_rank<=2 order by rank desc,matched desc,source_id,ordinal limit $6)
+ select d.*,p.data,p.post_coverage,p.pdf_coverage,p.original_url,p.content_type,p.text,p.address
+ from selected d join current_sources p using(source_id,source_revision,ordinal)
+ order by d.rank desc,d.matched desc,d.source_id,d.ordinal`,
     [
       ...evidenceFilterParameters(owner, opts),
       opts.query,
       opts.limit ?? 20,
       INDEX_CONTRACT,
       vector ? JSON.stringify(vector) : null,
+      /"|\bOR\b|(?:^|\s)-\S/.test(opts.query),
     ],
   );
   signal?.throwIfAborted();
   return {
     mode: vector ? "hybrid" : "lexical",
     semanticStatus,
+    coverage,
     ...(semanticError ? { semanticError } : {}),
     contract: EMBEDDING_CONTRACT,
     results: rows.map((r) => ({

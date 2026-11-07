@@ -66,6 +66,47 @@ test("saved article passages are searchable with exact source addresses before p
   assert.equal(result.results[0].originalUrl, "https://example.com/discovery");
 });
 
+test("passage evidence search does not reuse unchanged titles or tags after its source body changes", async () => {
+  const { searchEvidence } = await import("../lib/retrieval");
+  const owner = "current-body-reader";
+  await shelveForUser(owner, { id: "current-body", title: "Cobalt source", tags: ["alignment"] }, {
+    id: "current-body", title: "Cobalt source", blocks: [{ id: "body", type: "p", runs: [{ text: "Supernova alignment uses a reference chart." }] }],
+  });
+  await shelveForUser(owner, { id: "current-body", title: "Cobalt source", tags: ["alignment"] }, {
+    id: "current-body", title: "Cobalt source", blocks: [{ id: "body", type: "p", runs: [{ text: "Replacement evidence without the old claim." }] }],
+  });
+  for (const query of ["cobalt", "Supernova alignment"])
+    assert.deepEqual((await searchEvidence(owner, { query, semantic: false })).results, [], query);
+  const current = await searchEvidence(owner, { query: "Replacement evidence", semantic: false });
+  assert.equal(current.results[0].sourceRevision, 2);
+  assert.equal(current.results[0].excerpt, "Replacement evidence without the old claim.");
+});
+
+test("multiword prefix search ranks distinct term coverage above repetition and includes current metadata matches", async () => {
+  const { searchEvidence } = await import("../lib/retrieval");
+  const owner = "prefix-ranking-reader";
+  const fixtures = [
+    { id: "all-terms", title: "A concrete workflow", text: "Autonomous evaluation protects deployments." },
+    { id: "two-terms", title: "Evaluation deployment", text: "Operational guidance for product teams." },
+    { id: "one-term", title: "Agent notes", text: "Autonomous agents use autonomy for autonomous decisions." },
+  ];
+  for (const source of fixtures) await shelveForUser(owner,
+    { id: source.id, title: source.title, contentType: "article" },
+    { id: source.id, title: source.title, blocks: [{ id: "body", type: "p", runs: [{ text: source.text }] }] },
+  );
+  await shelveForUser(owner, { id: "unrelated", title: "Unrelated source", contentType: "article" }, {
+    id: "unrelated", title: "Unrelated source", blocks: Array.from({ length: 100 }, (_, index) => ({
+      id: "unrelated-" + index, type: "p", runs: [{ text: "Orchids bloom beside the river under the winter sun." }],
+    })),
+  });
+  const result = await searchEvidence(owner, { query: "autonom evalu deploy", semantic: false, limit: 8 }, undefined, "discovery");
+  assert.deepEqual(result.results.map(item => item.itemId), ["all-terms", "two-terms", "one-term"]);
+  assert.ok(result.results.every(item => item.lexical && !item.semantic && item.sourceRevision === 1));
+  assert.equal(result.semanticStatus, "disabled");
+  assert.equal(result.results[1].excerpt, "Operational guidance for product teams.");
+  assert.equal(result.results[1].address.blockId, "body");
+});
+
 test("filters, source updates, restores and removals apply immediately without leaking another owner", async () => {
   const source = (id: string, text: string) => ({
     id,
@@ -266,12 +307,12 @@ test("the shared durable processing operation indexes curated passages and ranks
     assert.deepEqual(
       (
         await searchEvidence("ranking-reader", {
-          query: "How does a salamander recover damaged nerve cells?",
+          query: "How can a salamander restore injured nerve cells?",
           semantic: false,
         })
       ).results,
       [],
-      "lexical-only does not satisfy paraphrase recall",
+      "lexical retrieval cannot supply synonyms absent from the saved text",
     );
     const filtered = await searchEvidence("ranking-reader", {
       query: "How can houses use sunlight after sunset?",

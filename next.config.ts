@@ -5,6 +5,7 @@ const pdfRuntimeAssets = ["./server/pdf-worker.mjs", "./node_modules/@llamaindex
 const nextConfig: NextConfig = {
   serverExternalPackages: ["linkedom"],
   outputFileTracingIncludes: {
+    "/api/write": ["./frameworks/**/*.yaml", "./frameworks/schema.json"],
     "/api/processing": pdfRuntimeAssets,
     "/api/cron/processing": pdfRuntimeAssets,
     "/mcp": pdfRuntimeAssets,
