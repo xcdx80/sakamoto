@@ -68,7 +68,9 @@ test("the writer wire schema rejects hook counts that the returned-draft contrac
     assert.equal(url, "https://api.openai.com/v1/chat/completions");
     const body = JSON.parse(String(options?.body));
     const validate = new Ajv2020({ strict: false }).compile(body.response_format.json_schema.schema);
-    acceptsSevenHooks = validate({ ...content, hooks: Array.from({ length: 7 }, () => "Consider the evidence.") });
+    const wireContent = { ...content, variants: Object.fromEntries(content.variants.map(variant => [variant.platform, variant])) };
+    assert.equal(validate(wireContent), true);
+    acceptsSevenHooks = validate({ ...wireContent, hooks: Array.from({ length: 7 }, () => "Consider the evidence.") });
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 100, completion_tokens: 100 } });
   };
   try {

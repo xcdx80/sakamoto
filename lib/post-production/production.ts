@@ -20,7 +20,9 @@ import { requestRevision, beginPublication, finishPublication, releasePublicatio
 import { getPublishingCapability, submitApprovedProduction, PublishingError } from "./publishing";
 
 class InputNeeded extends Error {}
-const FOREGROUND_TIMEOUT_MS = 40_000;
+// Structure selection can make four sequential, individually bounded provider calls.
+// Include database/context work without letting the first call's timer cancel later calls.
+const FOREGROUND_TIMEOUT_MS = 240_000;
 async function freshContext(owner: string, detail: ProductionDetail, catalog: PostCatalog): Promise<void> {
   const checkpoint = detail.production.checkpoint;
   if (!checkpoint.profile || !checkpoint.catalogVersion || !checkpoint.evidence)
@@ -35,13 +37,13 @@ async function freshContext(owner: string, detail: ProductionDetail, catalog: Po
 function selectedFramework(detail: ProductionDetail): FrameworkRecommendation | undefined {
   return detail.production.checkpoint.recommendations?.find(r => r.frameworkId === detail.production.checkpoint.frameworkId);
 }
-function providerContext(owner: string, detail: ProductionDetail, stage: string, signal?: AbortSignal): PostProviderContext {
+function providerContext(owner: string, detail: ProductionDetail, stage: string, signal?: AbortSignal, deadlineAt?: number): PostProviderContext {
   const { production } = detail, checkpoint = production.checkpoint;
   return {
     owner, operationId: `post:${production.id}:${stage}:${production.latestRevisionId ?? "initial"}`,
     attemptId: randomUUID(), profile: checkpoint.profile!, brief: production.brief, evidence: checkpoint.evidence!,
     framework: selectedFramework(detail), selectedHookPatternId: checkpoint.hookPatternId ?? undefined,
-    priorContent: detail.revisions.find(r => r.id === production.latestRevisionId)?.content, signal,
+    priorContent: detail.revisions.find(r => r.id === production.latestRevisionId)?.content, signal, deadlineAt,
     authorRequest: checkpoint.authorRequest?.instruction,
   };
 }
@@ -102,6 +104,7 @@ async function runStage(
 }
 
 export async function advanceProduction(owner: string, id: string, expectedVersion: number, signal?: AbortSignal): Promise<ProductionDetail | null> {
+  const deadlineAt = performance.now() + FOREGROUND_TIMEOUT_MS;
   signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(FOREGROUND_TIMEOUT_MS)]) : AbortSignal.timeout(FOREGROUND_TIMEOUT_MS);
   return runStage(owner, id, expectedVersion, async (detail, token) => {
     signal?.throwIfAborted();
@@ -124,7 +127,7 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
         }, null));
       }
       if (!production.checkpoint.signals?.length) {
-        const signals = await decidePostSignals(providerContext(owner, detail, "signals", signal));
+        const signals = await decidePostSignals(providerContext(owner, detail, "signals", signal, deadlineAt));
         signal.throwIfAborted();
         await freshContext(owner, detail, loadCatalog());
         const recommendations = recommendFrameworks(catalog, production.brief, signals, (await listHistory(owner)).filter(p => p.id !== id));
@@ -134,7 +137,7 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
       // a paused production to forms rejected by its current evidence or cadence.
       const recommendations = recommendFrameworks(catalog, production.brief, production.checkpoint.signals, (await listHistory(owner)).filter(p => p.id !== id));
       if (!recommendations.length) throw new InputNeeded("Add concrete evidence before choosing a framework.");
-      const choice = await choosePostStructure(providerContext(owner, detail, "structure", signal), recommendations);
+      const choice = await choosePostStructure(providerContext(owner, detail, "structure", signal, deadlineAt), recommendations);
       signal.throwIfAborted();
       await freshContext(owner, detail, loadCatalog());
       return Boolean(await updateProduction(owner, id, token, production.latestRevisionId ? "review" : "writing", "draft", { recommendations, frameworkId: choice.frameworkId, hookPatternId: choice.hookPatternId ?? undefined, editorialDecision: choice.decisions, reviewPin: null }, null));
@@ -145,7 +148,7 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
       const revising = production.stage === "revision";
       if (revising && ((production.checkpoint.revisionRounds ?? 0) >= 2 || !detail.review || detail.review.revisionId !== production.latestRevisionId))
         throw new InputNeeded("Automatic revision is finished. Edit the saved draft or supply additional author input before requesting another review.");
-      const written = await writePost(providerContext(owner, detail, revising ? "revision" : "writer", signal), framework, revising ? detail.review! : undefined);
+      const written = await writePost(providerContext(owner, detail, revising ? "revision" : "writer", signal, deadlineAt), framework, revising ? detail.review! : undefined);
       signal.throwIfAborted();
       await freshContext(owner, detail, loadCatalog());
       // Persist attribution before the revision: a later stale callback cannot attach a model to an author's edit.
@@ -167,7 +170,7 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
       if (!framework) throw new InputNeeded("Choose an eligible framework before reviewing this draft.");
       const writerModel = revision.origin === "author" ? "author" : production.checkpoint.writerModel;
       if (!writerModel) throw new PaidWorkError("configuration", "The saved draft has no pinned writer model. Preserve it and request a fresh attributed revision.");
-      const reviewed = await reviewPost(providerContext(owner, detail, "review", signal), revision.content, writerModel);
+      const reviewed = await reviewPost(providerContext(owner, detail, "review", signal, deadlineAt), revision.content, writerModel);
       const mechanical = validateDraft(catalog, revision.content, production.checkpoint.evidence!, production.checkpoint.profile!, framework.frameworkId, reviewed);
       signal.throwIfAborted();
       await freshContext(owner, detail, loadCatalog());
@@ -252,6 +255,7 @@ export async function assessProductionSignals(owner: string, id: string, expecte
 }
 
 export async function chooseProductionFramework(owner: string, id: string, expectedVersion: number, frameworkId: string, hookPatternId?: string, signal?: AbortSignal): Promise<ProductionDetail | null> {
+  const deadlineAt = performance.now() + FOREGROUND_TIMEOUT_MS;
   signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(FOREGROUND_TIMEOUT_MS)]) : AbortSignal.timeout(FOREGROUND_TIMEOUT_MS);
   const existing = await getProduction(owner, id);
   if (!existing || existing.production.version !== expectedVersion) return null;
@@ -262,7 +266,7 @@ export async function chooseProductionFramework(owner: string, id: string, expec
     signal.throwIfAborted();
     await freshContext(owner, detail, loadCatalog());
     if (!hookPatternId) {
-      const choice = await choosePostStructure(providerContext(owner, detail, "manual-structure", signal), [candidate]);
+      const choice = await choosePostStructure(providerContext(owner, detail, "manual-structure", signal, deadlineAt), [candidate]);
       signal.throwIfAborted();
       hookPatternId = choice.hookPatternId ?? undefined;
       await freshContext(owner, detail, loadCatalog());

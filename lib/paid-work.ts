@@ -1,5 +1,6 @@
 /** Deployment-wide cumulative paid-work authority. Never falls back to process memory. */
 import { db } from "./db";
+import { paidFailureDetails, type PaidFailureContext } from "./paid-diagnostics";
 
 export class PaidWorkError extends Error {
   constructor(
@@ -9,6 +10,7 @@ export class PaidWorkError extends Error {
       | "duplicate_attempt"
       | "budget_unavailable"
       | "reconciliation_required"
+      | "dispatch_deferred"
       | "invalid_usage"
       | "input_too_large"
       | "provider_error"
@@ -281,6 +283,7 @@ export async function recordPaidFailure(
   reservation: PaidReservation,
   error: unknown,
   operatorReceipt?: PaidReconciliationReceipt,
+  context?: PaidFailureContext,
 ) {
   if (error instanceof PaidBoundExceeded)
     await db().query("select halt_paid_attempt($1,$2::jsonb)", [
@@ -289,12 +292,18 @@ export async function recordPaidFailure(
         operatorReceipt ? { usage: error.usage, operatorReceipt } : error.usage,
       ),
     ]);
-  else await markPaidWorkUncertain(reservation);
+  else {
+    await markPaidWorkUncertain(reservation, {
+      code: error instanceof PaidWorkError ? error.code : error instanceof Error ? paidFailureDetails(error).errorName : "unknown",
+      ...(error instanceof PaidWorkError ? { status: error.status } : {}),
+      ...paidFailureDetails(error, context),
+    });
+  }
 }
-export async function markPaidWorkUncertain(reservation: PaidReservation) {
+export async function markPaidWorkUncertain(reservation: PaidReservation, receipt?: {code:string;status?:number} & Partial<ReturnType<typeof paidFailureDetails>>) {
   await db().query(
-    "update paid_attempts set status='uncertain',updated_at=now() where id=$1 and status='reserved'",
-    [reservation.id],
+    "update paid_attempts set status='uncertain',failure_receipt=coalesce($2::jsonb,failure_receipt),updated_at=now() where id=$1 and status='reserved'",
+    [reservation.id,receipt ? JSON.stringify({...receipt,at:new Date().toISOString()}) : null],
   );
 }
 export async function budgetStatus(owner?: string) {
@@ -306,7 +315,7 @@ export async function budgetStatus(owner?: string) {
   const [b] = await db().query("select * from paid_budget where id=true");
   const attempts = owner
     ? await db().query(
-        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
+        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,failure_receipt,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
         [owner],
       )
     : [];
@@ -335,6 +344,7 @@ export async function budgetStatus(owner?: string) {
       model: a.model,
       providerRequestId: a.provider_request_id,
       status: a.status,
+      failureReceipt: a.failure_receipt ?? null,
       reservedUsd: Number(a.reserved_micros) / 1e6,
       actualUsd:
         a.actual_micros === null ? null : Number(a.actual_micros) / 1e6,

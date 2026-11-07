@@ -820,10 +820,11 @@ test("writer and targeted revisions receive explicit per-platform limits, preser
   globalThis.fetch = async (_url, options) => {
     const body = JSON.parse(String(options?.body)), packet = JSON.parse(body.messages[1].content);
     const schemaCheck = new Ajv2020({ strict: false }).compile(body.response_format.json_schema.schema);
-    assert.equal(schemaCheck(output), true);
-    assert.equal(schemaCheck({ ...output, variants: [{ platform: "x", delivery: "single", posts: ["x".repeat(281)] }, output.variants[1]] }), false, "The provider schema must constrain X before generation, not wait for an automatic revision.");
-    assert.equal(schemaCheck({ ...output, claimSources: [{ claim: "Evaluation catches defects.", evidenceIds: ["invented-source"] }] }), false, "The provider must select a known evidence ID.");
-    assert.equal(schemaCheck({ ...output, claimSources: [{ claim: "Evaluation catches defects.", evidenceIds: [] }] }), false);
+    const wireOutput = { ...output, variants: Object.fromEntries(output.variants.map(variant => [variant.platform, variant])) };
+    assert.equal(schemaCheck(wireOutput), true);
+    assert.equal(schemaCheck({ ...wireOutput, variants: { ...wireOutput.variants, x: { platform: "x", delivery: "single", posts: ["x".repeat(281)] } } }), false, "The provider schema must constrain X before generation, not wait for an automatic revision.");
+    assert.equal(schemaCheck({ ...wireOutput, claimSources: [{ claim: "Evaluation catches defects.", evidenceIds: ["invented-source"] }] }), false, "The provider must select a known evidence ID.");
+    assert.equal(schemaCheck({ ...wireOutput, claimSources: [{ claim: "Evaluation catches defects.", evidenceIds: [] }] }), false);
     assert.equal(body.reasoning_effort, "low");
     assert.match(packet.writingRequirements.completion, /complete sentences.*internal evidence IDs/i);
     assert.deepEqual(packet.writingRequirements.platforms, [

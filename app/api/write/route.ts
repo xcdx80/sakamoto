@@ -2,7 +2,8 @@ import { sessionOwner } from "@/lib/owner";
 import { writeHttp } from "@/lib/post-production/http";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// The bounded foreground stage gets four minutes; leave time to persist its result.
+export const maxDuration = 300;
 async function handle(req: Request) {
   let owner: string | null = null;
   try { owner = await sessionOwner(req); } catch { /* Authentication unavailable remains signed out. */ }
