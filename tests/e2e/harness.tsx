@@ -9,7 +9,7 @@ const client = createWriteClient('fixture-owner');
 const workspace = {
   profile: defaultProfile(), productions: [], history: [], sources: [],
   catalog: { frameworks: [], hooks: [] },
-  providers: { ready: true, promptVersion: 'fixture-prompt' },
+  providers: { ready: new URLSearchParams(window.location.hash.slice(1)).get('providers') !== 'unavailable', promptVersion: 'fixture-prompt' },
   publishing: { ready: false, platforms: [] },
 } as unknown as WriteWorkspace;
 

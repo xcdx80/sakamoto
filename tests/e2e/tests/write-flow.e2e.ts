@@ -9,6 +9,77 @@ function ready(platforms = ['x','linkedin'], number = 1): any {
     revisions:[{id,productionId:'fixture-production',number,origin:'writer',createdAt:'2026-11-06T12:00:00Z',content:{ variants:platforms.map(platform=>({platform,delivery:platform==='x'?'single':'long',posts:[original]})),hooks:[],claimSources:[{claim:original,evidenceIds:['AUTHOR_NOTE']}] }}],
     review:{ revisionId:id,status:'passed',issues:[],criteria:[],writerModel:'fixture-writer',reviewerModel:'fixture-reviewer'},feedback:[] };
 }
+test('an author can write, save and copy a first draft while generation is unavailable without approving it', async ({app,screen,browser}) => {
+  let current = ready(['x']); let saved: any;
+  await browser.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: {
+    writeText: async (text: string) => { sessionStorage.setItem('fixture-copied-draft', text); },
+  } }));
+  current.production.latestRevisionId = null;
+  current.production.status = 'needs_input'; current.production.stage = 'context';
+  current.production.checkpoint = {}; current.revisions = []; current.review = null;
+  await browser.route('**/api/write**', async route => {
+    if (route.request.method === 'GET') return route.fulfill({json:current});
+    const body = JSON.parse(route.request.postData!);
+    if (body.action !== 'save') throw new Error('Unavailable generation must not advance or approve a manual draft.');
+    saved = body;
+    current = ready(['x']); current.production.checkpoint = {};
+    current.revisions[0].origin = 'author'; current.revisions[0].content = body.content;
+    current.production.status = 'draft'; current.production.stage = 'review'; current.review = null;
+    await route.fulfill({json:current});
+  });
+  await app.open('/#providers=unavailable');
+  await expect(screen.getByLabel('X post',{exact:true})).toHaveValue('');
+  await expect(screen.getByRole('button',{name:'Save draft',exact:true})).toBeDisabled();
+  await screen.getByLabel('X post',{exact:true}).fill(revised);
+  await screen.getByRole('button',{name:'Copy X',exact:true}).click();
+  await expect(screen.getByRole('button',{name:'Copied',exact:true})).toBeVisible();
+  await expect(await browser.evaluate(() => sessionStorage.getItem('fixture-copied-draft'))).toBe(revised);
+  await screen.getByRole('button',{name:'Save draft',exact:true}).click();
+  await expect.poll(()=>saved?.content.variants[0].posts[0]).toBe(revised);
+  await expect(screen.getByText('Revision 1 · saved')).toBeVisible();
+  await expect(screen.getByRole('alert')).not.toBeVisible();
+  await expect(screen.getByRole('button',{name:'Save draft',exact:true})).toBeDisabled();
+  await expect(screen.getByRole('button',{name:'Continue review',exact:true})).toBeDisabled();
+  await expect(screen.getByRole('button',{name:'Approve revision 1',exact:true})).toBeDisabled();
+  await browser.reload();
+  await expect(screen.getByLabel('X post',{exact:true})).toHaveValue(revised);
+  await expect(screen.getByRole('button',{name:'Approve revision 1',exact:true})).toBeDisabled();
+});
+test('a failed first generation leaves manual authoring available after busy controls unlock', async ({app,screen,browser}) => {
+  let current = ready(['x']); let saved: any;
+  current.production.latestRevisionId = null; current.production.stage = 'context'; current.production.status = 'draft';
+  current.production.checkpoint = {}; current.revisions = []; current.review = null;
+  let finishGeneration!: () => void;
+  const generating = new Promise<void>(resolve => { finishGeneration = resolve; });
+  await browser.route('**/api/write**', async route => {
+    if (route.request.method === 'GET') return route.fulfill({json:current});
+    const body = JSON.parse(route.request.postData!);
+    if (body.action === 'advance') {
+      if (!saved) await generating;
+      current.production.status = 'needs_input'; current.production.version++;
+      current.production.notice = 'Add concrete author notes before continuing.';
+    } else if (body.action === 'save') {
+      saved = body; current = ready(['x']); current.production.checkpoint = {};
+      current.revisions[0].origin = 'author'; current.revisions[0].content = body.content;
+      current.production.status = 'review'; current.production.stage = 'review'; current.review = null;
+    } else throw new Error('A failed generation must not approve the manual revision.');
+    await route.fulfill({json:current});
+  });
+  await app.open('/');
+  await screen.getByRole('button',{name:'Continue to draft',exact:true}).click();
+  await expect(screen.getByLabel('X post',{exact:true})).toBeDisabled();
+  await expect(screen.getByRole('button',{name:'Save & review edits',exact:true})).toBeDisabled();
+  await expect(screen.getByRole('button',{name:'Copy X',exact:true})).toBeEnabled();
+  finishGeneration();
+  await expect(screen.getByText('Add concrete author notes before continuing.')).toBeVisible();
+  await expect(screen.getByLabel('X post',{exact:true})).toBeEnabled();
+  await screen.getByLabel('X post',{exact:true}).fill(revised);
+  await screen.getByRole('button',{name:'Save & review edits',exact:true}).click();
+  await expect.poll(()=>saved?.content.variants[0].posts[0]).toBe(revised);
+  await expect(screen.getByText('Revision 1 · saved')).toBeVisible();
+  await expect(screen.getByLabel('X post',{exact:true})).toHaveValue(revised);
+  await expect(screen.getByRole('button',{name:'Approve revision 1',exact:true})).toBeDisabled();
+});
 test('removing a previously selected platform keeps the remaining editor editable', async ({app,screen,browser}) => {
   let current = ready();
   await browser.route('**/api/write**', async route => {
