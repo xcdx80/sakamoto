@@ -1,5 +1,5 @@
 import {requestOwner} from '@/lib/owner';
-import {readLibraryThreads,searchLibraryPosts} from '@/lib/library-threads';
+import {PostSearchError,readLibraryThreads,searchLibraryPosts} from '@/lib/library-threads';
 export const runtime='nodejs';
 export async function GET(req:Request){
  const owner=await requestOwner(req);if(!owner)return Response.json({error:'Sign in to read your threads.'},{status:401});
@@ -9,5 +9,5 @@ export async function GET(req:Request){
 export async function POST(req:Request){
  const owner=await requestOwner(req);if(!owner)return Response.json({error:'Sign in to search your posts.'},{status:401});
  try{const body=await req.json();if(typeof body.query!=='string')throw Error('Invalid query.');return Response.json({matchedItemIds:await searchLibraryPosts(owner,body.query)},{headers:{'Cache-Control':'private, no-store'}});}
- catch{return Response.json({error:'Could not search saved posts.'},{status:400});}
+ catch(e){return Response.json({error:e instanceof PostSearchError?e.message:'Could not search saved posts.'},{status:e instanceof PostSearchError?e.status:400,...(e instanceof PostSearchError&&e.status===429?{headers:{'Retry-After':String(e.retryAfter??60)}}:{})});}
 }

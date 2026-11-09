@@ -100,11 +100,11 @@ export function ProductionEditor({ detail, workspace, client, busy, author, onXP
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
   useEffect(() => { setContent(latest?.content || blankDraft(p.brief)); setViewedId(revisionId); setEditing(!latest); if (latest?.origin !== "author") setParameters(generationParameters(detail)); }, [revisionId]); // A newly saved immutable revision becomes the editing baseline.
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !parametersChanged) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [dirty, parametersChanged]);
 
   function post(index: number, text: string) { setContent(previous => ({ ...previous, variants: previous.variants.map((v, i) => i === platform ? { ...v, posts: v.posts.map((p, n) => n === index ? text : p) } : v) })); }
   function addPost() { setContent(previous => ({ ...previous, variants: previous.variants.map((v, i) => i === platform ? { ...v, posts: [...v.posts, ""] } : v) })); }
@@ -123,7 +123,7 @@ export function ProductionEditor({ detail, workspace, client, busy, author, onXP
   function progress() { onAction("Finding sources, writing and reviewing", () => client.progress(detail, onProgress)); }
   async function reviewSaved(saved: ProductionDetail) { onProgress(saved); return client.progress(saved, onProgress); }
 
-  function generate() { chooseView(window.matchMedia("(max-width: 959px)").matches ? null : "sources"); onAction("Generating a new version", async () => { const prepared = await client.regenerate(p.id, p.version, parameters); onProgress(prepared); return client.progress(prepared, onProgress); }); }
+  function generate() { chooseView(window.matchMedia("(max-width: 959px)").matches ? null : "sources"); onAction("Generating a new version", async () => { const prepared = await client.regenerate(p.id, p.version, parameters); setParameters(generationParameters(prepared)); onProgress(prepared); const generated = await client.progress(prepared, onProgress); setParameters(generationParameters(generated)); return generated; }); }
   return <div className="write-production">
     <header className="write-production-heading">
       {back}
@@ -174,7 +174,7 @@ export function ProductionEditor({ detail, workspace, client, busy, author, onXP
         </div>
       </section>
       <PostInspector view={view} lastView={lastView} onView={chooseView} sourceCount={presentation.sources.length + presentation.candidates.length + presentation.authorContext.length} issueCount={presentation.review.issues.length} value={parameters} workspace={workspace} disabled={locked} busy={Boolean(busy)} hasDraftEdits={postDirty} changed={parametersChanged} frameworkName={workspace.catalog.frameworks.find(item => item.id === (parametersChanged ? parameters.frameworkId : context?.frameworkId))?.name || "Automatic"} hookName={workspace.catalog.hooks.find(item => item.id === (parametersChanged ? parameters.hookPatternId : context?.hookPatternId))?.name || "Automatic"} onGenerate={generate} onReset={() => setParameters(generationParameters(detail))}
-        sources={<SourcesPanel presentation={presentation} metadataUnavailable={metadataUnavailable} focusedSource={focusedSource} onHoverSource={setHoveredSource} research={p.checkpoint.research && <p className="write-research-status" role="status">Library sources checked. {p.checkpoint.research.web === "searched" ? "Web research checked." : "Web research is not connected."}{p.checkpoint.research.notice && <> {p.checkpoint.research.notice}</>}</p>} />}
+        sources={<SourcesPanel presentation={presentation} metadataUnavailable={metadataUnavailable} focusedSource={focusedSource} onHoverSource={setHoveredSource} research={p.checkpoint.research && <p className="write-research-status" role="status">{p.checkpoint.research.library === "disabled" ? "Library research is off." : p.checkpoint.research.library === "selected" ? "Selected library sources retained." : "Library sources checked."} {p.checkpoint.research.web === "searched" ? "Web research checked." : p.checkpoint.research.web === "disabled" ? "Web research is off." : p.checkpoint.research.web === "selected" ? "Selected web sources retained." : "Web research is not connected."}{p.checkpoint.research.notice && <> {p.checkpoint.research.notice}</>}</p>} />}
         brief={<BriefPanel value={parameters} onChange={setParameters} busy={Boolean(busy)} workspace={workspace} availableEvidence={p.checkpoint.evidence ?? []} />}
         decisions={<DecisionsPanel value={parameters} onChange={setParameters} context={context} workspace={workspace} busy={Boolean(busy)} availableEvidence={p.checkpoint.evidence ?? []} opening={(variant.posts[0] ?? "").split("\n")[0]} alternateHooks={isCurrent ? content.hooks : []} canUseHook={!busy && !locked} onUseHook={hook => { const lines = variant.posts[0].split("\n"); post(0, [hook, ...lines.slice(1)].join("\n")); setComparing(false); setEditing(true); }} />}
         review={<ReviewPanel review={presentation.review} stage={p.stage} notes={latest && <PostNotes detail={detail} workspace={workspace} client={client} busy={Boolean(busy)} onAction={onAction} onProfile={onProfile} />} />}

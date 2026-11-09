@@ -897,12 +897,15 @@ test("edited structured posts publish the visible body as a derived document and
     assert.equal(evidence.author, undefined);
     assert.equal(evidence.address.postId, undefined);
     assert.equal(evidence.address.wholePost, undefined);
-    // The retained title is searchable, but it must never expose the superseded body.
-    const titleMatch = (await call("search_saved_passages", {
-      query: "cobalt", semantic: false,
-    })).results.find((result: any) => result.itemId === id);
-    assert.equal(titleMatch?.sourceRevision, 2);
-    assert.equal(titleMatch?.excerpt, "My revised amber source");
+    assert.equal(
+      (
+        await call("search_saved_passages", {
+          query: "cobalt",
+          semantic: false,
+        })
+      ).results.some((result: any) => result.itemId === id),
+      false,
+    );
     await waitFor(async () =>
       (await pullRows(owner)).changes.highlights.some(
         (row) => row.id === "original-mark",

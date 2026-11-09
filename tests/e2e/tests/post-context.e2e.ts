@@ -8,8 +8,8 @@ test('pasted creation context and independent source switches reach the brief HT
   let submitted: any;
   await browser.route('**/api/write**', route => { submitted = JSON.parse(route.request.postData!); return route.fulfill({ json: ready() }); });
   await app.open('/#create');
-  const library = screen.getByRole('checkbox', { name: /^Library Search saved/ });
-  const web = screen.getByRole('checkbox', { name: /^Web search Find supporting/ });
+  const library = screen.getByRole('checkbox', { name: /^Library\s*Search saved/ });
+  const web = screen.getByRole('checkbox', { name: /^Web search\s*Find supporting/ });
   await expect(library).toBeChecked(); await expect(web).toBeChecked();
   await screen.getByLabel(/^What do you want to post about/).fill('A source-grounded engineering lesson');
   await screen.getByLabel(/^Paste supporting material/).fill('First finding.\nSecond finding with a source excerpt.');
@@ -43,8 +43,8 @@ test('regeneration preserves imported context across close reopen reset and repe
   await expect(pasted).toHaveValue('Unsaved temporary research');
   await screen.getByRole('button', { name: 'Reset settings', exact: true }).click(); await expect(pasted).toHaveValue('');
   await pasted.fill('Added reference material');
-  await screen.getByRole('checkbox', { name: /^Library Search saved/ }).uncheck();
-  await screen.getByRole('checkbox', { name: /^Web search Find supporting/ }).uncheck();
+  await screen.getByRole('checkbox', { name: /^Library\s*Search saved/ }).uncheck();
+  await screen.getByRole('checkbox', { name: /^Web search\s*Find supporting/ }).uncheck();
   await screen.getByRole('button', { name: 'Generate new version', exact: true }).click();
   await expect.poll(() => submitted.length).toBe(1);
   await expect.poll(() => submitted[0]?.brief.agentContext[0]).toEqual(imported);
@@ -56,4 +56,16 @@ test('regeneration preserves imported context across close reopen reset and repe
   await expect.poll(() => submitted.length).toBe(2); await expect.poll(() => submitted[1]?.brief.agentContext.length).toBe(2);
   await expect.poll(() => submitted[1]?.brief.agentContext[0]).toEqual(imported);
   await expect.poll(() => submitted[1]?.brief.agentContext[1].text).toBe('Updated reference material');
+});
+
+test('research status distinguishes disabled searches from selected source reuse', async ({ app, screen, browser }) => {
+  let current = ready();
+  current.production.brief.sourcePolicy = { library: false, web: false };
+  current.production.checkpoint.research = { library: 'disabled', web: 'disabled', notice: null };
+  await browser.route('**/api/write**', route => route.fulfill({ json: current }));
+  await app.open('/');
+  await expect(browser.locator('.write-research-status')).toContainText('Library research is off. Web research is off.');
+  current.production.checkpoint.research = { library: 'selected', web: 'selected', notice: null };
+  await app.open('/');
+  await expect(browser.locator('.write-research-status')).toContainText('Selected library sources retained. Selected web sources retained.');
 });

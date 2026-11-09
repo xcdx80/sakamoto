@@ -82,6 +82,9 @@ function TurnBody({ t }: { t: Turn }) {
     return (
       <>
         <p className="text-[13.5px] text-rubric-text">{t.error}</p>
+        {t.needSignIn && <SignInButton mode="modal">
+          <button type="button" className="mt-2.5 inline-flex h-8 items-center rounded-full border border-rule px-3.5 text-[12.5px] font-medium text-ink-2">Sign in</button>
+        </SignInButton>}
         {t.needKey && <KeyButton />}
       </>
     );

@@ -21,6 +21,7 @@ const workspace = {
   // Minimal presentation fixtures use IDs, names, compatible hooks and templates
   // from the actual catalogue. Selection and providers remain HTTP fixtures.
   catalog: {
+    version: 'fixture-catalog',
     frameworks: [
       { id: 'single-paragraph-insight', name: 'Single-paragraph insight', summary: 'One thought-provoking paragraph on a core topic.', hookPatternIds: ['parallel-best'] },
       { id: 'story-lesson', name: 'Story to lesson', summary: 'A short personal (or sourced) story with a turning point, followed by the lesson it taught.', hookPatternIds: ['story-cold-open'] },

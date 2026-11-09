@@ -135,7 +135,6 @@ export function Library() {
     }, byAgent ? 14_000 : 6000);
   }, [hydrated, library, closeWave, account, syncReady, threads.index]);
 
-  const own = library.filter((x) => x.origin !== "sample");
   const projection = useMemo(() => projectLibrary({ library, progress, highlights, hydrated, hiddenSamples: prefs.hiddenSamples, threads: threads.index, account, syncReady }), [library, progress, highlights, hydrated, prefs.hiddenSamples, threads.index, account, syncReady]);
   const {books,ready} = projection;
 
@@ -301,7 +300,7 @@ export function Library() {
               <p className="content-empty-aside" aria-hidden>{filtered ? "we looked twice" : "very tidy, at least"}</p>
             </div>
           )}
-          {ready && own.length < SAMPLES_UNTIL && <Starter count={own.length} signedIn={Boolean(isSignedIn)} onAdd={setAdding} />}
+          {ready && stats.ownCount < SAMPLES_UNTIL && <Starter count={stats.ownCount} signedIn={Boolean(isSignedIn)} onAdd={setAdding} />}
         </> : <div className="content-grid" aria-hidden>{Array.from({ length: 6 }, (_, i) => <div key={i} className="content-skeleton shimmer" />)}</div>}
       </main>
 

@@ -32,3 +32,32 @@ test("a full rich-context brief cannot silently add a ninth pasted item", () => 
   assert.ok(document.querySelector("textarea")?.hasAttribute("disabled"));
   assert.match([...document.childNodes].map(node => node.textContent ?? "").join(""), /already has 8 context items/);
 });
+
+test("selection explanations retain recorded tiebreak reasons without inventing missing rationale", async () => {
+  const { editorialPresentation } = await import("../lib/post-production/editorial-presentation");
+  const catalog = { frameworks: [{ id: "f", name: "Framework", summary: "Generic catalog summary", outline: ["Generic step"] }], hooks: [{ id: "h", name: "Hook", description: "Generic catalog description" }] } as any;
+  const context = { brief, frameworkId: "f", hookPatternId: "h", editorialDecision: { framework: { selectedId: "f", mode: "editorial_tiebreak", reason: "Recorded framework rationale" }, hook: { selectedId: "h", mode: "editorial_tiebreak", reason: "Recorded hook rationale" } } } as any;
+  assert.equal(editorialPresentation(context, catalog).frameworkReason, "Recorded framework rationale");
+  assert.equal(editorialPresentation(context, catalog).hookReason, "Recorded hook rationale");
+  const missing = editorialPresentation({ ...context, editorialDecision: undefined }, catalog);
+  assert.match(missing.frameworkReason, /not recorded/);
+  assert.match(missing.hookReason, /not recorded/);
+  assert.deepEqual(missing.outline, []);
+  assert.match(editorialPresentation({ ...context, manualSelection: { frameworkId: "f", hookPatternId: "h" } }, catalog).frameworkReason, /You chose/);
+});
+
+
+test("historical explanations reject mismatched catalogs and selected IDs", async () => {
+  const { editorialPresentation } = await import("../lib/post-production/editorial-presentation");
+  const catalog = { version: "new", frameworks: [{ id: "f", name: "New framework" }], hooks: [{ id: "h", template: "New template" }] } as any;
+  const context = { brief, catalogVersion: "old", frameworkId: "f", hookPatternId: "h", editorialDecision: { framework: { selectedId: "other", reason: "Wrong reason", support: [{ quote: "Wrong passage" }] }, hook: { selectedId: "other", reason: "Wrong hook" } }, manualSelection: { frameworkId: "other" } } as any;
+  const result = editorialPresentation(context, catalog);
+  assert.equal(result.framework, undefined);
+  assert.equal(result.hook, undefined);
+  assert.match(result.frameworkReason, /not recorded/);
+  assert.match(result.hookReason, /not recorded/);
+  assert.match(result.frameworkAudit, /not recorded/);
+  assert.deepEqual(result.frameworkSupport, []);
+  assert.equal(editorialPresentation({ ...context, catalogVersion: "new" }, catalog).hook?.template, "New template");
+  assert.equal(editorialPresentation({ ...context, catalogVersion: undefined }, catalog).hook, undefined);
+});

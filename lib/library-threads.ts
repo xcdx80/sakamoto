@@ -1,6 +1,7 @@
 /** Owner-scoped thread projection and exact post-text search. Source bodies stay in their own records. */
 import { db } from './db';
-export type LibraryThreadGroup = { rootId: string; memberIds: string[]; bookmarkedItemIds?: string[]; missingPostCount?: number; contextOnly?: boolean };
+import { allow } from './ratelimit';
+export type LibraryThreadGroup = { rootId: string; bookmarkIds?: string[]; memberIds: string[]; missingPostCount?: number; contextOnly?: boolean };
 export type LibraryThreadIndex = { groups: LibraryThreadGroup[]; postItemIds: string[]; linkedSaveTimes?: Record<string,number> };
 type Node = { article_id: string; post_id: string; role: string; saved_at:number|null; added_at:number|null; author: {id?:string;handle?:string}|null; parents: string[]; references:string[]; missing: string[] };
 const sameAuthor=(a:Node,b:Node)=>a.author&&b.author&&(a.author.id&&b.author.id?a.author.id===b.author.id:Boolean(a.author.handle&&b.author.handle&&a.author.handle.toLowerCase()===b.author.handle.toLowerCase()));
@@ -24,7 +25,7 @@ export async function readLibraryThreads(owner:string):Promise<LibraryThreadInde
   const roots=nodes.filter(n=>!n.parents.some(id=>members.has(id)&&sameAuthor(n,byId.get(id)!))).sort(compare);
   const root=roots[0]??[...nodes].sort(compare)[0];
   const missing=new Set(nodes.flatMap(n=>n.missing).filter(id=>!byId.has(id)));
-  groups.push({contextOnly,rootId:root.article_id,bookmarkedItemIds:nodes.filter(n=>n.role==='bookmark').map(n=>n.article_id),memberIds:nodes.sort(compare).map(n=>n.article_id),...(missing.size?{missingPostCount:missing.size}:{})});
+  groups.push({contextOnly,rootId:root.article_id,bookmarkIds:nodes.filter(n=>n.role==='bookmark').sort(compare).map(n=>n.article_id),memberIds:nodes.sort(compare).map(n=>n.article_id),...(missing.size?{missingPostCount:missing.size}:{})});
  }
  // Fetched readings inherit their discovery's save time, including links in
  // author continuations and necessary parent/quote context. This does not make
@@ -52,14 +53,31 @@ export async function readLibraryThreads(owner:string):Promise<LibraryThreadInde
  }
  return {groups,postItemIds:rows.map(n=>n.article_id),...(links.length?{linkedSaveTimes}:{})};
 }
-/** Search every saved post body, including continuation/context posts whose indexing is pending. No model calls. */
+export class PostSearchError extends Error {
+ constructor(message:string,readonly status:number,readonly retryAfter?:number){super(message);}
+}
+const activeSearches=new Set<string>();
+/** Search pending and saved post bodies with bounded terms, per-instance admission and a database deadline. */
 export async function searchLibraryPosts(owner:string,query:string):Promise<string[]>{
- if(!query.trim()||Buffer.byteLength(query)>1000)throw new Error('Enter a query of at most 1000 UTF8 bytes.');
- const words=query.toLowerCase().trim().split(/\s+/);
- const rows=await db().query(`select p.article_id from post_sources p join articles a on a.user_id=p.user_id and a.id=p.article_id
- where p.user_id=$1 and not a.deleted and not exists(select 1 from unnest($2::text[]) word
- where strpos(lower(concat_ws(' ',a.doc#>>'{post,fullText}',a.data->>'title',a.data->>'author',a.data->>'topic',a.data->'tags')),word)=0)
- order by p.article_id limit 50001`,[owner,words]);
- if(rows.length>50000)throw new Error('Refine the query to search fewer posts.');
- return rows.map(r=>r.article_id);
+ if(!query.trim()||Buffer.byteLength(query)>1000)throw new PostSearchError('Enter a query of at most 1000 UTF8 bytes.',400);
+ const words=[...new Set(query.toLowerCase().trim().split(/\s+/))];
+ if(words.length>16)throw new PostSearchError('Enter at most 16 distinct search terms.',400);
+ if(activeSearches.has(owner))throw new PostSearchError('A post search is still running. Retrying shortly.',429,1);
+ if(!allow(`post-search:${owner}`,30,60_000))throw new PostSearchError('Too many post searches. Wait a moment and retry.',429,60);
+ const adapter=db();if(!adapter.queryWithTimeout)throw new PostSearchError('Bounded post search is unavailable.',503);
+ activeSearches.add(owner);
+ try {
+  // Normalize each source once, instead of once per query term. The deadline is set before this statement starts.
+  const rows=await adapter.queryWithTimeout(`with searchable as materialized (
+   select p.article_id,lower(concat_ws(' ',a.doc#>>'{post,fullText}',a.data->>'title',a.data->>'author',a.data->>'topic',a.data->'tags')) as text
+   from post_sources p join articles a on a.user_id=p.user_id and a.id=p.article_id
+   where p.user_id=$1 and not a.deleted
+  ) select article_id from searchable where not exists(select 1 from unnest($2::text[]) word where strpos(text,word)=0)
+  order by article_id limit 50001`,[owner,words],2000);
+  if(rows.length>50000)throw new PostSearchError('Refine the query to search fewer posts.',400);
+  return rows.map(r=>r.article_id);
+ } catch(e) {
+  if(e&&typeof e==='object'&&'code' in e&&e.code==='57014')throw new PostSearchError('Post search took too long. Narrow the query and retry.',503);
+  throw e;
+ } finally {activeSearches.delete(owner);}
 }

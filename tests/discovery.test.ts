@@ -25,7 +25,7 @@ test("a natural-language topic query discovers relevant reading before semantic 
   ]);
   const result = await searchEvidence("discovery-reader", {
     query: "building UI with Expo", semantic: false,
-  });
+  }, undefined, "discovery");
   assert.ok(result.results.some(source => source.itemId === "expo-controls"));
   assert.deepEqual(result.coverage, { sources: 2, indexedSources: 0 });
 });
@@ -34,7 +34,7 @@ test("source titles describe passages even when the paragraph uses different wor
   await save("title-reader", "evaluation-guide", "Eval design for assistants", [
     "Define failure classes, label representative examples, and reserve a held-out set.",
   ]);
-  const result = await searchEvidence("title-reader", { query: "eval design", semantic: false });
+  const result = await searchEvidence("title-reader", { query: "eval design", semantic: false }, undefined, "discovery");
   assert.equal(result.results[0]?.itemId, "evaluation-guide");
 });
 
@@ -46,7 +46,7 @@ test("topic results leave room for different sources instead of filling the answ
   ]);
   const result = await searchEvidence("diverse-reader", {
     query: "agentic design best practices", semantic: false, limit: 4,
-  });
+  }, undefined, "discovery");
   assert.ok(result.results.some(source => source.itemId === "second-guide"));
   assert.ok(result.results.filter(source => source.itemId === "long-guide").length <= 2);
 });
@@ -63,16 +63,16 @@ test("a matching saved post brings its linked article into discovery without byp
   } }) });
   try { await processLibrary("linked-reader", { limit: 1 }); }
   finally { configureProcessing({}); }
-  const found = await searchEvidence("linked-reader", { query: "Expo", semantic: false });
+  const found = await searchEvidence("linked-reader", { query: "Expo", semantic: false }, undefined, "discovery");
   assert.ok(found.results.some(source => source.itemId === "linked-controls"));
-  const posts = await searchEvidence("linked-reader", { query: "Expo", contentType: "post", semantic: false });
+  const posts = await searchEvidence("linked-reader", { query: "Expo", contentType: "post", semantic: false }, undefined, "discovery");
   assert.ok(posts.results.every(source => source.contentType === "post"));
 });
 
 test("covering the question's concepts ranks ahead of repeating one generic word", async () => {
   await save("coverage-reader", "a-generic", "Expert advice advice advice advice advice", ["Advice advice advice advice advice advice advice advice."]);
   await save("coverage-reader", "z-career", "Career advice", ["Choose roles with scope for mentorship and growth."]);
-  const result = await searchEvidence("coverage-reader", { query: "career advice", semantic: false });
+  const result = await searchEvidence("coverage-reader", { query: "career advice", semantic: false }, undefined, "discovery");
   assert.equal(result.results[0]?.itemId, "z-career");
 });
 
@@ -89,7 +89,7 @@ test("a matching post promotes its linked article even when a weak semantic matc
   };
   try {
     await processLibrary("linked-reader", { limit: 12 });
-    const found = await searchEvidence("linked-reader", { query: "Expo", limit: 3 });
+    const found = await searchEvidence("linked-reader", { query: "Expo", limit: 3 }, undefined, "discovery");
     assert.equal(found.mode, "hybrid");
     assert.ok(found.results.some(source => source.itemId === "linked-controls"));
   } finally {
@@ -99,7 +99,7 @@ test("a matching post promotes its linked article even when a weak semantic matc
 });
 
 test("quoted wording search does not expand into linked text without the requested phrase", async () => {
-  const found = await searchEvidence("linked-reader", { query: '"Expo iOS"', semantic: false });
+  const found = await searchEvidence("linked-reader", { query: '"Expo iOS"', semantic: false }, undefined, "discovery");
   assert.ok(found.results.length > 0);
   assert.ok(found.results.every(source => source.excerpt.includes("Expo iOS") || source.title.includes("Expo iOS")));
 });

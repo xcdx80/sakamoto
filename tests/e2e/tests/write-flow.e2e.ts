@@ -22,7 +22,7 @@ test('saved adaptations open in native feed previews and the context sidebar col
 function ready(platforms = ['x','linkedin'], number = 1): any {
   const id = 'fixture-revision-' + number;
   return { production: { id:'fixture-production', version:number * 5, brief:{ idea:'Concrete author attribution lesson',notes:original,audience:'Engineers',goal:'trust',pillar:'engineering',platforms,delivery:'single',sourceIds:[]},
-    status:'ready',stage:'complete',checkpoint:{profile:{version:0},evidence:[{id:'AUTHOR_NOTE',itemId:'',sourceRevision:0,title:'Author note',excerpt:original,kind:'author_note'}],reviewPin:{reviewPromptVersion:'fixture-prompt'}},latestRevisionId:id,approvedRevisionId:null,plannedAt:null,notice:null,createdAt:'2026-11-06T12:00:00Z',updatedAt:'2026-11-06T12:00:00Z'},
+    status:'ready',stage:'complete',checkpoint:{catalogVersion:'fixture-catalog',profile:{version:0},evidence:[{id:'AUTHOR_NOTE',itemId:'',sourceRevision:0,title:'Author note',excerpt:original,kind:'author_note'}],reviewPin:{reviewPromptVersion:'fixture-prompt'}},latestRevisionId:id,approvedRevisionId:null,plannedAt:null,notice:null,createdAt:'2026-11-06T12:00:00Z',updatedAt:'2026-11-06T12:00:00Z'},
     revisions:[{id,productionId:'fixture-production',number,origin:'writer',createdAt:'2026-11-06T12:00:00Z',content:{ variants:platforms.map(platform=>({platform,delivery:platform==='x'?'single':'long',posts:[original]})),hooks:[],claimSources:[{claim:original,evidenceIds:['AUTHOR_NOTE']}] }}],
     review:{ revisionId:id,status:'passed',issues:[],criteria:[],writerModel:'fixture-writer',reviewerModel:'fixture-reviewer'},feedback:[] };
 }
@@ -334,7 +334,7 @@ test('version selection and comparison retain each context without borrowing cur
   const legacy=ready(['x'],1).revisions[0];legacy.content.variants[0].posts=['Legacy wording retained without source context.'];
   const latest=current.revisions[0];latest.content.variants[0].posts=['Current wording with its own documented sources.'];
   const snapshot=(revision:any,title:string,frameworkId:string,hookPatternId:string)=>({
-    brief:{...current.production.brief,idea:title},frameworkId,hookPatternId,
+    brief:{...current.production.brief,idea:title},catalogVersion:'fixture-catalog',frameworkId,hookPatternId,
     evidence:[{id:'SOURCE-'+revision.number,itemId:'',sourceRevision:0,kind:'web_source',title:title+' source',excerpt:revision.content.variants[0].posts[0],originalUrl:'https://example.org/version-'+revision.number}],
     editorialDecision:{framework:{selectedId:frameworkId,reason:title+' framework rationale.',support:[]},hook:{selectedId:hookPatternId,reason:title+' opening rationale.'}},
   });
@@ -501,7 +501,7 @@ test('saved choices populate the next-version controls and close-ranking audits 
   await expect(screen.getByLabel('Framework for next version',{exact:true})).toHaveValue('single-paragraph-insight');
   await expect(screen.getByLabel('Hook for next version',{exact:false})).toHaveValue('parallel-best');
   await expect(screen.getByText('The author describes one concrete source-attribution lesson.',{exact:true})).toBeVisible();
-  await expect(screen.getByText("Jev's relative preference was uncertain.",{exact:true})).not.toBeVisible();
+  await expect(browser.locator('.write-decision-reason').first()).toHaveText("Jev's relative preference was uncertain.");
 });
 
 test('brief and decisions disclosures expose their state and animate content without losing local settings', async ({app,screen,browser}) => {

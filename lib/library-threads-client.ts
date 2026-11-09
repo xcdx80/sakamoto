@@ -24,12 +24,21 @@ export function useLibraryThreads(query:string){
  useEffect(()=>{
   if(!owner||!text||!syncReady)return;
   const controller=new AbortController(),epoch=accountEpoch();
-  const timer=setTimeout(()=>{
+  let timer:ReturnType<typeof setTimeout>;
+  const request=()=>{
    void fetch('/api/library-threads',{method:'POST',headers:{'content-type':'application/json','X-Sakamoto-Owner':owner},body:JSON.stringify({query:text}),cache:'no-store',signal:controller.signal}).then(async response=>{
+    if(response.status===429){
+     if(!controller.signal.aborted&&epoch===accountEpoch()&&useStore.getState().scope===owner){
+      const seconds=Math.max(1,Math.min(60,Number(response.headers.get('Retry-After'))||1));
+      timer=setTimeout(request,seconds*1000);
+     }
+     return;
+    }
     if(!response.ok)throw Error('Full post search is unavailable.');const result=await response.json() as {matchedItemIds:string[]};
     if(!controller.signal.aborted&&epoch===accountEpoch()&&useStore.getState().scope===owner)setSearch({owner,query:text,ids:result.matchedItemIds,error:''});
    }).catch(e=>{if(!controller.signal.aborted&&epoch===accountEpoch())setSearch({owner,query:text,error:e.message});});
-  },250);
+  };
+  timer=setTimeout(request,250);
   return()=>{clearTimeout(timer);controller.abort();};
  },[owner,text,library,syncReady,attempt]);
  const matches=useMemo(()=>search.ids?new Set(search.ids):undefined,[search.ids]);

@@ -187,11 +187,11 @@ function itemOf(a: Article) {
 /** One bounded, awaited operation. Claims only work with an installed handler; no model calls in the link handler. */
 export async function processLibrary(
   owner: string,
-  args: { limit?: number; retryJobId?: string } = {},
+  args: { limit?: number; retryJobId?: string; deadline?: number } = {},
 ) {
   registerLibraryProcessingHandlers(registerProcessingHandler);
   const limit = Math.max(1, Math.min(48, Number(args.limit) || 4));
-  const end = Date.now() + 23_000;
+  const end = Math.min(Date.now() + 23_000, args.deadline ?? Infinity);
   if (args.retryJobId) {
     if (!/^\d+$/.test(args.retryJobId))
       throw new Error("Invalid job identity.");
@@ -320,17 +320,29 @@ export async function processLibrary(
 /** Cron stays bounded across owners as well as jobs. Its caller must authenticate the scheduler secret. */
 export async function processScheduled() {
   registerLibraryProcessingHandlers(registerProcessingHandler);
-  let rows = await db().query(
-    `select distinct user_id from processing_jobs where kind=any($1::text[]) and
- ((state in ('pending','retryable','blocked') and next_attempt_at<=$2) or (state='running' and lease_expires_at<=$2)) limit 1`,
-    [["link", ...handlers.keys()], new Date(clock()).toISOString()],
-  );
-  if(!rows.length)rows=await db().query(`select owners.user_id from
-    (select distinct user_id from processing_jobs where kind='link' and state in ('terminal','pdf_pending','pending','retryable')) owners
-    cross join lateral (select job_id from saved_post_link_targets(owners.user_id) limit 1) local_work limit 1`);
-  return rows.length
-    ? processLibrary(rows[0].user_id, { limit: 48 })
-    : { processed: 0 };
+  const deadline = Date.now() + 45_000;
+  const unavailable: string[] = [];
+  let processed = 0;
+  for (let turn = 0; turn < 48 && processed < 48 && Date.now() < deadline; turn++) {
+    let [next] = await db().query(
+      `select j.user_id,
+ (select max(previous.updated_at) from processing_jobs previous where previous.user_id=j.user_id and previous.attempts>0) as last_attempt
+ from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id
+ where not a.deleted and a.source_revision=j.source_revision and j.kind=any($1::text[]) and not(j.user_id=any($3::text[])) and
+ ((j.state in ('pending','retryable','blocked') and j.next_attempt_at<=$2) or (j.state='running' and j.lease_expires_at<=$2))
+ group by j.user_id order by last_attempt nulls first,j.user_id limit 1`,
+      [["link", ...handlers.keys()], new Date(clock()).toISOString(), unavailable],
+    );
+    if (!next) [next] = await db().query(`select owners.user_id from
+    (select distinct user_id from processing_jobs where kind='link' and state in ('terminal','pdf_pending','pending','retryable') and not(user_id=any($1::text[]))) owners
+    cross join lateral (select job_id from saved_post_link_targets(owners.user_id) limit 1) local_work limit 1`, [unavailable]);
+    if (!next) break;
+    // Rotate between owners after each batch, sharing one time and job bound and awaiting every attempt.
+    const result = await processLibrary(next.user_id, { limit: Math.min(24, 48 - processed), deadline });
+    processed += result.processed;
+    if (!result.processed) unavailable.push(next.user_id);
+  }
+  return { processed };
 }
 
 export type LinkedDiscovery = {

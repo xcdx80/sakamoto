@@ -111,3 +111,20 @@ test("Markdown hard line breaks remain inline inside their paragraph", () => {
   assert.ok(document.querySelector(".blk-text p br"));
   assert.equal(document.querySelector(".blk-text p div"), null);
 });
+
+
+test("Markdown speech text skips code while retired playback performs no requests", async () => {
+  const { readerSpeechText } = await import("../lib/reader-markdown");
+  const { textToArticle } = await import("../lib/article");
+  const { ListenButton } = await import("../components/reader/Listen");
+  const article = textToArticle("# Narration\n\n```js\nconsole.log('do not narrate code');\n```\n\nRead [the guide](https://example.com) &amp; **learn**.", { origin: "paste" });
+  assert.deepEqual([...readerSpeechText(article.blocks).values()].filter(Boolean), ["Read the guide & learn."]);
+  const originalFetch=globalThis.fetch;
+  let requests=0;
+  globalThis.fetch=async()=>{requests++;throw new Error("Retired playback cannot dispatch.");};
+  try {
+    const markup=renderToStaticMarkup(createElement(ListenButton,{from:()=>null}));
+    assert.equal(parseHTML(markup).document.querySelector('button')?.hasAttribute('disabled'),true);
+    assert.equal(requests,0);
+  } finally {globalThis.fetch=originalFetch;}
+});

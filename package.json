@@ -12,6 +12,7 @@
     "budget:reconcile": "node --env-file-if-exists=.env.local --import tsx scripts/reconcile-paid.ts",
     "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
     "eval:library": "node --env-file-if-exists=.env.local --import tsx scripts/eval-library.ts",
+    "test:reader": "node --import tsx --test tests/reader-markdown.test.ts",
     "frameworks:validate": "node --import tsx scripts/validate-frameworks.ts",
     "eval:post-coherence": "node --import tsx scripts/eval-post-coherence.ts"
   },
@@ -30,7 +31,7 @@
     "micromark-extension-gfm": "^3.0.0",
     "micromark-util-decode-string": "^2.0.1",
     "motion": "^14.11.1",
-    "next": "^16.4.0",
+    "next": "16.4.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sql.js": "1.14.1",

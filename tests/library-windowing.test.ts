@@ -16,7 +16,7 @@ Object.defineProperties(globalThis,{self:{value:browser},navigator:{value:{userA
 Object.defineProperty(browser,'ResizeObserver',{value:BrowserResizeObserver});
 Object.defineProperty(browser.HTMLElement.prototype,'offsetHeight',{get(){return 240}});
 browser.HTMLElement.prototype.getBoundingClientRect=function(){return {x:0,y:100-y,top:100-y,bottom:340-y,left:0,right:1100,width:1100,height:240,toJSON(){return {}}} as DOMRect};
-const until=async(check:()=>boolean)=>{for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,5))}assert.fail('Window did not reach expected rows')};
+const until=async(check:()=>boolean,attempts=100)=>{for(let i=0;i<attempts;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,5))}assert.fail('Window did not reach expected rows')};
 
 test('scrolling a complete library loads distant rows and recycles earlier rows without reducing the searchable dataset',async()=>{
  const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {ContentCards}=await import('../components/library/ContentCards');
@@ -60,4 +60,57 @@ test('returning from a reader restores the measured row window rather than estim
   const position=first();root.unmount();root=createRoot(host);render();await until(()=>Boolean(document.querySelector('.content-card')));await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(first(),position,'The same scroll offset must restore the same measured rows');
  }finally{root.unmount()}
+});
+
+test('a thread card presents its opening post while actions retain the bookmarked member',async()=>{
+ const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {ContentCards}=await import('../components/library/ContentCards');const {toLibraryBooks}=await import('../lib/library');
+ const library=[{id:'context',title:'The opening post',origin:'paste' as const,contentType:'post' as const,words:20,addedAt:1},{id:'bookmark',title:'Saved middle post',origin:'paste' as const,contentType:'post' as const,words:20,addedAt:2,favorite:true}];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:{groups:[{rootId:'context',memberIds:['context','bookmark'],bookmarkIds:['bookmark']}],postItemIds:['context','bookmark']}}).filter(book=>!book.sample);
+ const host=document.getElementById('root')!;const root=createRoot(host);const actions:string[]=[];
+ try{
+  root.render(createElement(ContentCards,{books,view:'list',fresh:new Set<string>(),onManage:book=>actions.push('manage:'+book.id),onFavorite:book=>actions.push('favorite:'+book.id),onTag(){},selectedTag:null}));
+  await until(()=>Boolean(host.querySelector('a[href="/read/context"]')));
+  assert.equal(host.querySelector('h2')?.textContent,'The opening post');
+  host.querySelector('[aria-label="Unfavorite Saved middle post"]')!.dispatchEvent(new browser.Event('click',{bubbles:true}));
+  host.querySelector('[aria-label="Manage Saved middle post"]')!.dispatchEvent(new browser.Event('click',{bubbles:true}));
+  assert.deepEqual(actions,['favorite:bookmark','manage:bookmark']);
+ }finally{root.unmount()}
+});
+
+test('an old cached thread graph cannot enable actions before or after a failed refresh',async()=>{
+ const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {useLibraryThreads}=await import('../lib/library-threads-client');const {useStore}=await import('../lib/store');
+ const values=new Map<string,string>();Object.defineProperty(globalThis,'localStorage',{value:{getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>values.set(key,value),removeItem:(key:string)=>values.delete(key)},configurable:true});
+ const owner='old-thread-cache';
+ localStorage.setItem('sakamoto:threads:v1:'+owner,JSON.stringify({libraryKey:'bookmark\ncontext',index:{groups:[{rootId:'context',memberIds:['context','bookmark']}],postItemIds:['context','bookmark']}}));
+ useStore.getState().activateAccount(owner);useStore.setState({syncReady:true,library:[{id:'context',title:'Opening',origin:'paste',words:10,addedAt:1},{id:'bookmark',title:'Middle',origin:'paste',words:10,addedAt:1}]});
+ let release!:(response:Response)=>void;const nativeFetch=globalThis.fetch;globalThis.fetch=()=>new Promise(resolve=>{release=resolve});
+ const host=document.getElementById('root')!;const root=createRoot(host);let observed:ReturnType<typeof useLibraryThreads>;
+ const Graph=()=>{observed=useLibraryThreads('');return createElement('span',null,observed.index?'actionable':observed.error||'waiting')};
+ try{
+  root.render(createElement(Graph));await until(()=>Boolean(release));
+  assert.equal(observed!.index,undefined);assert.equal(host.textContent,'waiting');
+  release(Response.json({error:'Offline'},{status:503}));await until(()=>Boolean(observed!.error));
+  assert.equal(observed!.index,undefined);assert.notEqual(host.textContent,'actionable');
+ }finally{root.unmount();globalThis.fetch=nativeFetch;useStore.getState().activateAccount(null)}
+});
+
+test('the final typed post query retries after an earlier search temporarily occupies its slot',async()=>{
+ const {createElement}=await import('react');const {createRoot}=await import('react-dom/client');const {useLibraryThreads}=await import('../lib/library-threads-client');const {useStore}=await import('../lib/store');
+ useStore.getState().activateAccount('overlapping-search');useStore.setState({syncReady:true});
+ const nativeFetch=globalThis.fetch;let release!:(response:Response)=>void;let finalRequests=0;
+ globalThis.fetch=async (_url,init)=>{
+  if(init?.method!=='POST')return Response.json({groups:[],postItemIds:[]});
+  const query=JSON.parse(String(init.body)).query;
+  if(query==='earlier')return new Promise(resolve=>{release=resolve});
+  finalRequests++;return finalRequests===1?Response.json({error:'Busy'},{status:429,headers:{'Retry-After':'1'}}):Response.json({matchedItemIds:['final-continuation']});
+ };
+ let observed:ReturnType<typeof useLibraryThreads>;const Graph=({query}:{query:string})=>{observed=useLibraryThreads(query);return createElement('span',null,observed.searching?'searching':observed.searchError||'ready')};
+ const root=createRoot(document.getElementById('root')!);
+ try{
+  root.render(createElement(Graph,{query:'earlier'}));await until(()=>Boolean(release));
+  root.render(createElement(Graph,{query:'final'}));await until(()=>finalRequests===1);
+  release(Response.json({matchedItemIds:['outdated-continuation']}));
+  await until(()=>Boolean(observed!.matchedItemIds?.has('final-continuation')),400);
+  assert.equal(observed!.matchedItemIds?.has('outdated-continuation'),false);assert.equal(observed!.searchError,'');
+ }finally{root.unmount();globalThis.fetch=nativeFetch;useStore.getState().activateAccount(null)}
 });

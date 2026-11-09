@@ -1,5 +1,5 @@
 import {toLibraryBooks,filterBooks,sortBooks} from "../lib/library";
-import { pool, setupPostgres } from "./postgres";
+import { databaseAdapter, pool, setupPostgres } from "./postgres";
 import { after, before } from "node:test";
 before(setupPostgres);
 after(() => pool.end());
@@ -22,7 +22,7 @@ test('Recent positions a thread by its latest saved bookmark, excluding newer fe
   {id:'manual-after',title:'Manual after bookmark',words:10,origin:'paste' as const,addedAt:400},
  ];
  const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:await readLibraryThreads(owner)});
- assert.deepEqual(sortBooks(books.filter(b=>!b.sample),'recent').map(b=>b.title),['Manual after bookmark','Opening','Manual before bookmark']);
+ assert.deepEqual(sortBooks(books.filter(b=>!b.sample),'recent').map(b=>b.reading?.title??b.title),['Manual after bookmark','Opening','Manual before bookmark']);
 });
 
 test("stale browser text cannot replace a newer imported source or a manual topic", async () => {
@@ -175,7 +175,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
     assert.equal(page.changes.highlights[0].data.note, "Keep me");
     assert.equal(page.changes.highlights[0].data.sourceRevision, 1);
   } finally {
-    configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
+    configureDatabase(databaseAdapter);
     await c.query("select set_config('search_path',$1,false)",[originalSearchPath]);
     c.release();
   }
@@ -226,6 +226,23 @@ test('library threads use a saved opening context post and full-text search incl
  assert.equal(index.groups.length,1);assert.equal(index.groups[0].memberIds.length,3);
  assert.equal(index.groups[0].rootId,root.contextResults![0].itemId);
  assert.deepEqual(await searchLibraryPosts(owner,'needle continuation'),[root.threadResults![0].itemId]);
+ const openingId=root.contextResults![0].itemId!,savedId=root.itemId!,tipId=root.threadResults![0].itemId!;
+ const library=[
+  {id:openingId,title:'First post',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+  {id:savedId,title:'Bookmarked middle',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:2,favorite:true,topic:'science',tags:['mine']},
+  {id:tipId,title:'Continuation',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},
+ ];
+ const [card]=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:index}).filter(b=>!b.sample&&!b.contextOnly);
+ assert.equal(card.id,savedId,'card actions must target the bookmarked member');
+ assert.equal(card.title,'Bookmarked middle','management edits the saved member title');
+ assert.deepEqual(card.reading,{id:openingId,title:'First post',dek:undefined});
+ assert.equal(card.favorite,true);assert.equal(card.topic,'science');assert.deepEqual(card.tags,['mine']);
+ const savedRow=(await pullRows(owner,'')).changes.articles.find(r=>r.id===card.id)!;
+ await pushRows(owner,{articles:[{id:card.id,article_id:card.id,data:savedRow.data,revision:savedRow.revision,deleted:true}]});
+ const remaining=await readLibraryThreads(owner);
+ assert(remaining.groups.every(group=>group.contextOnly),'removing the saved member must remove the thread from the shelf');
+ assert(await articleDoc(owner,openingId),'removing the bookmark preserves the opening context post');
+
  assert.deepEqual(await readLibraryThreads('different-owner'),{groups:[],postItemIds:[]});
  assert.deepEqual(await searchLibraryPosts('different-owner','needle'),[]);
 });
@@ -262,4 +279,25 @@ test('bootstrap pagination freezes earlier source revisions and then resumes inc
  assert.equal(second.changes.articles[0].data.title,'Before snapshot');assert.equal(second.hasMore,false);
  const incremental=await pullRows(owner,second.cursor);
  assert.equal(incremental.changes.articles[0].data.title,'After snapshot');assert.equal(incremental.hasMore,false);
+});
+
+test('full-post search rejects more than sixteen distinct terms and preserves repeated-term matches',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-bounds-'+crypto.randomUUID();
+ await assert.rejects(searchLibraryPosts(owner,Array.from({length:17},(_,i)=>'word'+i).join(' ')),/16 distinct/);
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const saved=await importBookmarks(owner,{posts:[{postId:'15001',url:'https://x.com/alice/status/15001',text:'needle '+ 'a'.repeat(399_000),author:{name:'Alice',handle:'alice'},observedAt:'2026-10-18T10:00:00Z'}]},'birdclaw');
+ assert.deepEqual(await searchLibraryPosts(owner,Array(499).fill('a').join(' ')),[saved.results[0].itemId]);
+});
+
+test('full-post search throttles one account without blocking another account',async()=>{
+ const {searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='search-rate-'+crypto.randomUUID();
+ for(let i=0;i<30;i++)await searchLibraryPosts(owner,'needle');
+ await assert.rejects(searchLibraryPosts(owner,'needle'),/Too many/);
+ const {makeToken}=await import('../lib/agent');const {createToken}=await import('../lib/db');const {POST}=await import('../app/api/library-threads/route');
+ const token=makeToken();await createToken(owner,token.id,token.hash,'Search test');
+ const response=await POST(new Request('http://localhost/api/library-threads',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify({query:'needle'})}));
+ assert.equal(response.status,429);assert.equal(response.headers.get('Retry-After'),'60');
+ assert.deepEqual(await searchLibraryPosts(owner+'-other','needle'),[]);
 });
