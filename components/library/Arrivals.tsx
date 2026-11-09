@@ -2,7 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import { X } from "lucide-react";
+import { ease, spring } from "@/components/motion/tokens";
 import { TOPIC, type Book } from "@/lib/library";
 import { MARK_NAMES, Mark, type AgentMark } from "./AgentMarks";
 import { Glyph } from "./Book";
@@ -61,7 +63,16 @@ export function Arrivals({
   const noun = n === 1 ? "article" : "articles";
 
   return createPortal(
-    <div ref={ref} className="arr" data-done={wave.done || undefined} data-leaving={wave.leaving || undefined} role="status" aria-live="polite">
+    <motion.div
+      ref={ref}
+      className="arr"
+      data-done={wave.done || undefined}
+      data-leaving={wave.leaving || undefined}
+      role="status"
+      aria-live="polite"
+      initial={{ y: "-110vh", rotate: -7 }}
+      animate={wave.leaving ? { y: 40, rotate: 2, opacity: 0, transition: { duration: 0.24, ease: ease.out } } : { y: 0, rotate: -0.7, opacity: 1, transition: spring.soft }}
+    >
       <div className="arr-head">
         <span className="arr-who" aria-hidden>
           {mark ? <Mark k={mark} size={17} /> : wave.agent ? <Glyph k="agent" size={26} /> : <Glyph k="favorite" size={24} />}
@@ -92,11 +103,11 @@ export function Arrivals({
       </div>
 
       <div className="arr-row">
-        <div className="flex max-w-[180px] flex-wrap gap-1.5" aria-hidden>
+        <div className="arr-slips" aria-hidden>
           {shown.map((b) => (
-            <span key={b.id} className="max-w-[80px] truncate rounded-md border border-rule bg-sunk px-2 py-1 text-[11px] text-ink-2">{b.title}</span>
+            <motion.span key={b.id} className="arr-mini" initial={{ y: -14, opacity: 0, rotate: -6 }} animate={{ y: 0, opacity: 1, rotate: 0 }} transition={spring.bouncy}>{b.title}</motion.span>
           ))}
-          {more > 0 && <span className="px-1 py-1 text-[11px] tabular-nums text-ink-3">+{more}</span>}
+          {more > 0 && <span className="arr-more-n">+{more}</span>}
         </div>
         {latest && (
           <span key={latest.id} className="arr-latest">
@@ -120,7 +131,7 @@ export function Arrivals({
       ) : (
         <span className="arr-bar" aria-hidden />
       )}
-    </div>,
+    </motion.div>,
     document.body
   );
 }

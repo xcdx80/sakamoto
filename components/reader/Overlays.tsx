@@ -1,7 +1,9 @@
 "use client";
 
+import { motion } from "motion/react";
 import { useEffect } from "react";
 import { X } from "lucide-react";
+import { spring } from "@/components/motion/tokens";
 import { useStore } from "@/lib/store";
 import { useReader } from "./context";
 
@@ -18,9 +20,9 @@ export function Peek({ peek }: { peek: { n: number; rect: DOMRect } | null }) {
   const style = below ? { left, top: peek.rect.bottom + 8 } : { left, bottom: window.innerHeight - peek.rect.top + 8 };
   return (
     <div className="pop pointer-events-none fixed z-[70] p-4" style={{ ...style, width: w, ["--origin" as string]: below ? "top center" : "bottom center" }} role="tooltip">
-      <p className="mb-1.5 text-[11.5px] font-semibold tabular-nums text-rubric-text">¶{peek.n}</p>
+      <p className="mb-1.5 font-mono text-[11px] text-rubric-text">¶{peek.n}</p>
       <p className="line-clamp-6 font-serif text-[15px] leading-[1.5] text-ink">{text}</p>
-      <p className="mt-2 text-[11.5px] text-ink-4">Click to jump there</p>
+      <p className="sk-eyebrow mt-2.5 !text-[10px] !text-ink-4">Click to jump there</p>
     </div>
   );
 }
@@ -49,10 +51,10 @@ export function Shortcuts() {
   }, [open, setUI]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-ink/20 p-4 backdrop-blur-[2px]" onClick={() => setUI({ shortcutsOpen: false })} style={{ animation: "fade 0.2s" }}>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-ink/15 p-4" onClick={() => setUI({ shortcutsOpen: false })} style={{ animation: "fade 0.2s" }}>
       <div role="dialog" aria-label="Keyboard shortcuts" className="pop w-full max-w-[420px] p-6" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-serif text-[22px] leading-none text-ink">Keys</h2>
+          <h2 className="sk-display text-[26px] leading-none text-ink">Keys</h2>
           <button type="button" aria-label="Close" data-tip="Close" data-tip-kbd="Esc" onClick={() => setUI({ shortcutsOpen: false })} className="grid size-8 place-items-center rounded-lg text-ink-3 hover:bg-sunk">
             <X size={16} />
           </button>
@@ -74,18 +76,53 @@ export function Shortcuts() {
   );
 }
 
-/** Resume toast and first-run hint share this little card. */
-export function Toast({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+/**
+ * Small passing messages, and each is a small object: the resume message is a
+ * bookmark, the sign-in nudge a sticky note, and the rest a slip of ink.
+ */
+export function Toast({ children, onClose, variant = "ink" }: { children: React.ReactNode; onClose: () => void; variant?: "ink" | "bookmark" | "note" }) {
+  if (variant === "bookmark")
+    return (
+      <motion.div
+        role="status"
+        className="reader-bookmark fixed right-0 top-[calc(var(--topbar-h)+22px)] z-[55] flex max-w-[calc(100vw-20px)] items-center gap-3"
+        initial={{ x: "105%" }}
+        animate={{ x: 0 }}
+        transition={{ ...spring.soft, delay: 0.5 }}
+      >
+        {children}
+        <button type="button" aria-label="Dismiss" onClick={onClose} className="grid size-6 shrink-0 place-items-center rounded-full opacity-70 transition-opacity hover:opacity-100">
+          <X size={13} />
+        </button>
+      </motion.div>
+    );
+  if (variant === "note")
+    return (
+      <motion.div
+        role="status"
+        className="reader-sticky fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] right-4 z-[55] sm:bottom-[96px] sm:right-8"
+        initial={{ y: 36, rotate: 7, opacity: 0 }}
+        animate={{ y: 0, rotate: -2, opacity: 1 }}
+        transition={spring.bouncy}
+      >
+        <button type="button" aria-label="Dismiss" onClick={onClose} className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full opacity-55 transition-opacity hover:opacity-100">
+          <X size={13} />
+        </button>
+        {children}
+      </motion.div>
+    );
   return (
-    <div
+    <motion.div
       role="status"
-      className="fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] left-1/2 z-[55] flex w-max max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-[18px] bg-lens py-1.5 pl-4 pr-1.5 text-[13px] leading-snug text-lens-fg shadow-pop sm:bottom-[96px] sm:rounded-full"
-      style={{ animation: "rise 0.45s var(--ease-spring) both" }}
+      className="fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] left-1/2 z-[55] flex w-max max-w-[calc(100vw-24px)] items-center gap-3 rounded-[18px] bg-lens py-1.5 pl-4 pr-1.5 text-[13px] leading-snug text-lens-fg shadow-pop sm:bottom-[96px] sm:rounded-full"
+      initial={{ x: "-50%", y: 14, opacity: 0 }}
+      animate={{ x: "-50%", y: 0, opacity: 1 }}
+      transition={spring.soft}
     >
       {children}
       <button type="button" aria-label="Dismiss" onClick={onClose} className="grid size-7 place-items-center rounded-full text-lens-mute hover:bg-lens-hover hover:text-lens-fg">
         <X size={14} />
       </button>
-    </div>
+    </motion.div>
   );
 }

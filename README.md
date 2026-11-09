@@ -27,6 +27,9 @@ The library offers cards/list, sorting and topic/tag/content-type filters. Reade
 
 MCP supports structured bookmark batches/receipts, thread/source reading, received-work status/processing, direct source recovery, category/index scheduling, metadata/passage search and `ask_library`. `read_saved_source` retrieves the exact retained source separately from bounded retrieval excerpts. In Connect an agent, prepare the daily Grok prompt after entering the public HTTPS Sakamoto origin and routine time. Preparing a prompt does not enable or verify a Grok routine. Save per-item receipts and resume batches; an accepted batch is not proof of a complete bookmark archive.
 
+MCP also supports the complete [post creation and revision workflow](docs/mcp-post-workflow.md): frame a brief, run the existing generation/review stages, retrieve exact drafts, revise or regenerate, and separately approve and publish only with explicit author confirmation. Existing tokens remain owner-scoped full account-agent tokens. No new connection or token is created by these tools.
+
+
 ## Processing budget
 
 `SAKAMOTO_BUDGET_USD=10` is one cumulative deployment-wide cap with no monthly reset. Each paid call reserves a conservative maximum in Neon before dispatch. Reported usage settles the reservation; uncertain dispatched usage remains reserved. New paid work pauses when authorization is unavailable, leaving saved text, manual organization and available lexical search usable. Raising the configured cap is intentional; retries or redeploys do not reset the ledger.
@@ -46,3 +49,13 @@ Record the exact candidate and distinguish deterministic tests, actual account/p
 Historical `scripts/pdf-eval/` and `scripts/image-eval/` tools retain their explicit optional legacy-provider prerequisites and evidence. They are not application runtime requirements and must not be run as ordinary verification.
 
 Public-domain samples: Huxley, “On a Piece of Chalk”; Schopenhauer, “On Thinking for Oneself”; Thoreau, “Reading” from Walden. Rebuild with `scripts/build-samples.mjs`.
+
+## Write
+
+Open `/write`, or choose **Write from this source** in the library or reader. Set your public voice profile, develop an idea with saved sources and your own notes, and compare framework recommendations. Jev can choose the framework and opening pattern; the writer and an independent reviewer then produce and revise an editable X/LinkedIn draft. Approval belongs to an exact reviewed revision. Editing its text or brief requires fresh review. Earlier revisions remain available.
+
+Apply the additive migrations to the intended database before using Write. Configure `SAKAMOTO_POST_WRITER_MODEL=gpt-6-luna` and `SAKAMOTO_POST_REVIEWER_MODEL=gpt-6-sol` with the existing server OpenAI/TypeSafe keys. Every paid stage uses the cumulative ledger; missing configuration or uncertain usage pauses generation while manual writing remains available. Source excerpts and public writing preferences are sent to the configured providers. Production advances in bounded foreground stages and resumes from saved state when the writing desk reopens; it does not claim background completion while closed.
+
+Weekly ideas use up to 300 recent saved sources and explicit planned/published history. Suggestions are conservative editorial directions, not current research or reach predictions. Feedback can propose voice changes, which require explicit adoption. Planning and **I've published this** record your intent/history; actual social posting and Postiz integration are not enabled. Copy or export your draft for manual publication.
+
+Frameworks remain editable YAML under `frameworks/`; run `npm run frameworks:validate` for schema and cross-reference checks. Deterministic provider fixtures establish application behavior, not live writing quality. Calibrate the model pair and provisional voice against author-reviewed drafts before relying on generated copy.

@@ -1,10 +1,12 @@
 /** Durable processing of already received library material. Never fetches bookmarks from Grok. */
+import { processingBudget } from "./paid-work";
 import { readLinkedPdf } from "./pdf-source";
 import { registerLibraryProcessingHandlers } from "./processing-handlers";
 import { db } from "./db";
 import { fetchArticle, type FetchResult } from "./fetch-article";
 import { wordCount, type Article } from "./article";
 import { yearOf } from "./library";
+import { reconcileSavedPostLinks } from "./saved-post-links";
 export type ProcessingJob = {
   id: string;
   sourceId: string;
@@ -44,16 +46,52 @@ export async function processingStatus(
     `select j.* from processing_jobs j where j.user_id=$1 and j.id>$2::bigint and ($4::text is null or j.source_id=$4) order by j.id limit $3`,
     [owner, /^\d+$/.test(args.after ?? "") ? args.after : "0", limit + 1, args.sourceId ?? null],
   );
+  registerLibraryProcessingHandlers(registerProcessingHandler);
+  const budget = await processingBudget();
+  const installedKinds = ["link", ...handlers.keys()];
+  const allowedKinds = installedKinds.filter(kind => budget.allows(kind));
+  const readSummary = (localLinks:string) => db().query(`with local_links as materialized (${localLinks}) select
+    count(*) filter(where j.state in ('pending','retryable','running','blocked') or j.id in(select job_id from local_links))::int as pending,
+    count(*) filter(where (j.kind=any($3::text[]) and ((j.state in ('pending','retryable','blocked') and (coalesce(j.checkpoint#>>'{processingBlock,code}','') not in ('configuration','reconciliation_required','duplicate_attempt') or (j.checkpoint#>>'{processingBlock,code}'='reconciliation_required' and j.checkpoint#>>'{processingBlock,operationId}' is not null and not exists(select 1 from paid_attempts p where p.owner_id=j.user_id and p.operation_id=j.checkpoint#>>'{processingBlock,operationId}' and p.status in ('reserved','uncertain')))) and j.next_attempt_at<=$2::timestamptz) or (j.state='running' and j.lease_expires_at<=$2::timestamptz))) or j.id in(select job_id from local_links))::int as ready,
+    count(*) filter(where j.id in(select job_id from local_links))::int as local_ready,
+    count(*) filter(where j.kind='link' and j.state in ('pending','retryable') and j.next_attempt_at<=$2::timestamptz)::int as free_ready,
+    count(*) filter(where j.state='running' and j.lease_expires_at>$2::timestamptz)::int as running,
+    min(j.next_attempt_at) filter(where j.kind=any($3::text[]) and j.state in ('pending','retryable')) as next_ready_at,
+    count(*) filter(where j.state='complete' and not(j.kind='classification' and coalesce(a.data#>>'{processing,classification}','') in ('failed','paused')))::int as complete,
+    count(*) filter(where j.state in ('terminal','pdf_pending','blocked') or (j.kind='classification' and a.data#>>'{processing,classification}' in ('failed','paused')))::int as attention,
+    count(*) filter(where j.state in ('pending','retryable','blocked') and not(j.kind=any($4::text[])))::int as unavailable,
+    count(*) filter(where j.state in ('pending','retryable','running','blocked','terminal','pdf_pending') or (j.kind='classification' and a.data#>>'{processing,classification}' in ('failed','paused')))::int as remaining,
+    count(*) filter(where j.state='blocked' or (j.kind in ('classification','indexing') and not(j.kind=any($3::text[])) and (j.state in ('pending','retryable','terminal') or (j.kind='classification' and j.state='complete' and a.data#>>'{processing,classification}' in ('failed','paused')))))::int as blocked,
+    $5::boolean as budget_paused
+    from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id and a.source_revision=j.source_revision
+    where j.user_id=$1 and not a.deleted`,[owner,new Date(clock()).toISOString(),allowedKinds,installedKinds,!budget.allows('classification') && !budget.allows('indexing')]);
+  let summaries:Record<string,any>[];
+  try{summaries=await readSummary('select job_id from saved_post_link_targets($1)');}
+  catch(error){
+    // Queue status remains readable while an older installation is being
+    // inspected/upgraded; reconciliation itself still requires its migration.
+    if(!(error&&typeof error==='object'&&'code' in error&&error.code==='42883'&&'message' in error&&String(error.message).includes('saved_post_link_targets')))throw error;
+    summaries=await readSummary('select null::bigint as job_id where false');
+  }
+  const [summary]=summaries;
+  let worker:Record<string,any>|undefined;
+  try{[worker]=await db().query('select heartbeat_at from processing_workers where user_id=$1 and lease_expires_at>now()',[owner]);}
+  catch(error){
+    // Read-only queue status remains available while inspecting an installation before its worker migration.
+    if(!(error&&typeof error==='object'&&'code' in error&&error.code==='42P01'))throw error;
+  }
   return {
+    worker:{active:Boolean(worker),lastHeartbeatAt:worker?new Date(worker.heartbeat_at).toISOString():null},
+    summary,
     jobs: rows.slice(0, limit).map(jobOf),
     next: rows.length > limit ? String(rows[limit - 1].id) : null,
     description:
-      "Processing received material only. Fetch new bookmarks separately in Grok.",
+      "Processes received material only. Import new bookmarks through X sync, Birdclaw or an agent.",
   };
 }
 
 export type ProcessingOutcome = {
-  state: "complete" | "terminal" | "retryable" | "pdf_pending" | "continue";
+  state: "complete" | "terminal" | "retryable" | "pdf_pending" | "continue" | "blocked";
   error?: string;
   article?: Article;
   canonicalUrl?: string;
@@ -152,44 +190,40 @@ export async function processLibrary(
   args: { limit?: number; retryJobId?: string } = {},
 ) {
   registerLibraryProcessingHandlers(registerProcessingHandler);
-  const limit = Math.max(1, Math.min(4, Number(args.limit) || 4));
+  const limit = Math.max(1, Math.min(48, Number(args.limit) || 4));
   const end = Date.now() + 23_000;
   if (args.retryJobId) {
     if (!/^\d+$/.test(args.retryJobId))
       throw new Error("Invalid job identity.");
     await db().query(
-      `update processing_jobs j set state='pending',max_attempts=least(8,attempts+4),next_attempt_at=$3,error=null
-   where j.user_id=$1 and j.id=$2::bigint and j.state in ('retryable','terminal') and j.attempts<8
+      `update processing_jobs j set state='pending',max_attempts=least(8,attempts+4),next_attempt_at=$3,error=null,checkpoint=checkpoint-'processingBlock'
+   where j.user_id=$1 and j.id=$2::bigint and j.state in ('retryable','terminal','blocked') and j.attempts<8
    and exists(select 1 from articles a where a.user_id=j.user_id and a.id=j.source_id and not a.deleted and a.source_revision=j.source_revision)`,
       [owner, args.retryJobId, new Date(clock()).toISOString()],
     );
   }
+  const resolved = await reconcileSavedPostLinks(owner,limit);
+  // A local repair batch never dispatches paid or external work alongside it.
+  if(resolved)return {processed:resolved,finished:resolved,succeeded:resolved,failed:0,blocked:0,...(await processingStatus(owner))};
   let processed = 0;
-  for (; processed < limit && Date.now() < end; processed++) {
-    const now = clock(),
-      token = crypto.randomUUID();
+  let finished = 0;
+  let succeeded = 0, failed = 0, blocked = 0;
+  const budget = await processingBudget();
+  const allowedKinds = ["link", ...handlers.keys()].filter(kind => budget.allows(kind));
+  let claimedSlots = 0;
+  const work = async () => {
+   while (claimedSlots < limit && Date.now() < end) {
+    claimedSlots++;
+    const token = crypto.randomUUID();
     const rows = await db().query(
-      `with candidate as (
-   select j.id from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id
-   where j.user_id=$1 and j.kind=any($5::text[]) and not a.deleted and a.source_revision=j.source_revision
-    and ((j.state in ('pending','retryable') and j.next_attempt_at<=$2::timestamptz) or (j.state='running' and j.lease_expires_at<=$2::timestamptz))
-   order by j.next_attempt_at,j.id for update of j skip locked limit 1)
-   update processing_jobs j set state=case when attempts>=max_attempts then 'terminal' else 'running' end,
-    attempts=case when attempts>=max_attempts then attempts else attempts+1 end,
-    error=case when attempts>=max_attempts then 'Retry limit reached.' else error end,
-    lease_token=case when attempts>=max_attempts then null else $3 end,lease_expires_at=case when attempts>=max_attempts then null else $4::timestamptz end,updated_at=$2 from candidate where j.id=candidate.id returning j.*`,
-      [
-        owner,
-        new Date(now).toISOString(),
-        token,
-        new Date(now + 45_000).toISOString(),
-        ["link", ...handlers.keys()],
-      ],
+      'select * from claim_processing($1,$2,$3::timestamptz,$4::text[])',
+      [owner, token, new Date(clock()).toISOString(), allowedKinds],
     );
-    if (!rows.length) break;
+    if (!rows.length) { claimedSlots--; break; }
+    processed++;
     const row = rows[0],
       job = jobOf(row);
-    if (job.state === "terminal") continue;
+    if (job.state === "terminal") { failed++; continue; }
     const deadline = Math.min(end, Date.now() + 18_000),
       signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
     const checkpoint = async (value: Record<string, unknown>) => {
@@ -198,7 +232,7 @@ export async function processLibrary(
       return (
         (
           await db().query(
-            `update processing_jobs j set checkpoint=$4::jsonb where j.user_id=$1 and j.id=$2::bigint and lease_token=$3 and state='running' and lease_expires_at>$5
+            `update processing_jobs j set checkpoint=(checkpoint - 'processingBlock') || $4::jsonb where j.user_id=$1 and j.id=$2::bigint and lease_token=$3 and state='running' and lease_expires_at>$5
     and exists(select 1 from articles a where a.user_id=j.user_id and a.id=j.source_id and not a.deleted and a.source_revision=j.source_revision) returning id`,
             [
               owner,
@@ -252,7 +286,9 @@ export async function processLibrary(
             ]),
           ]
         : [];
-    await db().query(
+    const outcomeCheckpoint = { ...job.checkpoint, ...result.checkpoint };
+    if (result.state !== 'blocked') delete outcomeCheckpoint.processingBlock;
+    const completed = await db().query(
       `select complete_processing($1,$2::bigint,$3,$4::timestamptz,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::text[],$11::jsonb)`,
       [
         owner,
@@ -261,26 +297,39 @@ export async function processLibrary(
         new Date(clock()).toISOString(),
         result.state,
         result.error?.slice(0, 2000) ?? null,
-        JSON.stringify(result.checkpoint ?? job.checkpoint),
+        JSON.stringify(outcomeCheckpoint),
         a ? JSON.stringify(itemOf(a)) : null,
         a ? JSON.stringify(a) : null,
         aliases,
         result.publication ? JSON.stringify(result.publication) : null,
       ],
     );
-  }
-  return { processed, ...(await processingStatus(owner)) };
+    if (completed[0]?.complete_processing) {
+      if (result.state === 'blocked') blocked++;
+      else if (['terminal','pdf_pending','retryable'].includes(result.state) || (result.state === 'complete' && ['failed','paused'].includes(String(result.publication?.status)))) failed++;
+      else if (result.state === 'complete') { succeeded++; finished++; }
+    }
+   }
+  };
+  // Await every lane even when another fails, so the HTTP response never abandons paid work.
+  const lanes = await Promise.allSettled(Array.from({length:Math.min(24,limit)},work));
+  if (lanes.some(result=>result.status==='rejected'))
+    throw new Error('Processing interrupted; durable jobs and budget reservations are retained.');
+  return { processed, finished, succeeded, failed, blocked, ...(await processingStatus(owner)) };
 }
 /** Cron stays bounded across owners as well as jobs. Its caller must authenticate the scheduler secret. */
 export async function processScheduled() {
   registerLibraryProcessingHandlers(registerProcessingHandler);
-  const rows = await db().query(
+  let rows = await db().query(
     `select distinct user_id from processing_jobs where kind=any($1::text[]) and
- ((state in ('pending','retryable') and next_attempt_at<=$2) or (state='running' and lease_expires_at<=$2)) limit 1`,
+ ((state in ('pending','retryable','blocked') and next_attempt_at<=$2) or (state='running' and lease_expires_at<=$2)) limit 1`,
     [["link", ...handlers.keys()], new Date(clock()).toISOString()],
   );
+  if(!rows.length)rows=await db().query(`select owners.user_id from
+    (select distinct user_id from processing_jobs where kind='link' and state in ('terminal','pdf_pending','pending','retryable')) owners
+    cross join lateral (select job_id from saved_post_link_targets(owners.user_id) limit 1) local_work limit 1`);
   return rows.length
-    ? processLibrary(rows[0].user_id, { limit: 4 })
+    ? processLibrary(rows[0].user_id, { limit: 48 })
     : { processed: 0 };
 }
 

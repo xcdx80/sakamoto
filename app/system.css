@@ -1,0 +1,127 @@
+/* Sakamoto's shared parts. Tokens are in globals.css; see docs/design/redesign-brief.md. */
+
+@layer components {
+  .sk-display {
+    font-family: var(--font-serif);
+    font-weight: 340;
+    letter-spacing: -0.032em;
+    line-height: 1.02;
+    font-variation-settings: "opsz" 72;
+    text-wrap: balance;
+  }
+
+  .sk-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .sk-hairline {
+    height: 1px;
+    width: 100%;
+    border: 0;
+    background: var(--rule);
+  }
+
+  /* The desk: faint dots, the way a cutting mat has them. */
+  .sk-desk {
+    background-image: radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--ink) 15%, transparent) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* A sheet of paper, physically lifted off the desk. */
+  .sk-paper {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .sk-panel {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+  }
+
+  .sk-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 18px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    transition:
+      transform 0.28s var(--ease-spring),
+      background-color 0.18s var(--ease-out),
+      border-color 0.18s var(--ease-out),
+      color 0.18s var(--ease-out),
+      box-shadow 0.28s var(--ease-out);
+  }
+  .sk-btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .sk-btn:active:not(:disabled) { transform: translateY(0) scale(0.97); transition-duration: 0.08s; }
+  .sk-btn:disabled { cursor: not-allowed; opacity: 0.45; }
+
+  .sk-btn-ink { background: var(--ink); color: var(--bg-raised); }
+  .sk-btn-ink:hover:not(:disabled) { box-shadow: 0 10px 22px -12px color-mix(in oklab, var(--ink) 70%, transparent); }
+
+  .sk-btn-ghost { border-color: var(--rule-strong); background: transparent; color: var(--ink); }
+  .sk-btn-ghost:hover:not(:disabled) { border-color: var(--ink-3); background: var(--bg-raised); }
+
+  .sk-btn-quiet { background: transparent; color: var(--ink-2); }
+  .sk-btn-quiet:hover:not(:disabled) { background: var(--bg-sunk); color: var(--ink); }
+
+  .sk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 13px;
+    line-height: 1;
+    transition: background-color 0.16s var(--ease-out), border-color 0.16s var(--ease-out), color 0.16s var(--ease-out), transform 0.24s var(--ease-spring);
+  }
+  .sk-chip:hover { border-color: var(--rule-strong); color: var(--ink); }
+  .sk-chip:active { transform: scale(0.96); }
+  .sk-chip[aria-pressed="true"],
+  .sk-chip[aria-current="true"],
+  .sk-chip.is-on { border-color: var(--ink); background: var(--ink); color: var(--bg-raised); }
+
+  .sk-field {
+    width: 100%;
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid var(--rule-strong);
+    border-radius: 10px;
+    background: var(--bg-raised);
+    color: var(--ink);
+    font-size: 14.5px;
+    transition: border-color 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+  }
+  .sk-field::placeholder { color: var(--ink-4); }
+  .sk-field:focus { outline: none; border-color: var(--ink-3); box-shadow: 0 0 0 4px var(--rubric-wash); }
+
+  .sk-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: clamp(56px, 12vh, 120px) 24px;
+    text-align: center;
+    color: var(--ink-3);
+  }
+}

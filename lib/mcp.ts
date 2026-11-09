@@ -1,3 +1,5 @@
+import { POST_TOOLS, POST_WORKFLOW_INSTRUCTIONS, callPostTool, isPostTool, postToolFailure } from "./post-production/mcp";
+import { BOOKMARK_ORDER_SCHEMA } from "./bookmark-order-input";
 /**
  * The Sakamoto MCP server: a reader's agent saves articles (by link, or as text it
  * has read itself) to their library and looks through it. Streamable HTTP, stateless: every request is one JSON-RPC
@@ -61,6 +63,7 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  ...POST_TOOLS,
   {name:"read_saved_source",title:"Read an exact saved post source",description:"Read the complete stored structured X post/context record for source comparison: fullText, attribution, IDs/URLs/relationships and agent-reported completeness. Optional revision pins retained text of an active item. Owner-scoped, no annotations or credentials; missing/deleted items are not_found. Nonpost sources are unsupported; oversized legacy records return too_large without truncation. Max2MB serialized result; read one source per MCP request.",inputSchema:{type:"object",properties:{itemId:{type:"string",minLength:1,maxLength:200},revision:{type:"integer",minimum:1,maximum:2147483647}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_workflow",title:"Prepare the Grok bookmark workflow",description:"Read exact-schema sample, bounded backfill and daily routine instructions. Preparation does not connect Grok or enable a routine. Requires a reachable public HTTPS origin and the owner’s authenticated X access.",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_delivery_status",title:"Bookmark delivery and backfill progress",description:"Verified saved-source and receipt counts, last delivery/contact, bounded delivery history and current processing totals. Source coverage stays agent-reported. Optional runId/batchId retrieves compact per-item receipts for a lost response.",inputSchema:{type:"object",properties:{runId:{type:"string",maxLength:100},batchId:{type:"string",maxLength:100},after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
@@ -68,7 +71,7 @@ const TOOLS = [
   {name:"ask_library",title:"Ask the saved library",description:"Answer a question using saved passages only, with checked source revision/block/page/post references and supporting excerpts. Uses guarded Luna and optional Google query embedding under the shared cumulative budget. No external web search. Returns honest no_evidence, insufficient, partial, paused, failed or stale states. A valid reference is not a guarantee that a generated claim is supported; inspect excerpts.",inputSchema:{type:"object",properties:{query:{type:"string",maxLength:1000},contentType:{type:"string",enum:["article","document","post"]},topic:{type:"string",enum:TOPICS.map(t=>t.key)},tags:{type:"array",items:{type:"string"},maxItems:20},semantic:{type:"boolean",default:true}},required:["query"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"supply_link_text",title:"Supply extracted text for a failed linked source",description:"Deliberately recover a retained unsupported linked PDF using its processing job ID. Saves reader-supplied text and discovery links without claiming verified PDF pages. Existing saved text is never replaced.",inputSchema:{type:"object",properties:{jobId:{type:"string",pattern:"^[0-9]+$"},text:{type:"string",minLength:1,maxLength:1000000},title:{type:"string",maxLength:500}},required:["jobId","text"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
  {name:"classify_item",title:"Categorize a saved source",description:"Schedule categorization of any saved article, document or post. reclassify:true deliberately repeats a prior decision using the same durable budget. Manual topics and tags are preserved.",inputSchema:{type:"object",properties:{itemId:{type:"string"},reclassify:{type:"boolean"}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:false}},
- {name:"process_library",title:"Process received material now",description:"Process a bounded batch of already received linked sources. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:4},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
+ {name:"process_library",title:"Process received material now",description:"Process up to 48 received jobs per call with shared bounded parallelism. Optionally retry a failed job deliberately (at most eight attempts). Does not ask Grok for new bookmarks.",inputSchema:{type:"object",properties:{limit:{type:"integer",minimum:1,maximum:48},retryJobId:{type:"string"}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}},
   { name: "processing_status", title: "Received material processing status", description: "Show durable linked-source outcomes, attempts and retry times for material already received. Does not fetch new bookmarks from Grok.", inputSchema: { type: "object", properties: {limit: {type:"integer",minimum:1,maximum:100},after:{type:"string"},sourceId:{type:"string"}}, additionalProperties: false }, annotations: {readOnlyHint:true,openWorldHint:false} },
   {name:"reindex_library",title:"Schedule a resumable search rebuild",description:"Schedule existing active saved sources for the current embedding contract, at most 25 per page. Pass next as after until it is null. Does not dispatch paid work; process_library resumes the same durable jobs and reuses compatible vectors.",inputSchema:{type:"object",properties:{after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:false}},
   {
@@ -79,8 +82,8 @@ const TOOLS = [
   },
   {
     name: "save_bookmarks", title: "Save full bookmarked X posts",
-    description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
-    inputSchema: { type: "object", properties: { delivery: DELIVERY_SCHEMA, posts: { type: "array", minItems: 1, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." }, threadPosts: {type:"array",maxItems:8,items:POST_SCHEMA,description:"Connected same-author descendants, retained as context rather than individually bookmarked. Bounded batches may resume through saved same-author ancestry."} } } } }, required: ["posts"], additionalProperties: false },
+    description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim. After delivery, send posts:[] and order:{postIds,observedAt} without delivery to preserve observed newest-saved-first X order; never infer it from publication dates.",
+    inputSchema: { type: "object", properties: { delivery: DELIVERY_SCHEMA, order: BOOKMARK_ORDER_SCHEMA, posts: { type: "array", minItems: 0, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." }, threadPosts: {type:"array",maxItems:8,items:POST_SCHEMA,description:"Connected same-author descendants, retained as context rather than individually bookmarked. Bounded batches may resume through saved same-author ancestry."} } } } }, required: ["posts"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -209,6 +212,11 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
   // running any tools, preventing JSON-RPC fanout from exceeding the hosted response limit.
   if (batch && msgs.length > 1 && msgs.some(m => m.method === "tools/call" && m.params?.name === "read_saved_source")) return fail(first.id,-32600,"Read one saved source per MCP request to stay within response limits.",400);
 
+  // Writing stages are sequential/versioned and may dispatch paid work. A mixed batch
+  // must not create parallel work or combine draft approval with publication.
+  if (batch && msgs.length > 1 && msgs.some(m => m.method === "tools/call" && isPostTool(String(m.params?.name ?? ""))))
+    return fail(first.id, -32600, "Send one writing tool call per MCP request; use its returned version for the next step.", 400);
+
   // Notifications get no answer; with nothing to answer, the reply is an empty 202.
   const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label, req.signal)))).filter((a) => a !== null);
   if (!answers.length) return new Response(null, { status: 202, headers: CORS });
@@ -225,8 +233,8 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       return ok({
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "sakamoto", title: "Sakamoto library", version: "1.0.0", websiteUrl: SITE },
-        instructions: INSTRUCTIONS,
+        serverInfo: { name: "sakamoto", title: "Sakamoto", version: "1.1.0", websiteUrl: SITE },
+        instructions: `${INSTRUCTIONS}\n\n${POST_WORKFLOW_INSTRUCTIONS}`,
       });
     }
     case "ping":
@@ -237,7 +245,28 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
-        if (name === "read_saved_source") return ok(toolResult("Exact saved source comparison.",await readSavedSource(userId,args)));
+        if (isPostTool(name)) {
+          try {
+            const result = await callPostTool(userId, name, args, signal);
+            const response = ok(toolResult("Sakamoto writing journey.", result));
+            if (Buffer.byteLength(JSON.stringify(response), "utf8") > 4_000_000)
+              return ok(toolResult("Saved post exceeds the MCP response limit. Open it in Sakamoto; no draft text was truncated.", {
+                status: "too_large", url: result.url, production: result.production,
+                notice: "The saved result is retained. Do not repeat a mutation; open the Sakamoto link to inspect it.",
+              }));
+            return response;
+          } catch (error) { return ok(postToolFailure(error)); }
+        }
+        if (name === "read_saved_source") {
+          const source = await readSavedSource(userId, args);
+          const response = ok(toolResult("Exact saved source comparison.", source));
+          // Text fallback escapes the JSON again. Bound the full wire response, not just its source.
+          if (source.status === "found" && Buffer.byteLength(JSON.stringify(response), "utf8") > 4_000_000) return ok(toolResult("Saved source exceeds the response limit.", {
+            status: "too_large", itemId: source.itemId, sourceRevision: source.sourceRevision,
+            notice: "This legacy source exceeds the MCP response bound. No text was truncated or substituted.",
+          }));
+          return response;
+        }
         if (name === "ask_library") { const result=await askLibrary(userId,answerOptions(args),signal); return ok(toolResult(libraryAnswerText(result),result)); }
         if (name === "supply_link_text") { const result = await supplyLinkedText(userId,args); return ok(result ? toolResult("Saved reader-supplied linked text.",result) : toolError("This source is unavailable, changed or not awaiting text recovery.")); }
         if (name === "classify_item") return ok(toolResult("Category processing scheduled.", await scheduleClassification(userId,args)));
@@ -265,7 +294,8 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
 }
 
 const toolError = (text: string) => ({ content: [{ type: "text", text }], isError: true });
-const toolResult = (text: string, structured: Record<string, unknown>) => ({ content: [{ type: "text", text }], structuredContent: structured });
+// Some MCP clients expose only TextContent. Keep exact results visible there too.
+const toolResult = (text: string, structured: Record<string, unknown>) => ({ content: [{ type: "text", text: `${text}\n\n${JSON.stringify(structured)}` }], structuredContent: structured });
 
 /* ---------- save_articles ---------- */
 

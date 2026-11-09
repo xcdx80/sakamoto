@@ -26,7 +26,8 @@ function validResponse(value: any): value is LibraryAnswer {
   )
     return false;
   if (
-    value.citations.some(
+    (value.matches !== undefined && !Array.isArray(value.matches)) ||
+    [...value.citations, ...(value.matches ?? [])].some(
       (c: any) =>
         typeof c.id !== "string" ||
         typeof c.itemId !== "string" ||

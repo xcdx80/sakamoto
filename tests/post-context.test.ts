@@ -47,6 +47,20 @@ test("author notes still retrieve relevant supporting sources automatically with
   assert.match(evidence.find(e => e.itemId === "unselected-policy")!.excerpt, /unrelated company's/);
 });
 
+test("automatic post research explicitly discovers metadata and prefix matches without changing passage-evidence defaults", async () => {
+  const owner = "metadata-discovery-owner";
+  await shelveForUser(owner, { id: "factory-model", title: "Autonomous factory evaluation" }, {
+    id: "factory-model", title: "Autonomous factory evaluation",
+    blocks: [{ id: "body", type: "p", runs: [{ text: "Engineers retain the release decision while agents execute the checks." }] }],
+  });
+  const evidence = await collectProductionEvidence(owner, { ...brief, idea: "autonom factory evalu", sourceIds: [], notes: "" });
+  const candidate = evidence.find(source => source.itemId === "factory-model");
+  assert.equal(candidate?.kind, "saved_source");
+  assert.equal(candidate?.excerpt, "Engineers retain the release decision while agents execute the checks.");
+  assert.equal(candidate?.address?.blockId, "body");
+  assert.ok(evidence.some(source => source.kind === "author_idea"));
+});
+
 test("a proposed protocol retains its intended steps alongside research without becoming author experience", async () => {
   const idea = 'I would run a 3-day test of a chat companion’s memory. Day 1 would check recall; day 2 would check appropriate application; day 3 would check forgetting on request. I would call the checks "recall", "application", and "forgetting". This is a proposed protocol, not an experiment I ran or a claim of improvement.';
   const evidence = await collectProductionEvidence("write-context-owner", { ...brief, idea, notes: "" });
@@ -136,5 +150,63 @@ test("thirteen short pinned sources leave room for five web sources and both aut
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of keys) if (originalEnv[key] === undefined) delete process.env[key]; else process.env[key] = originalEnv[key];
+  }
+});
+
+test("context-only generation retains attributed agent material without library or web discovery", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Disabled web research must not dispatch."); };
+  try {
+    const input = { ...brief, sourceIds: [], idea: "Quokka evaluation", notes: "", sourcePolicy: { library: false, web: false },
+      agentContext: [{ id: "discussion", title: "Discussion context", text: "A proposed design is not an observed learning outcome.", kind: "analysis" as const,
+        provenance: { label: "Assistant synthesis of the author's conversation", url: "https://example.com/discussion" } }] };
+    const created = await createProduction("write-context-owner", input);
+    assert.deepEqual(created.brief.sourcePolicy, input.sourcePolicy);
+    assert.deepEqual(created.brief.agentContext, input.agentContext);
+    const result = await collectProductionContext("write-context-owner", created.brief, `post:${created.id}:context`);
+    assert.deepEqual(result.research, { library: "disabled", web: "disabled", notice: null });
+    assert.equal(result.evidence.some(e => e.kind === "saved_source" || e.kind === "web_source"), false);
+    const supplied = result.evidence.find(e => e.id === "AGENT_discussion")!;
+    assert.equal(supplied.kind, "agent_context");
+    assert.equal(supplied.excerpt, input.agentContext[0].text);
+    assert.deepEqual(supplied.provenance, { suppliedBy: "caller", contextId: "discussion", kind: "analysis", ...input.agentContext[0].provenance });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("library and web switches act independently and omitted switches retain automatic research", async () => {
+  const originalFetch = globalThis.fetch;
+  const keys = ["MONID_API_KEY", "SAKAMOTO_MONID_MAX_USD", "SAKAMOTO_BUDGET_USD"];
+  const before = keys.map(key => process.env[key]);
+  process.env.MONID_API_KEY = "fixture-monid";
+  process.env.SAKAMOTO_MONID_MAX_USD = "0.001";
+  process.env.SAKAMOTO_BUDGET_USD = "1";
+  let requests = 0;
+  globalThis.fetch = async (url, init) => {
+    requests++;
+    const body = JSON.parse(String(init?.body));
+    if (String(url).endsWith("/run")) assert.deepEqual(body.input, { query: "Quokka evaluation", count: 5, full_content: { enable: false } });
+    return Response.json(String(url).endsWith("/inspect") ? {
+      provider: "octen", endpoint: "/search", price: { type: "PER_CALL", amount: 0.0007, currency: "USD" },
+      inputSchema: { type: "object", properties: { query: { type: "string" }, count: { type: "integer" }, full_content: { type: "object", properties: { enable: { type: "boolean" } } } } },
+    } : {
+      runId: "toggle-search-fixture", provider: "octen", endpoint: "/search", status: "COMPLETED", providerResponse: { httpStatus: 200 },
+      billing: { reportedCost: { value: 700, unit: "MICRO_DOLLAR", currency: "USD" } },
+      output: { code: 0, data: { results: [{ url: "https://example.com/independent-web", title: "Web source", highlight: "A web result." }] } },
+    });
+  };
+  try {
+    for (const sourcePolicy of [undefined, { library: true, web: false }, { library: false, web: true }, { library: false, web: false }]) {
+      const start = requests;
+      const result = await collectProductionContext("write-context-owner", { ...brief, idea: "Quokka evaluation", sourceIds: [], sourcePolicy }, `post:${crypto.randomUUID()}:context`);
+      const library = sourcePolicy?.library ?? true, web = sourcePolicy?.web ?? true;
+      assert.equal(result.evidence.some(e => e.itemId === "dated-launch"), library);
+      assert.equal(result.evidence.some(e => e.kind === "web_source"), web);
+      assert.equal(requests - start, web ? 2 : 0);
+      assert.equal(result.research.library, library ? "searched" : "disabled");
+      assert.equal(result.research.web, web ? "searched" : "disabled");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    keys.forEach((key, index) => { if (before[index] === undefined) delete process.env[key]; else process.env[key] = before[index]; });
   }
 });

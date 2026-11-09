@@ -129,11 +129,11 @@ export function Rail({ articleEl }: { articleEl: HTMLElement | null }) {
           style={{
             top: b.top * k,
             height: Math.max(1, b.h * k - 2),
-            width: b.heading ? 18 : 18 * b.fill,
+            width: b.heading ? 16 : 16 * b.fill,
             background: b.heading
-              ? "var(--ink-2)"
-              : "repeating-linear-gradient(to bottom, var(--ink-4) 0 1px, transparent 1px 3px)",
-            opacity: b.heading ? 0.8 : 0.75,
+              ? "var(--ink-3)"
+              : "repeating-linear-gradient(to bottom, var(--ink-4) 0 1px, transparent 1px 4px)",
+            opacity: b.heading ? 0.7 : 0.45,
           }}
         />
       ))}
@@ -152,22 +152,22 @@ export function Rail({ articleEl }: { articleEl: HTMLElement | null }) {
       {glosses.map((g) => {
         const id = g.anchor?.start.b ?? g.at;
         const y = id ? posOf(id) : null;
-        return y === null ? null : <span key={g.id} className="absolute left-[25px] size-[5px] rounded-full bg-[var(--rubric)]" style={{ top: y }} />;
+        return y === null ? null : <span key={g.id} className="absolute left-[24px] size-1 rounded-full bg-[var(--rubric)]" style={{ top: y }} />;
       })}
 
       <span
-        className="pointer-events-none absolute -left-[2px] w-[34px] rounded-[6px] border border-ink-3/35 bg-ink/[0.035] transition-[border-color] group-hover:border-ink-3/70"
+        className="pointer-events-none absolute -left-[2px] w-[30px] rounded-[2px] border-y border-ink-3/30 transition-[border-color] group-hover:border-ink-3/70"
         style={{ top: vTop, height: vH }}
         aria-hidden
       />
 
       {hoverSection && (
         <span
-          className="pointer-events-none absolute left-[40px] z-10 whitespace-nowrap rounded-md bg-lens px-2 py-1 text-[11.5px] text-lens-fg shadow-pop"
+          className="pointer-events-none absolute left-[38px] z-10 whitespace-nowrap rounded-[3px] bg-lens px-2 py-1 text-[11.5px] text-lens-fg shadow-pop"
           style={{ top: Math.max(0, hoverSection.y - 4), animation: "fade 0.15s" }}
         >
           {hoverSection.title}
-          <span className="ml-2 text-[11px] tabular-nums text-lens-mute">¶{hoverSection.start}</span>
+          <span className="ml-2 font-mono text-[10.5px] text-lens-mute">¶{hoverSection.start}</span>
         </span>
       )}
     </div>

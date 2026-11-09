@@ -1,0 +1,65 @@
+.platform-preview { width:100%; min-width:0; margin-inline:auto; container-type:inline-size; }
+.platform-preview-x { max-width:600px; }
+.platform-preview-linkedin { max-width:555px; }
+.platform-preview .platform-preview-label { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; color:var(--ink-2); font:600 12px/18px var(--font-sans, sans-serif); }
+.platform-preview-label>span { color:var(--ink-3); font-weight:400; }
+.platform-preview-feed { color-scheme:light; color:#0f1419; text-align:left; font-synthesis:none; letter-spacing:normal; }
+.platform-preview-feed * { box-sizing:border-box; }
+.platform-preview-feed strong { font-weight:700; }
+.platform-preview-avatar { position:relative; display:flex; align-items:center; justify-content:center; flex-shrink:0; width:40px; height:40px; overflow:hidden; border-radius:50%; color:#536471; background:#eff3f4; }
+.platform-preview-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.platform-preview-feed .platform-preview-text { margin:0; color:inherit; font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; word-break:normal; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; }
+.platform-preview-feed .platform-preview-text.is-expanded { display:block; overflow:visible; -webkit-line-clamp:unset; }
+.platform-preview-feed .platform-preview-text.is-empty { color:#536471; }
+.platform-preview-feed .platform-preview-expand { display:block; min-height:28px; padding:0; margin:0; border:0; border-radius:2px; background:none; color:#1d9bf0; font:inherit; text-align:left; cursor:pointer; }
+.platform-preview-feed .platform-preview-expand:hover { text-decoration:underline; }
+.platform-preview-feed .platform-preview-expand:focus-visible { outline:2px solid #0a66c2; outline-offset:3px; }
+.platform-preview-menu { flex-shrink:0; margin-left:auto; color:#536471; }
+.platform-preview-date { flex-shrink:0; color:#536471; font-weight:400; }
+
+/* Native light timeline proportions; the surrounding writing desk keeps its theme. */
+.platform-preview-x .platform-preview-feed { border:1px solid #eff3f4; background:#fff; font:400 15px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+.platform-preview-x-post { position:relative; display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; margin:0; padding:12px 16px; }
+.platform-preview-x-post:not(:last-child)::after { content:""; position:absolute; top:56px; bottom:-8px; left:35px; width:2px; background:#cfd9de; }
+.platform-preview-x-content { min-width:0; }
+.platform-preview-x-author { display:flex; align-items:center; gap:4px; min-width:0; height:20px; margin-bottom:2px; }
+.platform-preview-x-author strong,.platform-preview-handle { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.platform-preview-x-author strong { min-width:0; flex-shrink:1; }
+.platform-preview-handle { min-width:0; flex-shrink:2; color:#536471; }
+.platform-preview-x .platform-preview-text { -webkit-line-clamp:10; }
+.platform-preview-x-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; max-width:100%; margin-top:12px; color:#536471; }
+.platform-preview-x-actions>span,.platform-preview-x-save>span { display:flex; align-items:center; }
+.platform-preview-x-actions svg { width:18px; height:18px; stroke-width:1.7; }
+.platform-preview-x-save { gap:14px; }
+
+.platform-preview-linkedin .platform-preview-feed { display:grid; gap:12px; color:#000000e6; font:400 14px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+.platform-preview-linkedin-post { margin:0; border:1px solid #00000026; border-radius:8px; background:#fff; overflow:hidden; }
+.platform-preview-linkedin-author { display:flex; align-items:flex-start; gap:8px; padding:12px 16px 0; }
+.platform-preview-linkedin-author .platform-preview-avatar { width:48px; height:48px; background:#e9e5df; color:#666; }
+.platform-preview-linkedin-identity { display:flex; flex:1; flex-direction:column; min-width:0; }
+.platform-preview-linkedin-identity strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; line-height:20px; font-weight:600; }
+.platform-preview-headline { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#00000099; font-size:12px; line-height:16px; }
+.platform-preview-linkedin-identity .platform-preview-date { display:flex; align-items:center; gap:4px; color:#00000099; font-size:12px; line-height:16px; }
+.platform-preview-linkedin .platform-preview-menu { color:#00000099; }
+.platform-preview-linkedin .platform-preview-copy { padding:8px 16px 0; }
+.platform-preview-linkedin .platform-preview-text { -webkit-line-clamp:3; }
+.platform-preview-linkedin .platform-preview-text.is-empty { color:#00000099; }
+.platform-preview-linkedin .platform-preview-expand { margin-left:auto; color:#00000099; font-size:14px; line-height:20px; }
+.platform-preview-linkedin .platform-preview-expand:hover { color:#0a66c2; }
+.platform-preview-linkedin-actions { display:flex; align-items:center; justify-content:space-between; gap:4px; margin:16px 16px 0; padding:4px 0; border-top:1px solid #0000001a; color:#00000099; font-size:14px; font-weight:600; line-height:20px; }
+.platform-preview-linkedin-actions>span { display:flex; flex:1; min-width:0; align-items:center; justify-content:center; gap:6px; min-height:40px; padding:8px 4px; }
+.platform-preview-linkedin-actions svg { width:20px; height:20px; stroke-width:1.8; }
+
+@container (max-width:420px) {
+  .platform-preview-x-post { gap:8px; padding-inline:12px; }
+  .platform-preview-x-post:not(:last-child)::after { left:31px; }
+  .platform-preview-linkedin-author { padding-inline:12px; }
+  .platform-preview-linkedin .platform-preview-copy { padding-inline:12px; }
+  .platform-preview-linkedin-actions { margin-inline:12px; font-size:12px; gap:2px; }
+  .platform-preview-linkedin-actions>span { flex-direction:column; gap:3px; padding-inline:2px; }
+}
+
+/* A line with a source behind it. Quiet until you reach for it. */
+.platform-preview-claim { border-radius:2px; background:transparent; color:inherit; cursor:pointer; text-decoration:underline dotted rgb(211 67 26 / .6); text-decoration-thickness:1.5px; text-underline-offset:3px; transition:background-color .16s ease,text-decoration-color .16s ease; }
+.platform-preview-claim:hover,.platform-preview-claim[data-active=true] { background:rgb(242 196 56 / .55); text-decoration-color:transparent; }
+.platform-preview-claim:focus-visible { outline:2px solid rgb(211 67 26); outline-offset:1px; }

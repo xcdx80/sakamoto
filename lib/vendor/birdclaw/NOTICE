@@ -1,0 +1,15 @@
+Thread collection is adapted from the locally validated Birdclaw 0.16.0 extension,
+not from an assumed upstream release snapshot.
+
+Reference checkout HEAD: bb733ff8357a4c0828a027c419ff1915a31561e7
+The thread module and its tests were uncommitted local extension files.
+
+SHA-256 src/lib/bookmark-threads-live.ts:
+cb228fa74e939f8dd0a8ad933db5ae820d2c3226bf0301b7192567214f23bc05
+SHA-256 src/lib/bookmark-threads-live.test.ts:
+10ab4889c9e95a7eca50d73584ed939f3222eb99fa9513d42c697c67ca7e1e52
+
+MIT license and copyright notice: LICENSE in this directory.
+Sakamoto adaptations replace SQLite/xurl with authenticated Neon/API adapters,
+retain paid pages across interruptions, fence writes by source revision and lease,
+and reuse exhausted search observations while repairing missing context.

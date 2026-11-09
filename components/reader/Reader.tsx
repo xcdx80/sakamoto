@@ -4,8 +4,9 @@ import { annotationMatchesSource, sameSourceRevision, sourceAddress, revisionUrl
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
+import { readerMarkdownBlocks } from "@/lib/reader-markdown";
 import { blockEl, selectBlock, spanIn } from "@/lib/anchor";
-import { displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
+import { contentTypeOf, displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
 import { ARTICLE_QUESTIONS } from "@/lib/actions";
 import { SAMPLE_QUESTIONS } from "@/lib/samples";
 import { fetchBrief } from "@/lib/ask";
@@ -13,7 +14,10 @@ import { indexArticle } from "@/lib/doc";
 import { fetchText } from "@/lib/sync";
 import { loadDoc, useGlosses, useHighlights, useStore, type Anchor } from "@/lib/store";
 import { applySettings } from "@/lib/settings";
-import { SakamotoWordmark } from "@/components/brand/Sakamoto";
+import { motion } from "motion/react";
+import { Scribble } from "@/components/motion/Ink";
+import { Words } from "@/components/motion/Reveal";
+import { ease, spring } from "@/components/motion/tokens";
 import { Block, type Mark } from "./Block";
 import { Brief } from "./Brief";
 import { CarefulRead } from "./CarefulRead";
@@ -28,9 +32,10 @@ import { Notebook } from "./Notebook";
 import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
 import { LinkedDocuments } from "./LinkedDocuments";
-import { LinkedDiscoveries } from "./LinkedDiscoveries";
+import { ReadingConnections } from "./ReadingConnections";
 import { TopBar } from "./TopBar";
 import { ThreadReading } from "./ThreadReading";
+import { SourceText } from "./SourceText";
 
 export function Reader({ id, initial }: { id: string; initial: Article | null }) {
   const [article, setArticle] = useState<Article | null>(initial);
@@ -79,12 +84,23 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
 
   if (missing)
     return (
-      <main className="grid min-h-dvh place-items-center px-6 text-center">
-        <div>
-          <SakamotoWordmark />
-          <p className="mt-6 font-serif text-[26px] text-ink">This text is not on this device.</p>
-          <p className="mt-2 text-[14px] text-ink-3">Imported texts live in the browser that imported them, or in your account when you are signed in.</p>
-          <Link href="/" className="mt-6 inline-flex h-10 items-center rounded-full bg-ink px-5 text-[14px] font-medium text-bg">
+      <main className="sk-desk grid min-h-dvh place-items-center px-6 text-center">
+        <div className="max-w-[30rem]">
+          <motion.div
+            aria-hidden
+            className="sk-paper relative mx-auto mb-10 h-[168px] w-[128px] p-5 text-left"
+            initial={{ y: -40, rotate: -11, opacity: 0 }}
+            animate={{ y: 0, rotate: -3, opacity: 1 }}
+            transition={spring.soft}
+          >
+            {[100, 100, 100, 66].map((w, i) => (
+              <span key={i} className="mb-3.5 block h-px bg-rule" style={{ width: `${w}%` }} />
+            ))}
+            <span className="absolute inset-0 grid place-items-center font-hand text-[64px] leading-none text-[var(--rubric)]">?</span>
+          </motion.div>
+          <h1 className="sk-display text-[clamp(2rem,5vw,2.75rem)] text-ink">This text is not on this device.</h1>
+          <p className="mx-auto mt-4 max-w-[26rem] text-[14.5px] leading-relaxed text-ink-3 text-pretty">Imported texts live in the browser that imported them, or in your account when you are signed in.</p>
+          <Link href="/" className="sk-btn sk-btn-ink mt-8">
             Back to the library
           </Link>
         </div>
@@ -92,14 +108,27 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
     );
   if (!shown)
     return (
-      <main aria-busy className="mx-auto max-w-[44rem] px-6 pt-[calc(var(--topbar-h)+64px)]" style={{ animation: "fade 0.4s 0.15s var(--ease-out) both" }}>
-        <div className="shimmer h-12 w-[78%] rounded-[10px]" />
-        <div className="shimmer mt-4 h-12 w-[46%] rounded-[10px]" />
-        <div className="shimmer mt-8 h-4 w-[60%]" />
-        <div className="mt-14 space-y-3">
-          {[96, 92, 98, 88, 94, 60].map((w, i) => (
-            <div key={i} className="shimmer h-4" style={{ width: `${w}%`, animationDelay: `${i * 0.06}s` }} />
-          ))}
+      <main aria-busy className="px-4 pt-[calc(var(--topbar-h)+64px)] sm:px-6" style={{ animation: "fade 0.4s 0.15s var(--ease-out) both" }}>
+        {/* The same columns as the page it stands in for, so nothing moves when the text lands. */}
+        <div className="reader-grid">
+          <div className="rg-rail" />
+          <div className="rg-numgap" />
+          <div className="min-w-0">
+            <div className="shimmer h-3 w-[22%]" />
+            <div className="shimmer mt-6 h-11 w-[84%] rounded-[8px]" />
+            <div className="shimmer mt-3 h-11 w-[52%] rounded-[8px]" />
+            <div className="mt-10 h-px w-full bg-rule" />
+            <div className="shimmer mt-5 h-3.5 w-[36%]" />
+            {[0, 1].map((p) => (
+              <div key={p} className="mt-14 space-y-3.5">
+                {[97, 93, 99, 90, 96, p ? 34 : 62].map((w, i) => (
+                  <div key={i} className="shimmer h-3.5" style={{ width: `${w}%`, animationDelay: `${(p * 6 + i) * 0.05}s` }} />
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="rg-gutter" />
+          <div className="rg-margin" />
         </div>
       </main>
     );
@@ -112,6 +141,7 @@ const GUTTER_MID = 52;
 function ReaderInner({ article }: { article: Article }) {
   const ix = useMemo(() => indexArticle(article), [article]);
   const articleId = article.id;
+  const markdown = useMemo(() => readerMarkdownBlocks(article.blocks), [article.blocks]);
   const [articleEl, setArticleEl] = useState<HTMLDivElement | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
   const [peek, setPeekState] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -489,16 +519,12 @@ function ReaderInner({ article }: { article: Article }) {
   const paraCount = ix.byNumber.size;
   // A short line above the title: where this came from.
   const kicker = article.source ? article.source.split(/,|\(/)[0].trim() : article.origin === "paste" ? "Pasted text" : undefined;
+  const readingTitle = article.post ? `Post by ${article.post.author.name}` : article.title;
 
   return (
     <ReaderContext.Provider value={api}>
       <title>{`${article.title} | Sakamoto`}</title>
       <div className={`${focusMode ? "focus-mode" : ""} ${showNumbers ? "" : "hide-nums"} ${notebookOpen ? "nb-open" : ""}`}>
-        {archivedCount > 0 && (
-          <p role="status" className="mx-auto max-w-xl px-6 py-4 text-sm text-ink-3">
-            {archivedCount} saved annotations refer to an earlier or unavailable passage. They remain in your notebook and are not attached to this text.
-          </p>
-        )}
         <TopBar currentN={current ? (ix.numbers.get(current) ?? null) : null} pastTitle={pastTitle} listenFrom={askAnchor} />
 
         <main className="relative z-[1] px-4 pb-10 pt-[calc(var(--topbar-h)+64px)] sm:px-6">
@@ -509,30 +535,47 @@ function ReaderInner({ article }: { article: Article }) {
             <div className="rg-numgap" aria-hidden />
 
             <div className="min-w-0">
-              <header className="mb-14">
+              <header className="reader-source-header mb-14">
+                {archivedCount > 0 && (
+                  <p role="status" className="reader-archived focus-hide rise">
+                    <span>
+                      <b>Earlier passages</b>
+                      {archivedCount} saved annotations refer to an earlier or unavailable passage. They remain in your notebook and are not attached to this text.
+                    </span>
+                  </p>
+                )}
                 {kicker && (
-                  <p className="focus-hide rise mb-6 flex items-center gap-2 text-[13px] font-medium text-ink-3">
-                    <span aria-hidden className="size-1.5 rounded-full bg-[var(--rubric)]" />
+                  <p className="sk-eyebrow focus-hide rise mb-5 flex items-center gap-2">
+                    <span aria-hidden className="size-[5px] shrink-0 rounded-full bg-[var(--rubric)]" />
                     <span className="truncate">{kicker}</span>
                   </p>
                 )}
-                <h1 className={`rise font-serif font-[380] tracking-[-0.022em] text-ink text-balance [font-variation-settings:'opsz'_72] ${titleClass(article.title)}`} style={{ animationDelay: "40ms" }}>
-                  {article.title}
+                <h1 className={`font-serif font-[360] tracking-[-0.026em] text-ink text-balance [font-variation-settings:'opsz'_72] ${titleClass(readingTitle)}`}>
+                  {/* Word by word for a title; a long one arrives whole rather than taking its time. */}
+                  {readingTitle.split(" ").length <= 12 ? <Words text={readingTitle} /> : <span className="rise block">{readingTitle}</span>}
                 </h1>
                 {article.dek && (
-                  <p className="focus-hide rise mt-5 max-w-[38rem] text-[clamp(1.05rem,1.7vw,1.19rem)] leading-[1.55] text-ink-2 text-pretty" style={{ animationDelay: "90ms" }}>
+                  <p className="focus-hide rise mt-5 max-w-[38rem] text-[clamp(1.05rem,1.7vw,1.19rem)] leading-[1.55] text-ink-2 text-pretty" style={{ animationDelay: "160ms" }}>
                     {article.dek}
                   </p>
                 )}
 
+                <motion.span
+                  aria-hidden
+                  className="focus-hide mt-9 block h-px origin-left bg-[var(--rubric-line)]"
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ duration: 0.95, ease: ease.ink, delay: 0.26 }}
+                />
+
                 {/* Byline: who and when on one line, how long underneath, the original on the right. */}
-                <div className="focus-hide rise mt-8 flex items-center gap-4 border-t border-rule pt-5" style={{ animationDelay: "140ms" }}>
+                <div className="focus-hide rise mt-5 flex items-center gap-4" style={{ animationDelay: "320ms" }}>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[14.5px] leading-snug text-ink">
                       {article.author ? <span className="font-medium">{article.author}</span> : <span className="font-medium">{kicker ?? "Untitled source"}</span>}
                       {article.published && <span className="text-ink-3">{`  \u00b7  ${article.published}`}</span>}
                     </p>
-                    <p className="mt-1 text-[13px] leading-snug text-ink-3">
+                    <p className="sk-eyebrow mt-1.5">
                       {readingMinutes(ix.words)} min read <span className="text-ink-4">{"\u00b7"}</span> {paraCount} paragraphs
                     </p>
                   </div>
@@ -541,27 +584,25 @@ function ReaderInner({ article }: { article: Article }) {
                       href={article.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-rule px-3.5 text-[13px] font-medium text-ink-2 transition-[border-color,color,transform] hover:border-rule-strong hover:text-ink active:scale-[0.97]"
+                      className="sk-btn sk-btn-ghost !min-h-[34px] shrink-0 !px-3.5 !text-[13px]"
                     >
                       Original <ArrowUpRight size={14} strokeWidth={2} />
                     </a>
                   )}
                 </div>
-                <LinkedDiscoveries key={article.id} itemId={article.id} />
-                <LinkedDocuments key={"links-"+article.id} itemId={article.id} />
-                {article.post && <p className="focus-hide mt-4 text-[13px] text-ink-3">Completeness reported by agent: {article.post.completeness.status}.{article.post.completeness.reason ? ` ${article.post.completeness.reason}` : ""}</p>}
-                <CarefulRead article={article} />
-                <div className="focus-hide rise" style={{ animationDelay: "200ms" }}>
-                  <Brief />
+                <div className="focus-hide rise" style={{ animationDelay: "420ms" }}>
+                  <Brief compact />
                 </div>
               </header>
 
+              <SourceText contentType={article.post ? "post" : contentTypeOf(article)} completeness={article.post?.completeness}>
               <ThreadReading itemId={article.id} sourceRevision={article.sourceRevision} enabled={Boolean(article.post)}>
               <div ref={setArticleEl} className="prose-read" onClick={onTextClick} onMouseOver={onTextOver} onMouseLeave={() => setUI({ hoverGloss: null })}>
                 {article.blocks.map((b) => (
                   <Block
                     key={b.id}
                     block={b}
+                    markdown={markdown.get(b.id)}
                     n={ix.numbers.get(b.id)}
                     first={b.id === firstPara}
                     marks={marksByBlock.get(b.id) ?? EMPTY}
@@ -577,17 +618,21 @@ function ReaderInner({ article }: { article: Article }) {
               </div>
 
               </ThreadReading>
+              </SourceText>
 
-              <footer className="focus-hide mt-16 border-t border-rule pt-10 text-[13.5px] leading-relaxed text-ink-3">
-                <p aria-hidden className="mb-8 text-center font-serif text-[26px] leading-none text-[var(--rubric)]">
-                  ❦
-                </p>
-                {article.source && <p>From {article.source}.</p>}
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setUI({ notebookOpen: true })} className="h-9 rounded-full border border-rule px-4 text-[13px] font-medium text-ink-2 hover:border-rule-strong hover:text-ink">
+              <ReadingConnections key={article.id} itemId={article.id} />
+              <LinkedDocuments key={"links-"+article.id} itemId={article.id} />
+              <CarefulRead article={article} />
+
+              <footer className="reader-end focus-hide">
+                <Scribble kind="squiggle" className="mx-auto h-3 w-[72px]" width={1.6} />
+                <p aria-hidden className="reader-end-note">the end. few get here.</p>
+                {article.source && <p className="reader-end-source">From {article.source}.</p>}
+                <div className="mt-8 flex flex-wrap justify-center gap-2">
+                  <button type="button" onClick={() => setUI({ notebookOpen: true })} className="sk-btn sk-btn-ghost !text-[13px]">
                     Open your notebook
                   </button>
-                  <Link href="/" className="inline-flex h-9 items-center rounded-full border border-rule px-4 text-[13px] font-medium text-ink-2 hover:border-rule-strong hover:text-ink">
+                  <Link href="/" className="sk-btn sk-btn-quiet !text-[13px]">
                     Back to the library
                   </Link>
                 </div>
@@ -604,7 +649,7 @@ function ReaderInner({ article }: { article: Article }) {
         {focusMode && (
           <p
             role="status"
-            className="focus-hint pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+32px)] left-1/2 z-40 whitespace-nowrap rounded-full bg-lens px-4 py-2 text-[13px] text-lens-fg shadow-pop"
+            className="focus-hint pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+32px)] left-1/2 z-40 whitespace-nowrap rounded-full bg-lens px-4 py-2 text-[12.5px] text-lens-fg shadow-pop"
           >
             {window.matchMedia("(pointer: coarse)").matches ? "Focus mode. Scroll up for the menu." : "Focus mode. Press F or Esc to leave."}
           </p>
@@ -619,7 +664,7 @@ function ReaderInner({ article }: { article: Article }) {
         {!wide && <GlossSheet />}
 
         {toast?.kind === "resume" && (
-          <Toast onClose={() => setToast(null)}>
+          <Toast variant="bookmark" onClose={() => setToast(null)}>
             <span>Picked up where you left off, at ¶{toast.n}.</span>
             <button
               type="button"
@@ -627,7 +672,7 @@ function ReaderInner({ article }: { article: Article }) {
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 setToast(null);
               }}
-              className="font-medium underline decoration-lens-mute underline-offset-4"
+              className="font-medium underline decoration-current/50 underline-offset-4"
             >
               Start over
             </button>
@@ -662,10 +707,10 @@ function GlossSheet() {
   if (!g || notebookOpen) return null;
   return (
     <div
-      className="sheet scroll-thin fixed inset-x-0 bottom-0 z-[52] mx-auto max-h-[64dvh] max-w-[680px] overflow-y-auto rounded-t-[20px] border border-b-0 border-rule bg-raised pb-[max(12px,env(safe-area-inset-bottom))] shadow-pop"
-      style={{ animation: "sheet-up 0.38s var(--ease-out)" }}
+      className="sheet scroll-thin fixed inset-x-0 bottom-0 z-[52] mx-auto max-h-[64dvh] max-w-[680px] overflow-y-auto rounded-t-[14px] border border-b-0 border-rule bg-raised pb-[max(12px,env(safe-area-inset-bottom))] shadow-pop"
+      style={{ animation: "sheet-up 0.46s var(--ease-out)" }}
     >
-      <div className="sticky top-0 z-10 flex items-center justify-center bg-raised/95 pb-1 pt-2.5 backdrop-blur">
+      <div className="sticky top-0 z-10 flex items-center justify-center bg-raised pb-1 pt-2.5">
         <span className="h-1 w-9 rounded-full bg-rule-strong" aria-hidden />
         <button type="button" aria-label="Close" onClick={() => setUI({ activeGloss: null })} className="absolute right-3 top-2 grid size-8 place-items-center rounded-lg text-ink-3 hover:bg-sunk">
           <X size={16} />

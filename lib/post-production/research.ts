@@ -124,7 +124,7 @@ function evidenceFrom(output: unknown): ProductionEvidence[] {
     if (url.protocol !== "https:" || url.username || url.password || seen.has(url.href)) continue;
     seen.add(url.href);
     evidence.push({
-      id: `WEB${evidence.length + 1}`, itemId: "", sourceRevision: 0, kind: "web_source",
+      id: `WEB${evidence.length + 1}`, itemId: "", sourceRevision: 0, kind: "web_source", researchProvider: "monid-octen",
       title: (typeof row.title === "string" && row.title.trim() ? row.title.trim() : url.hostname).slice(0, 160),
       ...(typeof row.authors === "string" && row.authors.trim() ? { author: row.authors.trim().slice(0, 160) } : {}),
       excerpt: row.highlight.trim().slice(0, 1000), originalUrl: url.href, retrievedAt,

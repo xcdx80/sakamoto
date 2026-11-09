@@ -2,7 +2,9 @@
 
 import { sameSourceRevision } from "@/lib/source-revision";
 import { Show, SignInButton } from "@clerk/nextjs";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { ease } from "@/components/motion/tokens";
 import { ArrowRight, ChevronDown, RotateCcw } from "lucide-react";
 import { fetchBrief, openKeyMenu } from "@/lib/ask";
 import type { DocIndex } from "@/lib/doc";
@@ -15,7 +17,7 @@ import { fmtCost, useReader } from "./context";
  * The brief: a two-sentence gist, the load-bearing claims with citations,
  * what to keep in mind before relying on them, and a map of the text's movements. The map also labels the rail and the top bar.
  */
-export function Brief() {
+export function Brief({ compact = false }: { compact?: boolean }) {
   const { ix, jumpTo } = useReader();
   const savedBrief = useStore((s) => s.briefs[ix.article.id]);
   const brief = savedBrief && sameSourceRevision(savedBrief, ix.article) ? savedBrief : undefined;
@@ -23,21 +25,21 @@ export function Brief() {
   const setUI = useStore((s) => s.setUI);
   const hydrated = useStore((s) => s.hydrated);
 
-  if (!hydrated) return <div className="mt-6 h-[72px]" />;
+  if (!hydrated) return <div className={compact ? "mt-4 h-9" : "mt-6 h-[72px]"} />;
 
   if (!brief) {
     return (
       <button
         type="button"
         onClick={() => fetchBrief(ix)}
-        className="group mt-6 flex w-full items-center gap-5 rounded-[16px] border border-rule bg-raised/60 py-4 pl-5 pr-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:border-rule-strong hover:bg-raised hover:shadow-card active:scale-[0.995]"
+        className={compact ? "reader-utility-pill mt-4" : "group mt-6 flex w-full items-center gap-5 rounded-[16px] border border-rule bg-raised/60 py-4 pl-5 pr-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:border-rule-strong hover:bg-raised hover:shadow-card active:scale-[0.995]"}
       >
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 font-serif text-[19px] leading-none tracking-[-0.01em] text-ink [font-variation-settings:'opsz'_24]">
+          <span className={compact ? "flex items-center gap-1.5" : "flex items-center gap-1.5 font-serif text-[19px] leading-none tracking-[-0.01em] text-ink [font-variation-settings:'opsz'_24]"}>
             Summarize this text
             <ArrowRight size={15} strokeWidth={2} className="translate-y-px text-ink-4 transition-[transform,color] duration-300 ease-[var(--ease-out)] group-hover:translate-x-1 group-hover:text-rubric-text" aria-hidden />
           </span>
-          <span className="mt-1.5 block truncate text-[13px] leading-snug text-ink-3">The gist, the key claims and a map, before you start</span>
+          {!compact && <span className="mt-1.5 block truncate text-[13px] leading-snug text-ink-3">The gist, the key claims and a map, before you start</span>}
         </span>
         <kbd className="hidden sm:inline">B</kbd>
       </button>
@@ -48,7 +50,7 @@ export function Brief() {
 
   if (brief.status === "error") {
     return (
-      <div className="mt-6 flex flex-wrap items-center gap-3 rounded-[16px] border border-rule px-4 py-3.5 text-[13.5px]">
+      <div className="reader-brief flex flex-wrap items-center gap-3 py-3.5 text-[13.5px]">
         <p className="text-rubric-text">{brief.error}</p>
         {brief.needKey && (
           <>
@@ -74,33 +76,48 @@ export function Brief() {
   const { data, usage, modelKey } = brief;
   const caveats = data.caveats ?? [];
   return (
-    <section aria-label="Overview" className="mt-6 rounded-[16px] border border-rule bg-raised/60 px-5">
+    <section aria-label="Overview" className="reader-brief">
       <button
         type="button"
         onClick={() => setUI({ briefOpen: !open })}
         aria-expanded={open}
         className="flex w-full items-center gap-2.5 py-3.5 text-left"
       >
-        <span className="text-[13.5px] font-medium text-ink">Overview</span>
+        <span className="reader-brief-tag">Overview</span>
         <span className="text-[13px] text-ink-3">
           {data.sections.length} parts {"\u00b7"} {data.claims.length} claims
           {caveats.length > 0 && ` \u00b7 ${caveats.length} ${caveats.length === 1 ? "caveat" : "caveats"}`}
         </span>
-        <ChevronDown size={16} className={`ml-auto text-ink-3 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={16} className={`ml-auto text-ink-3 transition-transform duration-500 ease-[var(--ease-out)] ${open ? "rotate-180" : ""}`} />
       </button>
+      <AnimatePresence initial={false}>
       {open && (
-        <div className="rise border-t border-rule pb-5 pt-4" style={{ animationDuration: "0.45s" }}>
-          <div className="gloss-body !text-[16px] !leading-[1.6] text-pretty">
+        <motion.div
+          className="overflow-hidden"
+          initial={{ height: 0 }}
+          animate={{ height: "auto" }}
+          exit={{ height: 0 }}
+          transition={{ duration: 0.52, ease: ease.inOut }}
+        >
+        <motion.div
+          className="pb-6 pt-2"
+          style={{ transformOrigin: "top center", transformPerspective: 900 }}
+          initial={{ rotateX: -18, opacity: 0 }}
+          animate={{ rotateX: 0, opacity: 1 }}
+          exit={{ rotateX: -10, opacity: 0, transition: { duration: 0.22 } }}
+          transition={{ duration: 0.6, ease: ease.out, delay: 0.06 }}
+        >
+          <div className="gloss-body !text-[17px] !leading-[1.55] font-serif text-pretty">
             <Answer text={data.gist} />
           </div>
 
           {data.claims.length > 0 && (
             <>
-              <h3 className="mb-2.5 mt-6 text-[12.5px] font-medium text-ink-3">Key claims</h3>
+              <h3>Key claims</h3>
               <ol className="space-y-2.5">
                 {data.claims.map((c, i) => (
                   <li key={i} className="rise grid grid-cols-[1.4rem_minmax(0,1fr)] text-[14.5px] leading-[1.5] text-ink" style={{ animationDuration: "0.5s", animationDelay: `${120 + i * 60}ms` }}>
-                    <span className="font-serif text-[14px] leading-[1.55] tabular-nums text-ink-4">{i + 1}</span>
+                    <span className="font-mono text-[11px] leading-[1.9] text-ink-4">{i + 1}</span>
                     <span className="gloss-body !text-[14.5px]">
                       <Answer text={c.cite ? `${c.text} [¶${c.cite}]` : c.text} />
                     </span>
@@ -112,11 +129,11 @@ export function Brief() {
 
           {caveats.length > 0 && (
             <>
-              <h3 className="mb-2.5 mt-6 text-[12.5px] font-medium text-ink-3">Keep in mind</h3>
+              <h3>Keep in mind</h3>
               <ul className="space-y-2.5">
                 {caveats.map((c, i) => (
                   <li key={i} className="rise grid grid-cols-[1.4rem_minmax(0,1fr)] text-[14.5px] leading-[1.5] text-ink-2" style={{ animationDuration: "0.5s", animationDelay: `${200 + i * 60}ms` }}>
-                    <span aria-hidden className="mt-[0.6em] size-[5px] rounded-full bg-rubric/70" />
+                    <span aria-hidden className="mt-[0.6em] size-1 rounded-full bg-rubric/70" />
                     <span className="gloss-body !text-[14.5px]">
                       <Answer text={c.cite ? `${c.text} [¶${c.cite}]` : c.text} />
                     </span>
@@ -128,7 +145,7 @@ export function Brief() {
 
           {data.sections.length > 0 && (
             <>
-              <h3 className="mb-2 mt-6 text-[12.5px] font-medium text-ink-3">Map</h3>
+              <h3>Map</h3>
               <ol className="grid gap-x-6 sm:grid-cols-2">
                 {data.sections.map((s, i) => {
                   const next = data.sections[i + 1]?.start;
@@ -140,9 +157,9 @@ export function Brief() {
                         onClick={() => jumpTo(s.start)}
                         className="group flex w-full items-baseline gap-3 border-b border-rule py-2 text-left text-[14px] text-ink transition-colors hover:text-rubric-text"
                       >
-                        <span className="w-4 shrink-0 font-serif text-[14px] tabular-nums text-ink-4">{i + 1}</span>
+                        <span className="w-4 shrink-0 font-mono text-[11px] text-ink-4">{i + 1}</span>
                         <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                        <span className="shrink-0 text-[12px] tabular-nums text-ink-4 group-hover:text-rubric-text">
+                        <span className="shrink-0 font-mono text-[11px] text-ink-4 group-hover:text-rubric-text">
                           ¶{s.start}
                           {end > s.start ? `-${end}` : ""}
                         </span>
@@ -154,7 +171,7 @@ export function Brief() {
             </>
           )}
 
-          <div className="mt-5 flex items-center gap-3 text-[11.5px] tabular-nums text-ink-4">
+          <div className="mt-5 flex items-center gap-3 font-mono text-[10.5px] text-ink-4">
             <span>
               {modelKey ? MODELS[modelOf(modelKey)].label : ""}
               {usage ? ` / ${usage.promptTokens.toLocaleString()} in, ${usage.completionTokens} out / ${fmtCost(usage.costUsd)}` : ""}
@@ -163,8 +180,10 @@ export function Brief() {
               <RotateCcw size={11} /> Redo
             </button>
           </div>
-        </div>
+        </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -208,9 +227,9 @@ function BriefLoading({ ix }: { ix: DocIndex }) {
     return () => clearInterval(t);
   }, [steps.length]);
   return (
-    <section aria-busy aria-live="polite" className="mt-6 rounded-[16px] border border-rule bg-raised/60 px-5 py-5">
+    <section aria-busy aria-live="polite" className="reader-brief py-5">
       <div className="mb-5 flex items-center gap-3">
-        <p key={step} className="text-[12.5px] font-medium text-rubric-text" style={{ animation: "rise 0.4s var(--ease-out) both" }}>
+        <p key={step} className="font-mono text-[11px] tracking-[0.04em] text-rubric-text" style={{ animation: "rise 0.4s var(--ease-out) both" }}>
           {steps[step]}
         </p>
         <TextShape ix={ix} scanning className="ml-auto" />

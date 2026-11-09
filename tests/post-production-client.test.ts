@@ -180,3 +180,39 @@ test("posting now sends one explicit publication request and never advances or r
   assert.equal(result.production.status, "approved");
   assert.deepEqual(bodies, [{ action: "publish", id: "one", expectedVersion: 8 }]);
 });
+
+test("pasted context editing preserves richer records and their provenance", async () => {
+  const { pastedContextText, withPastedContext, contextInputError } = await import("../lib/post-production/client");
+  const brief = detail("context", "draft", 1).production.brief;
+  const original = { id: "research", title: "Research notes", text: "Original material", kind: "analysis" as const, provenance: { label: "Research agent", author: "Analyst", url: "https://example.com/research" } };
+  const input = { ...brief, agentContext: [original] };
+  const updated = withPastedContext(input, "Pasted source passage");
+  assert.equal(pastedContextText(updated), "Pasted source passage");
+  assert.deepEqual(updated.agentContext?.[0], original);
+  assert.equal(updated.agentContext?.[1].kind, "reference");
+  assert.equal(updated.agentContext?.[1].provenance.label, "Pasted by the author");
+  assert.deepEqual(withPastedContext(updated, "").agentContext, [original]);
+  assert.equal(contextInputError(updated), null);
+  assert.match(contextInputError(withPastedContext(input, "😀".repeat(6000)))!, /24,000/);
+});
+
+test("source switches default independently on, clear disabled library pins, and retain context", async () => {
+  const { withSourcePolicy } = await import("../lib/post-production/client");
+  const brief = { ...detail("context", "draft", 1).production.brief, sourceIds: ["library-item"] };
+  const webOff = withSourcePolicy(brief, "web", false);
+  assert.deepEqual(webOff.sourcePolicy, { library: true, web: false });
+  assert.deepEqual(webOff.sourceIds, ["library-item"]);
+  const bothOff = withSourcePolicy(webOff, "library", false);
+  assert.deepEqual(bothOff.sourcePolicy, { library: false, web: false });
+  assert.deepEqual(bothOff.sourceIds, []);
+  assert.deepEqual(withSourcePolicy(bothOff, "library", true).sourceIds, []);
+});
+
+test("pasted context does not overwrite an imported item with the same identifier", async () => {
+  const { withPastedContext, pastedContextText } = await import("../lib/post-production/client");
+  const brief = { ...detail("context", "draft", 1).production.brief, agentContext: [{ id: "pasted-context", title: "Agent research", kind: "analysis" as const, text: "Keep this", provenance: { label: "Agent" } }] };
+  const edited = withPastedContext(brief, "New text");
+  assert.deepEqual(edited.agentContext?.[0], brief.agentContext[0]);
+  assert.equal(pastedContextText(edited), "New text");
+  assert.equal(withPastedContext(edited, "Replacement").agentContext?.length, 2);
+});

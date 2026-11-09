@@ -89,6 +89,7 @@ export async function searchEvidence(
   owner: string,
   raw: SearchOptions,
   signal?: AbortSignal,
+  matching: "passage" | "discovery" = "passage",
 ): Promise<EvidenceSearch> {
   signal?.throwIfAborted();
   const opts = searchOptions(raw as unknown as Record<string, unknown>);
@@ -125,15 +126,27 @@ export async function searchEvidence(
       }
   }
   signal?.throwIfAborted();
+  // Citation evidence matches current passage text. Topic research may also
+  // discover candidates through metadata, prefixes and related saved sources.
+  const discovery = matching === "discovery";
+  const exactVector = discovery
+    ? "p.lexical || to_tsvector('simple',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->>'dek',p.data->'tags'))"
+    : "p.lexical";
+  const searchVector = discovery
+    ? "setweight(to_tsvector('english',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->'tags')),'A') || setweight(to_tsvector('english',coalesce(p.data->>'dek','')),'B') || to_tsvector('english',p.text)"
+    : "p.lexical";
+  const lexicalScore = discovery
+    ? "case when q.explicit_syntax then ts_rank_cd(p.exact_vector,q.exact_query) else (select count(*) from unnest(q.terms) term where p.search_vector @@ (quote_literal(term)||':*')::tsquery) + ts_rank_cd(p.search_vector,q.broad_query,32) end"
+    : "ts_rank_cd(p.exact_vector,q.exact_query)";
+  const lexicalMatch = discovery
+    ? "case when q.explicit_syntax then p.exact_vector @@ q.exact_query else p.search_vector @@ q.broad_query end"
+    : "p.exact_vector @@ q.exact_query";
   const rows = await db().query(
     // Keep full source JSON and passage payloads out of the ranking CTEs. In particular,
     // extracting coverage from a large document for every passage repeats TOAST reads.
     `with current_sources as not materialized (${ELIGIBLE_SAVED_PASSAGES_SQL}), searchable as materialized (
  select p.user_id,p.source_id,p.source_revision,p.ordinal,p.content_fingerprint,
- p.lexical || to_tsvector('simple',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->>'dek',p.data->'tags')) as exact_vector,
- setweight(to_tsvector('english',concat_ws(' ',p.data->>'title',p.data->>'author',p.data->'tags')),'A') ||
- setweight(to_tsvector('english',coalesce(p.data->>'dek','')),'B') ||
- to_tsvector('english',p.text) as search_vector
+ ${exactVector} as exact_vector,${searchVector} as search_vector
  from current_sources p
  ), query_terms as (
  select websearch_to_tsquery('simple',$5) as exact_query,
@@ -143,11 +156,7 @@ export async function searchEvidence(
  $9::boolean as explicit_syntax from query_terms
  ), eligible as (
  select p.source_id,p.source_revision,p.ordinal,
- case when q.explicit_syntax then ts_rank_cd(p.exact_vector,q.exact_query)
- else (select count(*) from unnest(q.terms) term where p.search_vector @@ (quote_literal(term)||':*')::tsquery)
- + ts_rank_cd(p.search_vector,q.broad_query,32) end as lexical_score,
- case when q.explicit_syntax then p.exact_vector @@ q.exact_query
- else p.search_vector @@ q.broad_query end as matched,
+ ${lexicalScore} as lexical_score,${lexicalMatch} as matched,
  case when i.contract=$7 then e.embedding <=> $8::public.vector else null end as distance
  from searchable p cross join queries q
  left join passage_indexes i on i.user_id=p.user_id and i.source_id=p.source_id and i.source_revision=p.source_revision and i.contract=$7
@@ -159,7 +168,7 @@ export async function searchEvidence(
  related as (
    select l.article_id as source_id,max(s.rank)*0.5 as rank from seeds s join linked_sources l
    on l.user_id=$1 and l.source_id=s.source_id and l.source_revision=s.source_revision
-   where not $9::boolean group by l.article_id
+   where ${discovery ? "not $9::boolean" : "false"} group by l.article_id
  ), expanded as (
    select e.*,greatest(coalesce(d.rank,0),coalesce(r.rank,0)) as rank
    from eligible e left join ranked d using(source_id,ordinal) left join related r using(source_id)
@@ -218,7 +227,13 @@ export async function scheduleSearchRebuild(
   const rows = await db().query(
     `insert into processing_jobs(user_id,source_id,source_revision,kind,target)
  select user_id,id,source_revision,'indexing',$3 from articles where user_id=$1 and id=any($2::text[]) and not deleted and doc is not null
- on conflict(user_id,source_id,source_revision,kind,target) do update set target=excluded.target returning source_id,state`,
+ on conflict(user_id,source_id,source_revision,kind,target) do update set
+ state=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then 'pending' else processing_jobs.state end,
+ max_attempts=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then least(8,processing_jobs.attempts+4) else processing_jobs.max_attempts end,
+ next_attempt_at=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then clock_timestamp() else processing_jobs.next_attempt_at end,
+ checkpoint=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then processing_jobs.checkpoint-'processingBlock' else processing_jobs.checkpoint end,
+ error=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then null else processing_jobs.error end
+ returning source_id,state`,
     [owner, sources.slice(0, limit).map((r) => r.id), INDEX_CONTRACT],
   );
   return {

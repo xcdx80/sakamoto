@@ -31,7 +31,7 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-3">
-      <span className="text-[12.5px] text-ink-3">{label}</span>
+      <span className="sk-eyebrow">{label}</span>
       {children}
     </div>
   );
@@ -60,13 +60,13 @@ function Swatch({ theme, on }: { theme: (typeof THEMES)[number]; on: boolean }) 
   const face = "font-serif text-[15px] leading-none [font-variation-settings:'opsz'_36]";
   return (
     <span
-      className={`relative flex h-[38px] w-full overflow-hidden rounded-[10px] shadow-[inset_0_0_0_1px_rgb(128_128_128/0.28)] outline-offset-2 transition-[outline-color] ${
-        on ? "outline-2 outline-[var(--ink)] [outline-style:solid]" : "outline-2 outline-transparent [outline-style:solid] group-hover:outline-[var(--rule-strong)]"
+      className={`relative flex h-[42px] w-full overflow-hidden rounded-[3px] shadow-[inset_0_0_0_1px_rgb(128_128_128/0.28),0_2px_5px_-2px_rgb(40_30_20/0.3)] transition-transform duration-300 ease-[var(--ease-spring)] ${
+        on ? "-translate-y-1 -rotate-3" : "group-hover:-translate-y-0.5 group-hover:rotate-2"
       }`}
     >
       {theme.key === "auto" ? (
         <>
-          <span className="flex flex-1 items-center justify-end" style={{ background: "#f6f3ec", color: "#1d1b18" }}>
+          <span className="flex flex-1 items-center justify-end" style={{ background: "#faf7f0", color: "#1a1814" }}>
             <span className={`${face} relative`}>
               A<span className="absolute -bottom-[5px] left-0 right-0 h-[2px] rounded-full" style={{ background: pen(false) }} />
             </span>
@@ -177,7 +177,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           {(compact || tab === "look") && (
             <div className="space-y-3.5">
               <div>
-                <p className="mb-2.5 text-[12.5px] text-ink-3">Theme</p>
+                <p className="sk-eyebrow mb-3">Theme</p>
                 <div className="grid grid-cols-6 gap-2">
                   {THEMES.map((t) => (
                     <button
@@ -189,7 +189,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                       className="group flex flex-col items-center gap-1.5 rounded-[12px] focus-visible:outline-offset-4"
                     >
                       <Swatch theme={t} on={settings.theme === t.key} />
-                      <span className={`text-[11px] leading-none transition-colors ${settings.theme === t.key ? "font-medium text-ink" : "text-ink-3 group-hover:text-ink-2"}`}>{t.label}</span>
+                      <span className={`mt-0.5 text-[11px] leading-none transition-colors ${settings.theme === t.key ? "font-medium text-ink" : "text-ink-3 group-hover:text-ink-2"}`}>{t.label}</span>
                     </button>
                   ))}
                 </div>
@@ -205,7 +205,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                       aria-pressed={settings.pen === p.key}
                       aria-label={`${p.label} pen`}
                       data-tip={p.label}
-                      className={`grid size-7 place-items-center rounded-full transition-[box-shadow,transform] active:scale-90 ${settings.pen === p.key ? "shadow-[0_0_0_2px_var(--bg-raised),0_0_0_3.5px_var(--ink-3)]" : ""}`}
+                      className={`grid size-7 place-items-center rounded-full transition-[box-shadow,transform] duration-300 ease-[var(--ease-spring)] hover:-translate-y-0.5 active:scale-90 ${settings.pen === p.key ? "shadow-[0_0_0_2px_var(--bg-raised),0_0_0_3.5px_var(--ink-3)]" : ""}`}
                     >
                       <span className="size-5 rounded-full" style={{ background: dark ? p.dark : p.light }} />
                     </button>
@@ -248,7 +248,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           {!compact && tab === "text" && (
             <div className="space-y-3.5">
               <div>
-                <p className="mb-2.5 text-[12.5px] text-ink-3">Typeface</p>
+                <p className="sk-eyebrow mb-3">Typeface</p>
                 <div className="grid grid-cols-4 gap-2">
                   {FACES.map((f) => (
                     <button
@@ -358,7 +358,7 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           {!compact && tab === "answers" && (
             <div className="space-y-4">
               <div>
-                <p className="mb-2 text-[12.5px] text-ink-3">Answer length</p>
+                <p className="sk-eyebrow mb-2.5">Answer length</p>
                 <Seg
                   label="Answer length"
                   value={settings.length}

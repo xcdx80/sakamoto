@@ -1,6 +1,8 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { spring } from "@/components/motion/tokens";
 
 /** A button that opens a small panel. Closes on outside click and Escape. */
 export function Popover({
@@ -12,6 +14,7 @@ export function Popover({
   triggerClass = "",
   tip,
   openOn,
+  restoreFocus = false,
 }: {
   label: string;
   trigger: ReactNode;
@@ -23,9 +26,16 @@ export function Popover({
   tip?: string;
   /** A window event that opens the panel from elsewhere on the page. */
   openOn?: string;
+  /** Return keyboard/action dismissal to this trigger; pointer dismissal preserves the clicked target. */
+  restoreFocus?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  function close() {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
 
   useEffect(() => {
     if (!openOn) return;
@@ -46,6 +56,7 @@ export function Popover({
       if (e.key === "Escape") {
         e.stopPropagation();
         setOpen(false);
+        if (restoreFocus) triggerRef.current?.focus();
       }
     };
     document.addEventListener("pointerdown", onDown);
@@ -54,11 +65,12 @@ export function Popover({
       document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open]);
+  }, [open, restoreFocus]);
 
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={label}
         data-tip={open ? undefined : tip ?? label}
@@ -69,16 +81,22 @@ export function Popover({
       >
         {trigger}
       </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-label={label}
-          className={`pop absolute top-[calc(100%+8px)] z-[60] p-4 ${align === "right" ? "right-0" : "left-0"}`}
-          style={{ width, ["--origin" as string]: align === "right" ? "top right" : "top left" }}
-        >
-          {children(() => setOpen(false))}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="dialog"
+            aria-label={label}
+            className={`pop absolute top-[calc(100%+8px)] z-[60] p-4 ${align === "right" ? "right-0" : "left-0"}`}
+            style={{ width, animation: "none", transformOrigin: align === "right" ? "top right" : "top left" }}
+            initial={{ opacity: 0, scale: 0.9, y: -6, rotate: align === "right" ? 1.2 : -1.2 }}
+            animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: -3, transition: { duration: 0.12 } }}
+            transition={spring.snap}
+          >
+            {children(close)}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

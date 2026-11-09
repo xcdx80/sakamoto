@@ -237,12 +237,11 @@ test("invalid categories, provider failures and exhausted budget preserve readab
     }
   }
   const sources = (await a.call("search_library")).results;
-  assert.ok(
-    sources.every(
-      (s: any) =>
-        s.topic === "Unsorted" && s.processing.classification === "failed",
-    ),
-  );
+  assert.ok(sources.every((s: any) => s.topic === "Unsorted"));
+  assert.equal(sources.find((s: any) => s.title === "Invalid 0").processing.classification, "failed");
+  assert.equal(sources.find((s: any) => s.title === "Invalid 1").processing.classification, "pending");
+  const retrying = (await a.call("processing_status")).jobs;
+  assert.ok(retrying.some((j: any) => j.kind === "classification" && j.state === "retryable"));
   // This is the explicitly approved isolated budget guarantee: no configured Neon access.
   const { budgetStatus } = await import("../lib/paid-work");
   const b = await budgetStatus(a.owner);
@@ -263,8 +262,10 @@ test("invalid categories, provider failures and exhausted budget preserve readab
     const paused = (await a.call("search_library", { query: "Budget pause" }))
       .results[0];
     assert.equal(dispatched, false);
-    assert.equal(paused.processing.classification, "paused");
-    assert.match(paused.processing.classificationMessage, /budget|limit/i);
+    assert.equal(paused.processing.classification, "pending");
+    const status=await a.call("processing_status");
+    assert.equal(status.summary.budget_paused,true);
+    assert.ok(status.summary.blocked>0);
   } finally {
     globalThis.fetch = original;
     await pool.query("update paid_budget set settled_micros=$1", [

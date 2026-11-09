@@ -4,8 +4,8 @@ import { receivedBookmarkDeliveries,type DeliveryStatus } from '@/lib/bookmark-d
 export function BookmarkDelivery({owner,version}:{owner:string;version:number}) {
  const [status,setStatus]=useState<DeliveryStatus|null>(null),[error,setError]=useState('');
  useEffect(()=>{let active=true; const refresh=()=>receivedBookmarkDeliveries().then(r=>{if(active){setStatus(r);setError('');}},e=>{if(active)setError(e.message);});void refresh();const timer=setInterval(refresh,15000);return()=>{active=false;clearInterval(timer);};},[owner,version]);
- return <section aria-label="Bookmark delivery and backfill" className="my-4 rounded-xl border border-rule p-4 text-sm">
-  <strong>X bookmark delivery</strong>
+ return <section aria-label="Bookmark delivery and backfill" className="sync-section">
+  <strong className="sk-eyebrow">X bookmark delivery</strong>
   {error&&<p role="alert">{error}</p>}
   <p className="mt-1">Last posts delivered: {status?.lastDeliveryAt?<time dateTime={status.lastDeliveryAt}>{new Date(status.lastDeliveryAt).toLocaleString()}</time>:'none recorded'}. Last agent check: {status?.lastContactAt?new Date(status.lastContactAt).toLocaleString():'none recorded'}.</p>
   {status&&<>
@@ -19,6 +19,6 @@ export function BookmarkDelivery({owner,version}:{owner:string;version:number}) 
     {status.next&&<button className="mt-2 underline" onClick={async()=>{try{const page=await receivedBookmarkDeliveries(status.next!);setStatus({...status,batches:[...status.batches,...page.batches],next:page.next});}catch(e){setError(e instanceof Error?e.message:'Could not load deliveries.');}}}>Show older deliveries</button>}
    </details>
   </>}
-  <p className="mt-2 text-ink-3">For new sources, open Connect an agent and run the Grok bookmark workflow. A stale delivery/check points to Grok or X access; pending/retryable jobs point to Sakamoto processing. Daily cron processes a bounded received batch. Grok account usage and the Sakamoto USD10 processing cap are separate.</p>
+  <p className="mt-2 text-ink-3">For new sources, use Import bookmarks for X or Birdclaw, or Connect an agent for the Grok workflow. A stale delivery/check points to Grok or X access; pending/retryable jobs point to Sakamoto processing. Daily cron processes a bounded received batch. Grok account usage and the Sakamoto USD10 processing cap are separate.</p>
  </section>;
 }

@@ -109,8 +109,10 @@ test("a classification deadline reached during durable authorization releases on
     const result = await pending;
     assert.equal(
       result.jobs.find((job: any) => job.kind === "classification").state,
-      "complete",
+      "blocked",
     );
+    assert.equal(result.jobs.find((job:any)=>job.kind==='classification').attempts,0);
+    assert.equal(result.finished,0);
     assert.equal(calls, 0);
     const after = await budgetStatus("classification-cancel");
     assert.equal(after.reservedUsd, before.reservedUsd);
@@ -121,6 +123,13 @@ test("a classification deadline reached during durable authorization releases on
     );
     const shelf = await call("search_library");
     assert.ok(shelf.results.some((source: any) => source.itemId === itemId));
+    AbortSignal.timeout=originalTimeout;
+    const {TOPICS}=await import('../lib/library');
+    globalThis.fetch=async()=>{calls++;return Response.json({model:'jev-1.13.0',answers:{category:{type:'choice',choice:'ai-engineering',confidence:0.96,probabilities:Object.fromEntries(TOPICS.map(t=>[t.key,t.key==='ai-engineering'?0.96:0.04/26]))}},usage:{input_tokens:500,output_tokens:20}});};
+    const resumed=await call('process_library',{limit:1,retryJobId:result.jobs.find((j:any)=>j.kind==='classification').id});
+    assert.equal(resumed.jobs.find((j:any)=>j.kind==='classification').state,'complete');
+    assert.equal(resumed.succeeded,1);assert.equal(calls,1);
+    assert.deepEqual((await budgetStatus('classification-cancel')).attempts.map(a=>a.status).sort(),['released','settled']);
   } finally {
     if (locked) await locker.query("rollback");
     locker.release();

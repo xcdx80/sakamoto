@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { embedText } from "./google-embeddings";
 import { EMBEDDING_CONTRACT, INDEX_CONTRACT } from "./retrieval-contract";
-import { PaidWorkError } from "./paid-work";
+import { PaidWorkError, isProcessingBlock } from "./paid-work";
 import type { ProcessingContext, ProcessingOutcome } from "./processing";
 /** Reuses paid vectors across retries/revisions. Only the engine's fenced publication makes them eligible. */
 export async function indexSavedSource(
@@ -27,16 +27,18 @@ export async function indexSavedSource(
   const available = new Set(
     passages.filter((p) => p.cached).map((p) => p.content_fingerprint),
   );
-  let completed = 0;
-  for (const passage of passages) {
-    if (signal.aborted || Date.now() + 500 >= deadline)
+  const missing = passages.filter(p=>!p.cached);
+  let completed = passages.length - missing.length;
+  for (const passage of missing) {
+    if (available.has(passage.content_fingerprint)) { completed++; continue; }
+    if (signal.aborted || Date.now() + 10_500 >= deadline)
       return {
         state:
           completed > Number(job.checkpoint.completed ?? 0)
             ? "continue"
-            : "retryable",
+            : "blocked",
         error: "Indexing checkpoint saved; resume processing to continue.",
-        checkpoint: { completed },
+        checkpoint: { completed, ...(completed > Number(job.checkpoint.completed ?? 0) ? {} : {processingBlock:{code:'dispatch_deferred'}}) },
       };
     if (!(await checkpoint({ completed })))
       return {
@@ -50,6 +52,7 @@ export async function indexSavedSource(
           passage.input,
           `index:${job.sourceId.slice(0, 80)}:${passage.content_fingerprint}`,
           signal,
+          deadline,
         );
         await db().query(
           `insert into passage_embeddings(user_id,contract,content_fingerprint,model,dimensions,prompt_version,chunk_version,embedding) values($1,$2,$3,$4,$5,$6,$7,$8::public.vector) on conflict do nothing`,
@@ -70,22 +73,20 @@ export async function indexSavedSource(
         // Provider rejections, transport failures and the per-call timeout keep
         // their failure allowance even if the job deadline has since passed.
         const continuing =
-          signal.aborted &&
-          error === signal.reason &&
-          Date.now() >= deadline &&
+          ((signal.aborted && error === signal.reason && Date.now() >= deadline) || (error instanceof PaidWorkError && error.code==='dispatch_deferred')) &&
           completed > Number(job.checkpoint.completed ?? 0);
         return {
-          state: continuing
+          state: isProcessingBlock(error) ? "blocked" : continuing
             ? "continue"
             : error instanceof PaidWorkError &&
                 error.code === "provider_rejected"
               ? "terminal"
-              : "retryable",
+              : error instanceof PaidWorkError && error.code==='dispatch_deferred' ? 'blocked' : "retryable",
           error:
             error instanceof PaidWorkError
               ? error.message
               : "Embedding interrupted; potentially billed work remains reserved.",
-          checkpoint: { completed },
+          checkpoint: { completed, ...((isProcessingBlock(error) || error instanceof PaidWorkError && error.code==='dispatch_deferred') ? {processingBlock:{code:error.code,operationId:error.operationId}} : {}) },
         };
       }
     }

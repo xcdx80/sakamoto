@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { Check, Download, PencilLine, Search, X } from "lucide-react";
 import { readingMinutes, tidyTitle } from "@/lib/article";
 import { exportAll } from "@/lib/export";
 import { useStore, type Highlight } from "@/lib/store";
+import { spring } from "@/components/motion/tokens";
+import "./shelf-sheet.css";
+
 /** One text in the sheet: a shelf entry or a sample, with how far it has been read. */
 export type ShelfItem = {
   id: string;
@@ -76,6 +80,9 @@ export function ShelfSheet({
   const [renaming, setRenaming] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // document.body exists only after hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // S opens the shelf from the desk.
   useEffect(() => {
@@ -152,23 +159,25 @@ export function ShelfSheet({
     return items.filter((it) => test(it) && words.every((w) => `${it.title} ${it.byline}`.toLowerCase().includes(w)));
   }, [items, q, filter]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   // Portalled, so it sits over everything on the page.
   return createPortal(
-    <div className="fixed inset-0 z-[80]" role="presentation">
-      <div className="absolute inset-0 bg-ink/20 backdrop-blur-[2px]" style={{ animation: "fade 0.25s both" }} onClick={() => onOpenChange(false)} />
-      <section role="dialog" aria-modal aria-label="Your shelf" className="shelf-sheet">
+    <AnimatePresence>
+    {open && <div key="shelf" className="fixed inset-0 z-[80]" role="presentation">
+      <motion.div className="shelf-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} onClick={() => onOpenChange(false)} />
+      <motion.section role="dialog" aria-modal aria-label="Your shelf" className="shelf-sheet" initial={{ y: "102%" }} animate={{ y: 0 }} exit={{ y: "102%" }} transition={{ type: "spring", stiffness: 210, damping: 30, mass: 0.9 }}>
         <div className="mx-auto flex h-full w-full max-w-[1040px] flex-col px-5 sm:px-10">
-          <header className="flex flex-wrap items-center gap-x-6 gap-y-4 pb-5 pt-7">
+          <span className="shelf-grip" aria-hidden />
+          <header className="flex flex-wrap items-center gap-x-6 gap-y-4 pb-5 pt-5">
             <div className="min-w-0 flex-1">
-              <h2 className="flex items-baseline gap-3 font-serif text-[30px] leading-none tracking-[-0.015em] text-ink">
+              <h2 className="sk-display flex items-baseline gap-4 text-[38px] leading-none text-ink">
                 Your shelf
                 <Link href="/library" className="font-sans text-[13px] tracking-normal text-ink-3 underline decoration-rule-strong underline-offset-4 transition-colors hover:text-ink">
                   Open the library
                 </Link>
               </h2>
-              <p className="mt-2 text-[13px] text-ink-3">
+              <p className="mt-2.5 font-mono text-[12px] text-ink-3">
                 {view === "highlights"
                   ? `${allHighlights.length} highlight${allHighlights.length === 1 ? "" : "s"} across your texts`
                   : `${items.length} texts${counts.reading ? ` · ${counts.reading} in progress` : ""}`}
@@ -223,12 +232,11 @@ export function ShelfSheet({
                   setUI({ shelf: "texts" });
                 }}
                 disabled={f.key !== "all" && !counts[f.key]}
-                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors disabled:opacity-35 ${
-                  view === "texts" && filter === f.key ? "bg-ink text-bg" : "text-ink-3 hover:bg-sunk hover:text-ink"
-                }`}
+                className={`shelf-filter ${view === "texts" && filter === f.key ? "is-on" : ""}`}
               >
-                {f.label}
-                <span className={`tabular-nums ${view === "texts" && filter === f.key ? "text-bg/60" : "text-ink-4"}`}>{counts[f.key]}</span>
+                {view === "texts" && filter === f.key && <motion.span layoutId="shelf-filter" className="shelf-filter-pill" transition={spring.snap} aria-hidden />}
+                <span className="relative">{f.label}</span>
+                <span className="shelf-filter-n relative">{counts[f.key]}</span>
               </button>
             ))}
             {allHighlights.length > 0 && (
@@ -239,12 +247,11 @@ export function ShelfSheet({
                   role="radio"
                   aria-checked={view === "highlights"}
                   onClick={() => setUI({ shelf: "highlights" })}
-                  className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors ${
-                    view === "highlights" ? "bg-ink text-bg" : "text-ink-3 hover:bg-sunk hover:text-ink"
-                  }`}
+                  className={`shelf-filter ${view === "highlights" ? "is-on" : ""}`}
                 >
-                  Highlights
-                  <span className={`tabular-nums ${view === "highlights" ? "text-bg/60" : "text-ink-4"}`}>{allHighlights.length}</span>
+                  {view === "highlights" && <motion.span layoutId="shelf-filter" className="shelf-filter-pill" transition={spring.snap} aria-hidden />}
+                  <span className="relative">Highlights</span>
+                  <span className="shelf-filter-n relative">{allHighlights.length}</span>
                 </button>
               </>
             )}
@@ -349,8 +356,9 @@ export function ShelfSheet({
           </ul>
           )}
         </div>
-      </section>
-    </div>,
+      </motion.section>
+    </div>}
+    </AnimatePresence>,
     document.body
   );
 }

@@ -3,6 +3,7 @@
 import { SignInButton } from "@clerk/nextjs";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import { BookOpen, BookmarkPlus, Check, Copy, Loader2, Plus, Trash2, X } from "lucide-react";
 import { importFromUrl, keep, looksLikeUrl } from "@/lib/import";
 import { normalizeUrl } from "@/lib/links";
@@ -10,10 +11,14 @@ import { bookmarkWorkflow } from "@/lib/bookmark-workflow";
 import { agentConnections, makeAgentConnection, revokeAgentConnection } from "@/lib/agent-client";
 import { SITE_URL } from "@/lib/brand";
 import { useStore } from "@/lib/store";
+import { spring } from "@/components/motion/tokens";
 import { Mark, MarkStack, type AgentMark } from "./AgentMarks";
 import { Glyph } from "./Book";
 
 export type AddTab = "links" | "agent";
+
+/** The sheet slides on with some weight, and never bounces past its own edge. */
+const SHEET = { type: "spring", stiffness: 240, damping: 32, mass: 0.9 } as const;
 
 /**
  * Adding to the library: paste links (one or many), or connect an agent that
@@ -21,6 +26,8 @@ export type AddTab = "links" | "agent";
  */
 export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab: (t: AddTab) => void; onClose: () => void; signedIn: boolean }) {
   const account = useStore(s => s.scope);
+  // From the side on a desk; on a phone, up from the foot of the screen.
+  const [off] = useState(() => (window.matchMedia("(max-width: 639px)").matches ? { y: "100%" } : { x: "104%", rotate: 1.4 }));
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -39,25 +46,32 @@ export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab
 
   return createPortal(
     <div className="fixed inset-0 z-[80]" role="presentation">
-      <div className="absolute inset-0 bg-ink/20 backdrop-blur-[2px]" style={{ animation: "fade 0.2s both" }} onClick={onClose} />
-      <section role="dialog" aria-modal aria-label="Add to the library" className="add-panel">
+      <motion.div className="add-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }} onClick={onClose} />
+      <motion.section role="dialog" aria-modal aria-label="Add to the library" className="add-panel" initial={off} animate={{ x: 0, y: 0, rotate: 0 }} exit={off} transition={SHEET}>
         <header className="flex items-center justify-between gap-3">
-          <div className="lib-sort !ml-0" role="tablist" aria-label="Add">
-            <button type="button" role="tab" aria-selected={tab === "agent"} aria-checked={tab === "agent"} onClick={() => onTab("agent")}>
-              Connect an agent
-            </button>
-            <button type="button" role="tab" aria-selected={tab === "links"} aria-checked={tab === "links"} onClick={() => onTab("links")}>
-              Save links manually
-            </button>
+          <div className="lib-sort" role="tablist" aria-label="Add">
+            <Tab on={tab === "agent"} onClick={() => onTab("agent")}>Connect an agent</Tab>
+            <Tab on={tab === "links"} onClick={() => onTab("links")}>Save links manually</Tab>
           </div>
           <button type="button" aria-label="Close" data-tip="Close" data-tip-kbd="Esc" onClick={onClose} className="grid size-9 place-items-center rounded-full text-ink-3 transition-colors hover:bg-sunk hover:text-ink">
             <X size={17} />
           </button>
         </header>
-        {tab === "links" ? <Links /> : <Agent key={account ?? "anonymous"} signedIn={signedIn} />}
-      </section>
+        <div className="add-body scroll-thin">
+          {tab === "links" ? <Links /> : <Agent key={account ?? "anonymous"} signedIn={signedIn} />}
+        </div>
+      </motion.section>
     </div>,
     document.body
+  );
+}
+
+function Tab({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" role="tab" aria-selected={on} aria-checked={on} onClick={onClick}>
+      {on && <motion.span layoutId="add-tab" className="lib-sort-pill" transition={spring.snap} aria-hidden />}
+      <span className="relative">{children}</span>
+    </button>
   );
 }
 
@@ -68,15 +82,15 @@ export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab
  */
 export function AddButton({ onClick, compact }: { onClick: () => void; compact?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={`lib-add${compact ? " is-compact" : ""}`}>
-      <MarkStack size={compact ? 22 : 26} />
+    <button type="button" onClick={onClick} data-tip="Connect an agent, or paste links" className={`lib-add${compact ? " is-compact" : ""}`}>
+      <MarkStack size={compact ? 20 : 22} />
       <span className="min-w-0 text-left">
         <span className="lib-add-title">Add articles</span>
-        {!compact && <span className="lib-add-sub">Connect an agent, or paste links</span>}
+        <span className="sr-only">Connect an agent, or paste links</span>
       </span>
       {!compact && (
         <span className="lib-add-plus" aria-hidden>
-          <Plus size={15} strokeWidth={2.2} />
+          <Plus size={14} strokeWidth={2} />
         </span>
       )}
     </button>
@@ -148,9 +162,9 @@ function Links() {
   };
 
   return (
-    <div className="mt-5">
-      <p className="text-[19px] font-serif leading-tight text-ink">Save links to your library</p>
-      <p className="mt-1 text-[13px] text-ink-3">
+    <div>
+      <p className="add-heading">Save links to your library</p>
+      <p className="add-lede">
         One or many, a line each. Sakamoto reads each page in and sorts it onto a topic. PDFs work too. Leaving Pocket, Instapaper or Raindrop?{" "}
         <button type="button" onClick={() => fileRef.current?.click()} className="text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink">
           Drop its export here
@@ -198,7 +212,7 @@ function Links() {
         aria-label="Links to save"
       />
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-[12.5px] text-ink-4">{urls.length ? `${urls.length} link${urls.length === 1 ? "" : "s"}` : text.trim() ? "No links found yet" : ""}</span>
+        <span className="add-count">{urls.length ? `${urls.length} link${urls.length === 1 ? "" : "s"}` : text.trim() ? "No links found yet" : ""}</span>
         <button type="button" onClick={save} disabled={!urls.length || busy} className="add-btn">
           {busy && <Loader2 size={14} className="animate-spin" />}
           {busy ? "Saving" : urls.length > 1 ? `Save ${Math.min(urls.length, BATCH)}` : "Save"}
@@ -207,10 +221,14 @@ function Links() {
       {note && <p className="mt-2 text-[12.5px] text-ink-3">{note}</p>}
       {rows.length > 0 && (
         <ul className="add-rows scroll-thin">
-          {rows.map((r) => (
-            <li key={r.url} data-state={r.state}>
+          {rows.map((r, i) => (
+            <motion.li key={r.url} data-state={r.state} initial={i < 12 ? { opacity: 0, x: -10 } : false} animate={{ opacity: 1, x: 0 }} transition={{ ...spring.soft, delay: Math.min(i, 12) * 0.03 }}>
               <span className="add-dot" aria-hidden>
-                {r.state === "reading" ? <Loader2 size={13} className="animate-spin" /> : r.state === "saved" || r.state === "already" ? <Check size={13} /> : r.state === "failed" ? <X size={13} /> : null}
+                {r.state === "reading" ? <Loader2 size={13} className="animate-spin" /> : r.state === "saved" ? (
+                  <motion.span key="stamp" className="add-stamp" initial={{ scale: 2.3, opacity: 0, rotate: -20 }} animate={{ scale: 1, opacity: 1, rotate: -10 }} transition={spring.thud}>
+                    <Check size={12} strokeWidth={2.6} />
+                  </motion.span>
+                ) : r.state === "already" ? <Check size={13} /> : r.state === "failed" ? <X size={13} /> : null}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] text-ink">{r.title ?? r.url.replace(/^https?:\/\/(www\.)?/, "")}</span>
@@ -218,7 +236,7 @@ function Links() {
                   {r.state === "saved" ? "On the shelf" : r.state === "already" ? "Already in your library" : r.state === "failed" ? r.error : r.state === "reading" ? "Reading" : "Waiting"}
                 </span>
               </span>
-            </li>
+            </motion.li>
           ))}
         </ul>
       )}
@@ -242,17 +260,17 @@ function Bookmarklets() {
     readRef.current?.setAttribute("href", code("url"));
     saveRef.current?.setAttribute("href", code("save"));
   });
-  const pill = "inline-flex cursor-grab items-center gap-1.5 rounded-full border border-rule-strong bg-bg px-3 py-1.5 text-[13px] font-medium text-ink shadow-[var(--shadow-card)] active:cursor-grabbing";
+  const pill = "add-tag";
   return (
-    <div className="mt-6 border-t border-rule pt-5">
+    <div className="add-aside">
       <p className="lib-label">From any page</p>
       <p className="mt-1 text-[13px] text-ink-3">Drag one to your bookmarks bar, then click it on any article.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <a ref={readRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookOpen size={14} className="text-ink-3" /> Read in Sakamoto
+          <BookOpen size={14} strokeWidth={1.6} /> Read in Sakamoto
         </a>
         <a ref={saveRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookmarkPlus size={14} className="text-ink-3" /> Save to Sakamoto
+          <BookmarkPlus size={14} strokeWidth={1.6} /> Save to Sakamoto
         </a>
       </div>
       <details className="mt-3 text-[12.5px] text-ink-3">
@@ -293,9 +311,9 @@ function Agent({ signedIn }: { signedIn: boolean }) {
 
   if (!signedIn)
     return (
-      <div className="mt-5">
+      <div className="add-card">
         <AgentIntro />
-        <p className="mt-4 text-[13.5px] text-ink-2">An agent saves to the library in your account, so it needs you signed in.</p>
+        <p className="mt-5 text-[14px] leading-[1.55] text-ink-2">An agent saves to the library in your account, so it needs you signed in.</p>
         <SignInButton mode="modal">
           <button type="button" className="add-btn mt-4">
             Sign in to connect
@@ -321,17 +339,21 @@ function Agent({ signedIn }: { signedIn: boolean }) {
   };
 
   return (
-    <div className="mt-5">
+    <div className="add-card">
       <AgentIntro />
       {made ? (
         <Setup token={made.token} label={made.label} origin={origin} />
       ) : (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <div className="lib-sort !ml-0" role="radiogroup" aria-label="Which agent">
+        <div className="add-make">
+          <p className="lib-label">Which agent</p>
+          <div className="lib-sort" role="radiogroup" aria-label="Which agent">
             {LABELS.map((l) => (
-              <button key={l.label} type="button" role="radio" aria-checked={label === l.label} onClick={() => setLabel(l.label)} className="inline-flex items-center gap-1.5">
-                {l.mark && <Mark k={l.mark} size={14} />}
-                {l.label}
+              <button key={l.label} type="button" role="radio" aria-checked={label === l.label} onClick={() => setLabel(l.label)}>
+                {label === l.label && <motion.span layoutId="add-agent" className="lib-sort-pill" transition={spring.snap} aria-hidden />}
+                <span className="relative inline-flex items-center gap-1.5">
+                  {l.mark && <Mark k={l.mark} size={14} />}
+                  {l.label}
+                </span>
               </button>
             ))}
           </div>
@@ -368,11 +390,11 @@ function Agent({ signedIn }: { signedIn: boolean }) {
 
 function AgentIntro() {
   return (
-    <div className="flex items-start gap-3.5">
+    <div className="flex items-start gap-4">
       <Glyph k="agent" size={46} className="shrink-0" />
       <div>
-        <p className="font-serif text-[19px] leading-tight text-ink">Let your agent shelve for you</p>
-        <p className="mt-1 text-[13px] leading-[1.5] text-ink-3">
+        <p className="add-heading">Let your agent shelve for you</p>
+        <p className="add-lede">
           Connect Sakamoto to your agent to save full bookmarked posts, their available author-thread context, and directly linked articles or PDFs. Grok Bot needs its own authenticated X connection. Accepted sources stay saved while paid categorization and indexing process separately.
         </p>
       </div>
@@ -403,8 +425,8 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
             { title: "Or, for apps that only take a URL, one with your token in it", body: "Keep it private: it can end up in logs.", copy: `${url}/${token}` },
           ];
   return (
-    <div className="mt-5 space-y-3">
-      <p className="text-[13px] text-good">Made. This token is shown once: copy it now.</p>
+    <div className="add-setup">
+      <p className="add-made">Made. This token is shown once: copy it now.</p>
       {steps.map((s) => (
         <CopyBlock key={s.title} title={s.title} body={s.body} text={s.copy} />
       ))}
@@ -424,11 +446,11 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
 function CopyBlock({ title, body, text }: { title: string; body: string; text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="rounded-[14px] border border-rule bg-bg p-3">
+    <div className="add-copy">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-ink">{title}</p>
-          <p className="text-[12px] text-ink-3">{body}</p>
+          <p className="add-copy-title">{title}</p>
+          <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-3">{body}</p>
         </div>
         <button
           type="button"
@@ -439,13 +461,13 @@ function CopyBlock({ title, body, text }: { title: string; body: string; text: s
               setTimeout(() => setCopied(false), 1600);
             } catch {}
           }}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sunk px-2.5 py-1 text-[12px] font-medium text-ink-2 transition-colors hover:text-ink"
+          className="sk-chip shrink-0"
         >
           {copied ? <Check size={12} className="text-good" /> : <Copy size={12} />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-sunk px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-2">{text}</pre>
+      <pre className="add-code scroll-thin">{text}</pre>
     </div>
   );
 }

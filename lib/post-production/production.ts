@@ -2,21 +2,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import { PaidWorkError } from "../paid-work";
 import { loadCatalog, type PostCatalog } from "./catalog";
-import { collectProductionContext, productionEvidenceIsCurrent } from "./context";
+import { collectProductionContext, collectProductionEvidence, collectSelectedProductionContext, productionEvidenceIsCurrent } from "./context";
 import { isRecentSavedEvidence } from "./freshness";
-import { authorIdeaEvidence, authorIdeaSupportsSignal, isAuthorIdea } from "./intent";
+import { authorIdeaEvidence, authorIdeaSupportsSignal, isAuthorIdea, isNonfactualEvidence } from "./intent";
 import { PinnedSourceLimitError } from "./limits";
 import { requiresCurrentReview } from "./review-policy";
 import {
   approveRevision, claimProduction, completeProduction, getProduction, getProfile, listHistory,
-  recordReview, releaseProduction, reopenExpiredReview, saveRevision, updateProduction,
+  recordReview, releaseProduction, reopenExpiredReview, saveRevision, updateProduction, prepareProductionGeneration,
 } from "./repository";
 import { decidePostSignals, choosePostStructure, writePost, reviewPost, POST_PROMPT_VERSION, type PostProviderContext } from "./providers";
 import { recommendFrameworks } from "./selection";
 import { validateDraft } from "./validation";
-import type { AuthorSignalAssessment, DraftReview, FrameworkRecommendation, ProductionDetail, ProductionEvidence, ReviewIssue } from "./types";
+import type { AuthorSignalAssessment, GenerationParameters, DraftReview, FrameworkRecommendation, ProductionDetail, ProductionEvidence, ReviewIssue } from "./types";
 import { assertPostOperationResolved } from "../paid-work";
 import { requestRevision, beginPublication, finishPublication, releasePublicationBeforeDispatch } from "./repository";
+import { normalizeBrief, productionSourcePolicy } from "./profile";
 import { getPublishingCapability, submitApprovedProduction, PublishingError } from "./publishing";
 
 class InputNeeded extends Error {}
@@ -43,7 +44,7 @@ function providerContext(owner: string, detail: ProductionDetail, stage: string,
     owner, operationId: `post:${production.id}:${stage}:${production.latestRevisionId ?? "initial"}`,
     attemptId: randomUUID(), profile: checkpoint.profile!, brief: production.brief, evidence: checkpoint.evidence!,
     framework: selectedFramework(detail), selectedHookPatternId: checkpoint.hookPatternId ?? undefined,
-    priorContent: detail.revisions.find(r => r.id === production.latestRevisionId)?.content, signal, deadlineAt,
+    priorContent: checkpoint.pendingGeneration ? undefined : detail.revisions.find(r => r.id === production.latestRevisionId)?.content, signal, deadlineAt,
     authorRequest: checkpoint.authorRequest?.instruction,
   };
 }
@@ -57,8 +58,8 @@ function aggregateReview(catalog: PostCatalog, framework: FrameworkRecommendatio
     throw new PaidWorkError("invalid_response", "The independent review is incomplete or has invalid rubric scores.");
   const issues = [...mechanical, ...review.issues];
   for (const criterion of all) {
-    const score = review.criteria.find(c => c.id === criterion.id)!.score;
-    if (score < criterion.pass_threshold) issues.push({ code: `rubric:${criterion.id}`, severity: criterion.gate ? "block" : "revise", message: `${criterion.description} Required ${criterion.pass_threshold}/5; review scored ${score}/5.` });
+    const assessed = review.criteria.find(c => c.id === criterion.id)!;
+    if (assessed.score < criterion.pass_threshold) issues.push({ code: `rubric:${criterion.id}`, severity: criterion.gate ? "block" : "revise", message: `${criterion.description} Required ${criterion.pass_threshold}/5; review scored ${assessed.score}/5.${criterion.id === "narrative-coherence" ? ` Reviewer diagnosis: ${assessed.reason}` : ""}` });
   }
   const weighted = (criteria: typeof all) => criteria.reduce((sum, c) => sum + c.weight * review.criteria.find(s => s.id === c.id)!.score, 0) / criteria.reduce((sum, c) => sum + c.weight, 0);
   const sharedScore = weighted(catalog.shared.criteria), frameworkScore = weighted(selected.rubric.criteria);
@@ -119,7 +120,7 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
     await freshContext(owner, detail, catalog);
     if (production.stage === "complete") return Boolean(await updateProduction(owner, id, token, "review", "draft", { reviewPin: null }, "Review guidance changed. Check this saved revision again before approving it."));
     if (production.stage === "selection") {
-      if (!production.latestRevisionId && !production.checkpoint.evidence!.some(isAuthorIdea)) {
+      if ((!production.latestRevisionId || production.checkpoint.pendingGeneration) && !production.checkpoint.evidence!.some(isAuthorIdea)) {
         if (production.checkpoint.evidence!.length >= 20) throw new InputNeeded("The existing context is full. Reduce selected sources before adding the author's intended structure.");
         return Boolean(await updateProduction(owner, id, token, "selection", "draft", {
           evidence: [...production.checkpoint.evidence!, authorIdeaEvidence(production.brief.idea)], signals: [], recommendations: [],
@@ -130,17 +131,32 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
         const signals = await decidePostSignals(providerContext(owner, detail, "signals", signal, deadlineAt));
         signal.throwIfAborted();
         await freshContext(owner, detail, loadCatalog());
-        const recommendations = recommendFrameworks(catalog, production.brief, signals, (await listHistory(owner)).filter(p => p.id !== id));
+        const recommendations = recommendFrameworks(catalog, production.brief, signals, (await listHistory(owner)).filter(p => p.id !== id), production.checkpoint.generationParameters);
         return Boolean(await updateProduction(owner, id, token, "selection", recommendations.length ? "draft" : "needs_input", { signals, recommendations }, recommendations.length ? null : "The current evidence does not support an eligible writing framework. Add concrete author notes or saved sources."));
       }
       // Re-evaluate saved signals on resume: a historical shortlist must not pin
       // a paused production to forms rejected by its current evidence or cadence.
-      const recommendations = recommendFrameworks(catalog, production.brief, production.checkpoint.signals, (await listHistory(owner)).filter(p => p.id !== id));
+      const recommendations = recommendFrameworks(catalog, production.brief, production.checkpoint.signals, (await listHistory(owner)).filter(p => p.id !== id), production.checkpoint.generationParameters);
       if (!recommendations.length) throw new InputNeeded("Add concrete evidence before choosing a framework.");
-      const choice = await choosePostStructure(providerContext(owner, detail, "structure", signal, deadlineAt), recommendations);
+      const parameters = production.checkpoint.generationParameters;
+      const manualFramework = parameters?.frameworkId ? recommendations.find(r => r.frameworkId === parameters.frameworkId) : undefined;
+      if (parameters?.frameworkId && !manualFramework)
+        throw new InputNeeded("The selected framework is not eligible for the freshly assessed source evidence. Choose another framework or change the supporting sources.");
+      const candidates = manualFramework ? [manualFramework] : recommendations;
+      const choice = manualFramework && parameters?.hookPatternId
+        ? { frameworkId: manualFramework.frameworkId, hookPatternId: parameters.hookPatternId, decisions: undefined }
+        : await choosePostStructure(providerContext(owner, detail, "structure", signal, deadlineAt), parameters?.hookPatternId
+          ? candidates.map(candidate => ({ ...candidate, hookPatternIds: [] })) : candidates);
       signal.throwIfAborted();
       await freshContext(owner, detail, loadCatalog());
-      return Boolean(await updateProduction(owner, id, token, production.latestRevisionId ? "review" : "writing", "draft", { recommendations, frameworkId: choice.frameworkId, hookPatternId: choice.hookPatternId ?? undefined, editorialDecision: choice.decisions, reviewPin: null }, null));
+      return Boolean(await updateProduction(owner, id, token, production.latestRevisionId && !production.checkpoint.pendingGeneration ? "review" : "writing", "draft", {
+        recommendations, frameworkId: choice.frameworkId, hookPatternId: parameters?.hookPatternId ?? choice.hookPatternId ?? undefined,
+        editorialDecision: choice.decisions, reviewPin: null,
+        ...(parameters?.frameworkId || parameters?.hookPatternId ? { manualSelection: {
+          frameworkId: parameters.frameworkId, hookPatternId: parameters.hookPatternId,
+          reason: "The author selected these generation settings; framework eligibility was checked against freshly assessed evidence.",
+        } } : {}),
+      }, null));
     }
     if (production.stage === "writing" || production.stage === "revision") {
       const framework = selectedFramework(detail);
@@ -192,6 +208,44 @@ export async function advanceProduction(owner: string, id: string, expectedVersi
   }, true);
 }
 
+/** Regeneration prepares fresh context on this production; provider work needs an explicit advance. */
+export async function regenerateProduction(owner: string, id: string, expectedVersion: number, input: GenerationParameters): Promise<ProductionDetail | null> {
+  const detail = await getProduction(owner,id);
+  if (!detail || detail.production.version !== expectedVersion) return null;
+  if (["working","published","cancelled"].includes(detail.production.status) || detail.production.checkpoint.publication) return null;
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || Object.keys(input).some(key => !["brief","frameworkId","hookPatternId","sourceMode","evidenceIds"].includes(key))
+    || !input.brief || !Array.isArray(input.brief.platforms) || !Array.isArray(input.brief.sourceIds)
+    || !["automatic","selected"].includes(input.sourceMode) || !Array.isArray(input.evidenceIds)
+    || input.evidenceIds.length > 20 || new Set(input.evidenceIds).size !== input.evidenceIds.length
+    || input.evidenceIds.some(value => typeof value !== "string" || !value || value.length > 200))
+    throw new InputNeeded("Choose valid generation parameters and current source IDs.");
+  const parameters = { ...input, brief: normalizeBrief(input.brief) };
+  const catalog = loadCatalog();
+  if (parameters.frameworkId !== null && !catalog.frameworks.some(f => f.id === parameters.frameworkId))
+    throw new InputNeeded("Choose a known writing framework.");
+  if (parameters.hookPatternId !== null && (!catalog.hooks.some(h => h.id === parameters.hookPatternId)
+    || parameters.frameworkId && !catalog.frameworks.find(f => f.id === parameters.frameworkId)!.hook_patterns.some(h => h.pattern === parameters.hookPatternId)))
+    throw new InputNeeded("Choose a supported hook for the selected framework.");
+  if (parameters.sourceMode === "automatic" && parameters.evidenceIds.length)
+    throw new InputNeeded("Automatic research cannot include manually selected evidence IDs.");
+  const profile = await getProfile(owner);
+  const checkpoint = detail.production.checkpoint;
+  if (parameters.sourceMode === "selected" && (checkpoint.catalogVersion && checkpoint.catalogVersion !== catalog.version
+    || checkpoint.profile && checkpoint.profile.version !== profile.version))
+    throw new InputNeeded("The selected generation context is stale. Refresh the source context before generating.");
+  // Ownership, source revisions and bounds are checked before any state change or paid dispatch.
+  const evidence = parameters.sourceMode === "selected"
+    ? await collectSelectedProductionContext(owner,parameters.brief,checkpoint.evidence ?? [],parameters.evidenceIds)
+    : await collectProductionEvidence(owner,parameters.brief,undefined,false);
+  await assertPostOperationResolved(owner,`post:${id}`);
+  const policy = productionSourcePolicy(parameters.brief);
+  return prepareProductionGeneration(owner,id,parameters,expectedVersion,{
+    profile, generationParameters: parameters, pendingGeneration: true,
+    ...(parameters.sourceMode === "selected" ? { evidence, catalogVersion: catalog.version, research: { library: policy.library ? "selected" : "disabled", web: policy.web ? "selected" : "disabled", notice: null } } : {}),
+  });
+}
+
 export async function requestProductionRevision(owner: string, id: string, expectedVersion: number, instruction: string): Promise<ProductionDetail | null> {
   const detail = await getProduction(owner, id);
   if (!detail || detail.production.version !== expectedVersion) return null;
@@ -220,7 +274,7 @@ function authorAssessments(catalog: PostCatalog, evidence: ProductionEvidence[],
     const referenced = evidence.filter(e => assessment.evidenceIds.includes(e.id));
     if (assessment.strength > 0) {
       if (!referenced.length || !rationale) throw new InputNeeded("A supported signal requires current evidence and the author's rationale.");
-      if (referenced.some(isAuthorIdea) && !authorIdeaSupportsSignal(assessment.signal))
+      if (referenced.some(isNonfactualEvidence) && !authorIdeaSupportsSignal(assessment.signal))
         throw new InputNeeded("Author intent supports proposed structure only, never observed results or personal experience.");
       if (["personal_story", "mistakes_or_regrets", "author_has_credibility"].includes(assessment.signal)
         && referenced.some(e => e.kind !== "author_note")) throw new InputNeeded("Personal author signals require author notes, never a saved source author's experience.");
@@ -243,7 +297,7 @@ export async function assessProductionSignals(owner: string, id: string, expecte
   return runStage(owner, id, expectedVersion, async (detail, token) => {
     await freshContext(owner, detail, catalog);
     const signals = normalized.map(({ signal, strength, evidenceIds }) => ({ signal, strength, evidenceIds }));
-    const recommendations = recommendFrameworks(catalog, detail.production.brief, signals, (await listHistory(owner)).filter(p => p.id !== id));
+    const recommendations = recommendFrameworks(catalog, detail.production.brief, signals, (await listHistory(owner)).filter(p => p.id !== id), detail.production.checkpoint.generationParameters);
     await freshContext(owner, detail, loadCatalog());
     return Boolean(await updateProduction(owner, id, token, "selection", recommendations.length ? "draft" : "needs_input", {
       signals, authorSignalAssessments: normalized, recommendations, frameworkId: null, hookPatternId: null, reviewPin: null,
@@ -268,7 +322,7 @@ export async function chooseProductionFramework(owner: string, id: string, expec
       hookPatternId = choice.hookPatternId ?? undefined;
       await freshContext(owner, detail, loadCatalog());
     }
-    return Boolean(await updateProduction(owner, id, token, detail.production.latestRevisionId ? "review" : "writing", "draft", { frameworkId, hookPatternId, reviewPin: null }, null));
+    return Boolean(await updateProduction(owner, id, token, detail.production.latestRevisionId && !detail.production.checkpoint.pendingGeneration ? "review" : "writing", "draft", { frameworkId, hookPatternId, reviewPin: null }, null));
   });
 }
 

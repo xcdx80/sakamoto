@@ -55,10 +55,10 @@ export function SignInNudge() {
 
   if (!open || isSignedIn) return null;
   return (
-    <Toast onClose={() => setOpen(false)}>
-      <span>Kept in this browser. Sign in to have it on every device.</span>
+    <Toast variant="note" onClose={() => setOpen(false)}>
+      <p className="pr-4">Kept in this browser. Sign in to have it on every device.</p>
       <SignInButton mode="modal">
-        <button type="button" onClick={() => setOpen(false)} className="font-medium underline decoration-lens-mute underline-offset-4">
+        <button type="button" onClick={() => setOpen(false)} className="mt-2 block font-medium underline decoration-current/40 underline-offset-4">
           Sign in
         </button>
       </SignInButton>

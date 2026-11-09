@@ -1,5 +1,6 @@
 /** Shared library presentation, classification and filtering rules. No external I/O. */
 
+import type { LibraryThreadIndex } from "./library-threads";
 import { contentTypeOf, readingMinutes, tidyTitle, wordCount, type ContentType } from "./article";
 import { SAMPLE_SHELF } from "./classics";
 import { SAMPLES } from "./samples";
@@ -84,6 +85,9 @@ export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
 export type Book = {
+  linked?: boolean;
+  contextOnly?: boolean;
+  thread?: {postCount:number;memberIds:string[];searchText:string;missingPostCount?:number};
   processing?: LibraryItem["processing"];
   id: string;
   title: string;
@@ -215,7 +219,7 @@ const TOPIC_ORDER = Object.fromEntries(TOPICS.map((t, i) => [t.key, i])) as Reco
 export function sortBooks(books: Book[], sort: Sort): Book[] {
   const by = [...books];
   if (sort === "topic") by.sort((a, b) => TOPIC_ORDER[a.topic] - TOPIC_ORDER[b.topic] || a.added - b.added);
-  if (sort === "recent") by.sort((a, b) => b.added - a.added);
+  if (sort === "recent") by.sort((a, b) => b.added - a.added || Number(Boolean(a.linked))-Number(Boolean(b.linked)) || a.id.localeCompare(b.id));
   if (sort === "title") by.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true }));
   if (sort === "color") by.sort((a, b) => lookOf(a).hue - lookOf(b).hue || lookOf(a).h - lookOf(b).h);
   if (sort === "length") by.sort((a, b) => a.minutes - b.minutes);
@@ -253,6 +257,7 @@ export const TAGS: { key: TagKey; label: string; test: (b: Book) => boolean }[] 
 export const tagsOf = (b: Book) => TAGS.filter((t) => t.key !== "agent" && t.test(b));
 
 export type LibraryFilters = {
+  postMatches?: ReadonlySet<string>;
   query?: string;
   topic?: TopicKey | null;
   status?: TagKey | null;
@@ -265,18 +270,20 @@ export function filterBooks(books: Book[], filters: LibraryFilters): Book[] {
   const words = filters.query?.toLowerCase().trim().split(/\s+/).filter(Boolean) ?? [];
   const status = TAGS.find((tag) => tag.key === filters.status);
   return books.filter((book) => {
+    if (book.contextOnly && !words.length) return false;
     if (filters.topic && book.topic !== filters.topic) return false;
     if (status && !status.test(book)) return false;
     if (filters.tag && !book.tags.includes(filters.tag)) return false;
     if (filters.contentType && book.contentType !== filters.contentType) return false;
     const text = `${book.title} ${book.author} ${TOPIC[book.topic].name} ${book.tags.join(" ")} ${book.year ?? ""} ${book.url ?? ""} ${book.contentType}`.toLowerCase();
-    return words.every((word) => text.includes(word));
+    return words.every((word) => (text + " " + (book.thread?.searchText ?? "").toLowerCase()).includes(word)) || (words.length>0 && (book.thread?.memberIds ?? [book.id]).some(id=>filters.postMatches?.has(id)));
   });
 }
 
-export const tagOptions = (books: Book[]): string[] => [...new Set(books.flatMap((book) => book.tags))].sort((a, b) => a.localeCompare(b));
+export const tagOptions = (books: Book[]): string[] => [...new Set(books.filter(book => !book.contextOnly).flatMap((book) => book.tags))].sort((a, b) => a.localeCompare(b));
 
-export function libraryStats(books: Book[]) {
+export function libraryStats(allBooks: Book[]) {
+  const books = allBooks.filter(book => !book.contextOnly);
   return {
     count: books.length,
     topics: new Set(books.filter((book) => book.topic !== "unsorted").map((book) => book.topic)).size,
@@ -296,12 +303,13 @@ export function bylineOf(source: { author?: string; source?: string; origin?: st
 /** Samples stay visible until six own texts are saved, or once opened, unless hidden. */
 export const SAMPLES_UNTIL = 6;
 
-export function toLibraryBooks({ library, progress, highlights, hydrated, hiddenSamples }: {
+export function toLibraryBooks({ library, progress, highlights, hydrated, hiddenSamples, threads }: {
   library: LibraryItem[];
   progress: Record<string, Progress>;
   highlights: Record<string, Highlight[]>;
   hydrated: boolean;
   hiddenSamples: string[];
+  threads?: LibraryThreadIndex;
 }): Book[] {
   const read = (id: string) => hydrated ? progress[id]?.pct ?? 0 : 0;
   const marks = (id: string) => hydrated ? (highlights[id] ?? []).length : 0;
@@ -311,7 +319,8 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     url: item.sourceUrl, topic: topicOf(item.topic), contentType: contentTypeOf(item),
     minutes: readingMinutes(item.words), dek: item.dek, tags: item.tags ?? [],
     favorite: Boolean(item.favorite), pct: read(item.id), highlights: marks(item.id),
-    added: item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
+    linked:item.addedVia==='Linked source',
+    added: item.addedVia==='Linked source' ? threads?.linkedSaveTimes?.[item.id]??0 : item.savedAt ?? item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
     agent: item.addedBy === "agent", sample: item.origin === "sample",
   }));
   const savedIds = new Set(library.map((item) => item.id));
@@ -322,7 +331,25 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     pct: read(article.id), highlights: marks(article.id), added: 0, cover: SAMPLE_SHELF[article.id]?.cover,
     agent: false, sample: true,
   }));
-  return [...mine, ...samples];
+  if (!threads) return [...mine, ...samples];
+  const postIds=new Set(threads.postItemIds),byId=new Map(mine.map(book=>[book.id,book]));
+  const wordsById=new Map(library.map(item=>[item.id,item.words]));
+  const grouped:Book[]=[];
+  for(const group of threads.groups){
+    const members=group.memberIds.flatMap(id=>byId.get(id)??[]);
+    if(!members.length)continue;
+    const first=byId.get(group.rootId)??members[0];
+    const bookmarks=(group.bookmarkedItemIds??[first.id]).flatMap(id=>byId.get(id)??[]);
+    const thread=group.memberIds.length>1||group.missingPostCount?{postCount:group.memberIds.length,memberIds:group.memberIds,missingPostCount:group.missingPostCount,searchText:members.map(b=>`${b.title} ${b.author} ${b.tags.join(' ')} ${b.url??''}`).join(' ')}:undefined;
+    grouped.push({...first,added:bookmarks.length?Math.max(...bookmarks.map(b=>b.added)):first.added,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
+  }
+  return [...mine.filter(book=>!postIds.has(book.id)),...grouped,...samples];
+}
+
+/** A signed-in shelf is meaningful only after a complete sync and its thread projection. */
+export function projectLibrary(input: Parameters<typeof toLibraryBooks>[0] & {account?:string|null;syncReady?:boolean}): {ready:boolean;books:Book[]} {
+  const ready=input.hydrated && (!input.account || Boolean(input.syncReady && input.threads));
+  return {ready,books:ready?toLibraryBooks(input):[]};
 }
 
 export const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);

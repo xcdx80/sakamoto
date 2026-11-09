@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import { defaultProfile, normalizeBrief, normalizeDraftContent, normalizeProfile } from "./profile";
-import type { BrandProfile, DraftContent, DraftReview, DraftRevision, Production, ProductionBrief, ProductionCheckpoint, ProductionDetail, ProductionEvidence, ProductionHistory, ProductionStage, ProductionStatus } from "./types";
+import type { BrandProfile, DraftContent, DraftReview, DraftRevision, GenerationParameters, Production, ProductionBrief, ProductionCheckpoint, ProductionDetail, ProductionEvidence, ProductionHistory, ProductionStage, ProductionStatus } from "./types";
 
 const iso = (value: unknown): string => new Date(value instanceof Date ? value.getTime() : String(value)).toISOString();
 function production(row: Record<string, any>): Production {
@@ -43,14 +43,61 @@ export async function updateProductionBrief(owner: string, id: string, input: Pr
   owned(owner);
   const brief = normalizeBrief(input);
   const profile = await getProfile(owner);
-  const rows = await db().query(`update post_productions set brief=$3::jsonb,checkpoint=$4::jsonb,
-    status='draft',stage='context',version=version+1,latest_revision_id=null,approved_revision_id=null,planned_at=null,notice=null,
-    lease_token=null,lease_expires_at=null,updated_at=now()
-    where owner_id=$1 and id=$2 and version=$5 and status not in ('published','cancelled')
-      and checkpoint->'publication' is null returning id`,
+  const rows = await db().query(`with eligible as materialized (
+    select * from post_productions where owner_id=$1 and id=$2 and version=$5 and status not in ('published','cancelled')
+      and checkpoint->'publication' is null for update
+  ), archived as (${archiveLatestContextSql()}), changed as (
+    update post_productions p set brief=$3::jsonb,checkpoint=$4::jsonb,
+      status='draft',stage='context',version=p.version+1,latest_revision_id=null,approved_revision_id=null,planned_at=null,notice=null,
+      lease_token=null,lease_expires_at=null,updated_at=now()
+    from eligible e where p.owner_id=e.owner_id and p.id=e.id returning p.id
+  ) select id from changed`,
     [owner, id, JSON.stringify(brief), JSON.stringify({ profile }), expectedVersion]);
   return rows.length ? getProduction(owner, id) : null;
 }
+/** Prepare a replacement without discarding the last saved wording or its generation context. */
+export async function prepareProductionGeneration(owner: string, id: string, parameters: GenerationParameters, expectedVersion: number,
+  checkpoint: ProductionCheckpoint): Promise<ProductionDetail | null> {
+  owned(owner);
+  const rows = await db().query(`with eligible as materialized (
+    select * from post_productions p where owner_id=$1 and id=$2 and version=$5
+      and status not in ('working','published','cancelled') and checkpoint->'publication' is null
+      and coalesce((select version from post_brand_profiles where owner_id=$1),0)=($4::jsonb->'profile'->>'version')::integer
+      and not exists(select 1 from jsonb_array_elements(coalesce($4::jsonb->'evidence','[]'::jsonb)) evidence
+        where evidence->>'kind'='saved_source' and not exists(select 1 from articles a where a.user_id=$1
+          and a.id=evidence->>'itemId' and a.source_revision=(evidence->>'sourceRevision')::integer and not a.deleted))
+      and not exists(select 1 from paid_attempts a where a.owner_id=p.owner_id
+        and (a.operation_id='post:'||p.id or left(a.operation_id,length('post:'||p.id)+1)='post:'||p.id||':')
+        and a.status in ('reserved','uncertain')) for update
+  ), archived as (${archiveLatestContextSql()}), changed as (
+    update post_productions p set brief=$3::jsonb,checkpoint=$4::jsonb,status='draft',stage=$6,
+      approved_revision_id=null,planned_at=null,notice=null,version=p.version+1,
+      lease_token=null,lease_expires_at=null,updated_at=now()
+    from eligible e where p.owner_id=e.owner_id and p.id=e.id returning p.id
+  ) select id from changed`, [owner,id,JSON.stringify(parameters.brief),JSON.stringify(checkpoint),expectedVersion,
+    parameters.sourceMode === "selected" ? "selection" : "context"]);
+  return rows.length ? getProduction(owner,id) : null;
+}
+
+/** SQL expressions only use fixed adapter-owned aliases, never caller input. */
+function generationSnapshotSql(alias: "p" | "changed") {
+  return `case when jsonb_typeof(${alias}.checkpoint->'profile')='object'
+      and coalesce(${alias}.checkpoint->>'catalogVersion','')<>'' and jsonb_typeof(${alias}.checkpoint->'evidence')='array'
+      and coalesce(${alias}.checkpoint->>'frameworkId','')<>'' and coalesce(${alias}.checkpoint->>'pendingGeneration','false')<>'true'
+      and exists(select 1 from jsonb_array_elements(coalesce(${alias}.checkpoint->'recommendations','[]'::jsonb)) candidate
+        where candidate->>'frameworkId'=${alias}.checkpoint->>'frameworkId')
+    then (${alias}.checkpoint - 'reviewPin' - 'publication' - 'authorRequest' - 'pendingGeneration' - 'reviewOnlyRevisionId' - 'generationParameters')
+      || jsonb_build_object('brief',${alias}.brief,'parameters',${alias}.checkpoint->'generationParameters') end`;
+}
+
+/** Preserve only a known complete current context before its production association changes. */
+function archiveLatestContextSql() {
+  return `update post_draft_revisions r set generation_context=${generationSnapshotSql("p")}
+      || case when r.origin='author' then jsonb_build_object('writerModel','author') else '{}'::jsonb end
+    from eligible p where r.owner_id=p.owner_id and r.production_id=p.id and r.id=p.latest_revision_id
+      and r.generation_context is null returning r.id`;
+}
+
 export async function listProductions(owner: string): Promise<Production[]> {
   owned(owner);
   return (await db().query("select * from post_productions where owner_id=$1 order by created_at desc,id limit 200", [owner])).map(production);
@@ -59,7 +106,7 @@ export async function getProduction(owner: string, id: string): Promise<Producti
   owned(owner);
   // One snapshot makes the latest revision and its review agree under concurrent edits.
   const rows = await db().query(`select p.*,
-    coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'productionId',r.production_id,'number',r.number,'content',r.content,'origin',r.origin,'createdAt',r.created_at) order by r.number)
+    coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'productionId',r.production_id,'number',r.number,'content',r.content,'origin',r.origin,'createdAt',r.created_at,'generationContext',r.generation_context,'review',(select review || jsonb_build_object('revisionId',revision_id) from post_draft_reviews v where v.owner_id=r.owner_id and v.production_id=r.production_id and v.revision_id=r.id order by created_at desc,id desc limit 1)) order by r.number)
       from post_draft_revisions r where r.owner_id=p.owner_id and r.production_id=p.id),'[]'::jsonb) as revisions,
     (select review || jsonb_build_object('revisionId',revision_id) from post_draft_reviews v
       where v.owner_id=p.owner_id and v.production_id=p.id and v.revision_id=p.latest_revision_id
@@ -83,20 +130,25 @@ export async function saveRevision(owner: string, id: string, content: DraftCont
     normalized.claimSources = normalized.claimSources.filter(claim => wording.some(text => text.includes(claim.claim)));
   }
   const revisionId = randomUUID();
-  const rows = await db().query(`with changed as (
-    update post_productions set latest_revision_id=$3,approved_revision_id=null,planned_at=null,status='review',
-      checkpoint=case when $5='author' then checkpoint || jsonb_build_object('reviewOnlyRevisionId',$3::text,'reviewPin',null,'authorRequest',null) else checkpoint end,
-      stage=case when $5='author' and coalesce(checkpoint->>'frameworkId','')=''
-        and checkpoint->>'catalogVersion' is not null and checkpoint->'evidence' is not null
-        then 'selection' else 'review' end,
-      version=version+1,notice=null,updated_at=now(),
-      lease_token=case when $7::text is null then null else lease_token end,
-      lease_expires_at=case when $7::text is null then null else now()+interval '10 minutes' end
-    where owner_id=$1 and id=$2 and version=$6 and status not in ('cancelled','published')
+  const rows = await db().query(`with eligible as materialized (
+    select * from post_productions where owner_id=$1 and id=$2 and version=$6 and status not in ('cancelled','published')
       and checkpoint->'publication' is null
-      and ($7::text is null or (lease_token=$7 and lease_expires_at>now())) returning owner_id,id
-  ) insert into post_draft_revisions(owner_id,production_id,id,number,content,origin)
-    select owner_id,id,$3,(select coalesce(max(number),0)+1 from post_draft_revisions where owner_id=$1 and production_id=$2),$4::jsonb,$5
+      and ($7::text is null or (lease_token=$7 and lease_expires_at>now())) for update
+  ), archived as (${archiveLatestContextSql()}), changed as (
+    update post_productions p set latest_revision_id=$3,approved_revision_id=null,planned_at=null,status='review',
+      checkpoint=case when $5='author' then (p.checkpoint - 'pendingGeneration') || jsonb_build_object('reviewOnlyRevisionId',$3::text,'reviewPin',null,'authorRequest',null) else p.checkpoint - 'pendingGeneration' end,
+      stage=case when $5='author' and coalesce(p.checkpoint->>'frameworkId','')=''
+        and p.checkpoint->>'catalogVersion' is not null and p.checkpoint->'evidence' is not null
+        then 'selection' else 'review' end,
+      version=p.version+1,notice=null,updated_at=now(),
+      lease_token=case when $7::text is null then null else p.lease_token end,
+      lease_expires_at=case when $7::text is null then null else now()+interval '10 minutes' end
+    from eligible e where p.owner_id=e.owner_id and p.id=e.id returning p.owner_id,p.id,p.brief,p.checkpoint
+  ) insert into post_draft_revisions(owner_id,production_id,id,number,content,origin,generation_context)
+    select owner_id,id,$3,(select coalesce(max(number),0)+1 from post_draft_revisions where owner_id=$1 and production_id=$2),$4::jsonb,$5,
+      ${generationSnapshotSql("changed")} || jsonb_build_object('parameters',coalesce(checkpoint->'generationParameters',
+        jsonb_build_object('brief',brief,'frameworkId',null,'hookPatternId',null,'sourceMode','automatic','evidenceIds','[]'::jsonb)))
+      || case when $5='author' then jsonb_build_object('writerModel','author') else '{}'::jsonb end
     from changed returning id`, [owner, id, revisionId, JSON.stringify(normalized), origin, expectedVersion, leaseToken ?? null]);
   return rows.length ? getProduction(owner, id) : null;
 }
@@ -163,7 +215,11 @@ export async function recordReview(owner: string, id: string, revisionId: string
     update post_productions set status=$6,stage='review',approved_revision_id=null,planned_at=null,version=version+1,updated_at=now(),
       lease_expires_at=case when $8::text is null then null else now()+interval '10 minutes' end
     where owner_id=$1 and id=$2 and latest_revision_id=$3 and version=$7 and status not in ('cancelled','published')
-      and (($8::text is null and lease_token is null) or (lease_token=$8 and lease_expires_at>now())) returning owner_id,id
+      and (($8::text is null and lease_token is null) or (lease_token=$8 and lease_expires_at>now())) returning owner_id,id,brief,checkpoint
+  ), context_saved as (
+    update post_draft_revisions r set generation_context=${generationSnapshotSql("p")}
+      || case when r.origin='author' then jsonb_build_object('writerModel','author') else '{}'::jsonb end
+    from changed p where r.owner_id=p.owner_id and r.production_id=p.id and r.id=$3 and r.generation_context is null returning r.id
   ) insert into post_draft_reviews(owner_id,production_id,id,revision_id,review)
     select owner_id,id,$4,$3,$5::jsonb from changed returning id`,
     [owner, id, revisionId, randomUUID(), JSON.stringify(review), reviewPasses(review) ? "ready" : "review", expectedVersion, leaseToken ?? null]);

@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-15",
+  "host": "codex-cli 0.132.0; fresh app-server process",
+  "request": {
+    "method": "skills/list",
+    "params": {
+      "cwds": [
+        "/Users/b/Documents/ChatGPT/Sakamoto/sakamoto"
+      ],
+      "forceReload": true
+    }
+  },
+  "skills": [
+    {
+      "name": "ask-matt",
+      "path": "/Users/b/.agents/skills/ask-matt/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "code-review",
+      "path": "/Users/b/.agents/skills/code-review/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "codebase-design",
+      "path": "/Users/b/.agents/skills/codebase-design/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "diagnosing-bugs",
+      "path": "/Users/b/.agents/skills/diagnosing-bugs/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "domain-modeling",
+      "path": "/Users/b/.agents/skills/domain-modeling/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "grill-with-docs",
+      "path": "/Users/b/.agents/skills/grill-with-docs/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "grilling",
+      "path": "/Users/b/.agents/skills/grilling/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "handoff",
+      "path": "/Users/b/.agents/skills/handoff/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "implement",
+      "path": "/Users/b/.agents/skills/implement/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "implement-spec",
+      "path": "/Users/b/.agents/skills/implement-spec/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "pr",
+      "path": "/Users/b/.agents/skills/pr/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "retro",
+      "path": "/Users/b/.agents/skills/retro/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "setup-matt-pocock-skills",
+      "path": "/Users/b/.agents/skills/setup-matt-pocock-skills/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "tdd",
+      "path": "/Users/b/.agents/skills/tdd/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "to-spec",
+      "path": "/Users/b/.agents/skills/to-spec/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "to-tickets",
+      "path": "/Users/b/.agents/skills/to-tickets/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "triage",
+      "path": "/Users/b/.agents/skills/triage/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    },
+    {
+      "name": "writing-for-agents",
+      "path": "/Users/b/.agents/skills/writing-for-agents/SKILL.md",
+      "enabled": true,
+      "scope": "user"
+    }
+  ],
+  "errors": [
+    [
+      {
+        "path": "/Users/b/.codex/skills/origami-sequencer/SKILL.md",
+        "message": "invalid YAML: mapping values are not allowed in this context at line 2 column 509"
+      }
+    ]
+  ]
+}

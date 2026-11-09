@@ -94,7 +94,7 @@ test("Monid search verifies pricing before one bounded search and retains attrib
   assert.equal(result.evidence.length, 2);
   assert.deepEqual(result.evidence[0], {
     id: "WEB1", itemId: "", sourceRevision: 0, kind: "web_source", title: "A retrieval evaluation", author: "Research team",
-    excerpt: "Evaluation surfaced missing source attribution.", originalUrl: "https://example.com/retrieval", publishedAt: "2026-11-02T00:00:00Z", retrievedAt: result.evidence[0].retrievedAt,
+    excerpt: "Evaluation surfaced missing source attribution.", originalUrl: "https://example.com/retrieval", publishedAt: "2026-11-02T00:00:00Z", retrievedAt: result.evidence[0].retrievedAt, researchProvider: "monid-octen",
   });
   assert.ok(!Number.isNaN(Date.parse(result.evidence[0].retrievedAt!)));
   assert.equal(result.evidence[1].publishedAt, undefined);

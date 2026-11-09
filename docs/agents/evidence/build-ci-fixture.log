@@ -1,0 +1,55 @@
+
+> gloss@0.1.0 build
+> next build
+
+▲ Next.js 16.4.0 (Turbopack)
+✓ Running next.config.ts took 24ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1971ms
+  Running TypeScript ...
+  Finished TypeScript in 776ms ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/21) ...
+  Generating static pages using 11 workers (5/21)
+  Generating static pages using 11 workers (10/21)
+  Generating static pages using 11 workers (15/21)
+✓ Generating static pages using 11 workers (21/21) in 915ms
+Turbopack build encountered 1 warning:
+./
+Warning: Failed to find font override values for font `Atkinson Hyperlegible Next`
+Skipping generating a fallback font.
+
+
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ○ /_not-found
+├ ƒ /api/agent-tokens
+├ ƒ /api/articles/[id]
+├ ƒ /api/ask
+├ ƒ /api/brief
+├ ƒ /api/covers
+├ ƒ /api/covers/[id]
+├ ƒ /api/import
+├ ƒ /api/key
+├ ƒ /api/pdf-careful
+├ ƒ /api/pdf-page
+├ ƒ /api/shelve
+├ ƒ /api/speak
+├ ƒ /api/sync
+├ ○ /apple-icon.png
+├ ○ /icon.svg
+├ ○ /library
+├ ƒ /mcp
+├ ƒ /mcp/[token]
+├ ƒ /read/[id]
+├ ○ /robots.txt
+└ ○ /sitemap.xml
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand

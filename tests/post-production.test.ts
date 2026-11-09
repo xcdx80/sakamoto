@@ -16,6 +16,7 @@ const brief: ProductionBrief = {
   idea: "What evaluation taught me", notes: "I used a small evaluation set before changing a retrieval workflow. It showed a missing source attribution, so I kept the original workflow and repaired the attribution first.",
   audience: "AI engineers", goal: "trust", pillar: "engineering", platforms: ["x"], delivery: "single", sourceIds: [],
 };
+const wordingHistory = (detail: ProductionDetail) => detail.revisions.map(({ review, ...revision }) => revision);
 const account = () => "production-owner-" + crypto.randomUUID();
 const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: ["I kept the original workflow.\n\nEvaluation exposed missing source attribution.\n\nFix attribution before adding more moving parts."] }], hooks: ["Fix attribution before complexity."], claimSources: [{ claim: "I kept the original workflow.", evidenceIds: ["AUTHOR_NOTE"] }, { claim: "Evaluation exposed missing source attribution.", evidenceIds: ["AUTHOR_NOTE"] }] };
 function fixtureSupport(ctx: PostProviderContext) {
@@ -179,13 +180,13 @@ test("manual assessment preserves an author's saved revision and refuses stale p
   const context = (await advanceProduction(owner, created.id, manual.production.version))!;
   const assessments: AuthorSignalAssessment[] = [{ signal: "personal_story", strength: 2, evidenceIds: ["AUTHOR_NOTE"], rationale: "The author supplied the evaluation case in the writing brief." }];
   const assessed = (await assessProductionSignals(owner, created.id, context.production.version, assessments))!;
-  assert.deepEqual(assessed.revisions, manual.revisions);
+  assert.deepEqual(wordingHistory(assessed), wordingHistory(manual));
   assert.equal(assessed.production.latestRevisionId, manual.production.latestRevisionId);
   assert.equal(assessed.production.approvedRevisionId, null);
   const candidate = assessed.production.checkpoint.recommendations![0];
   const chosen = (await chooseProductionFramework(owner, created.id, assessed.production.version, candidate.frameworkId, candidate.hookPatternIds[0]))!;
   assert.equal(chosen.production.stage, "review");
-  assert.deepEqual(chosen.revisions, manual.revisions);
+  assert.deepEqual(wordingHistory(chosen), wordingHistory(manual));
   await assert.rejects(assessProductionSignals(owner, created.id, chosen.production.version, assessments), /framework selection/);
 
   const another = await createProduction(owner, brief);
@@ -246,7 +247,7 @@ test("an author's plain-English change creates a fresh reviewed revision while r
   assert.equal(requested.production.approvedRevisionId, null);
   assert.equal(requested.production.plannedAt, null);
   assert.equal(requested.production.stage, "writing");
-  assert.deepEqual(requested.revisions, approved.revisions);
+  assert.deepEqual(wordingHistory(requested), wordingHistory(approved));
   configurePostProviders({ writePost: async ctx => {
     assert.equal(ctx.authorRequest, instruction);
     assert.deepEqual(ctx.priorContent, content);
@@ -394,7 +395,7 @@ test("approved and planned drafts with an expired review policy explicitly reope
     assert.equal(reopened.production.plannedAt, null);
     assert.equal(reopened.production.checkpoint.reviewPin, null);
     assert.equal(reopened.production.checkpoint.reviewOnlyRevisionId, stale.production.latestRevisionId);
-    assert.deepEqual(reopened.revisions, stale.revisions);
+    assert.deepEqual(wordingHistory(reopened), wordingHistory(stale));
     assert.deepEqual(reopened.production.checkpoint.evidence, stale.production.checkpoint.evidence);
     assert.deepEqual(reopened.production.checkpoint.signals, stale.production.checkpoint.signals);
     assert.equal(reviews, 0);
@@ -404,7 +405,7 @@ test("approved and planned drafts with an expired review policy explicitly reope
     assert.equal(refreshed.production.status, "ready");
     assert.equal(refreshed.production.approvedRevisionId, null);
     assert.equal(refreshed.production.plannedAt, null);
-    assert.deepEqual(refreshed.revisions, stale.revisions);
+    assert.deepEqual(wordingHistory(refreshed), wordingHistory(stale));
     assert.equal(refreshed.production.checkpoint.reviewPin?.promptVersion, "post-production-v5");
     assert.equal(refreshed.production.checkpoint.reviewPin?.reviewPromptVersion, POST_PROMPT_VERSION);
     assert.equal(refreshed.production.checkpoint.reviewOnlyRevisionId, null);
@@ -459,13 +460,13 @@ test("a failing review-policy refresh preserves exact wording until an explicit 
   assert.equal(failed.production.stage, "review");
   assert.equal(failed.production.status, "needs_input");
   assert.equal(failed.production.approvedRevisionId, null);
-  assert.deepEqual(failed.revisions, stale.revisions);
+  assert.deepEqual(wordingHistory(failed), wordingHistory(stale));
   assert.equal(writes, 0);
   assert.equal(await approveProduction(owner, failed.production.id, failed.production.latestRevisionId!, failed.production.version), null);
   const repeated = (await advanceProduction(owner, failed.production.id, failed.production.version))!;
   assert.equal(repeated.production.stage, "review");
   assert.equal(repeated.production.status, "needs_input");
-  assert.deepEqual(repeated.revisions, stale.revisions);
+  assert.deepEqual(wordingHistory(repeated), wordingHistory(stale));
   assert.equal(repeated.production.checkpoint.reviewOnlyRevisionId, stale.production.latestRevisionId);
   assert.equal(writes, 0);
   const edited = (await saveRevision(owner, repeated.production.id, { ...content, hooks: ["An author-edited opening."] }, "author", repeated.production.version))!;
@@ -569,7 +570,7 @@ test("a changed profile blocks paid drafting and a provider budget pause preserv
   assert.equal(paused.production.status, "paused");
   assert.equal(paused.production.stage, "review");
   assert.equal(paused.production.latestRevisionId, written.production.latestRevisionId);
-  assert.deepEqual(paused.revisions, written.revisions);
+  assert.deepEqual(wordingHistory(paused), wordingHistory(written));
   assert.match(paused.production.notice!, /paid budget/i);
 });
 
@@ -602,7 +603,7 @@ test("cancelling an in-flight review retains the exact draft and never accepts t
   const paused = (await running)!;
   assert.equal(paused.production.status, "paused");
   assert.equal(paused.production.latestRevisionId, written.production.latestRevisionId);
-  assert.deepEqual(paused.revisions, written.revisions);
+  assert.deepEqual(wordingHistory(paused), wordingHistory(written));
   assert.equal(paused.review, null);
 });
 
@@ -656,7 +657,7 @@ test("independent review proves actual claims in a saved generated draft with st
   assert.equal(reviewed.review?.revisionId, saved.production.latestRevisionId);
   assert.deepEqual(reviewed.review?.criteria.find(c => c.id === "grounded-in-sources")?.support?.map(proof => proof.claim), content.claimSources.map(claim => claim.claim));
   assert.equal(reviewed.production.latestRevisionId, saved.production.latestRevisionId);
-  assert.deepEqual(reviewed.revisions, saved.revisions);
+  assert.deepEqual(wordingHistory(reviewed), wordingHistory(saved));
   assert.deepEqual(reviewed.revisions.find(revision => revision.id === reviewed.production.latestRevisionId)!.content, legacy);
   assert.equal(reviewed.production.approvedRevisionId, null);
 });
@@ -687,7 +688,7 @@ test("stale generated annotations cannot replace missing independent factual pro
   assert.equal(reviewed.review?.status, "blocked");
   assert.ok(reviewed.review?.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block" && issue.message.includes("Evaluation exposed missing source attribution.")));
   assert.equal(reviewed.production.latestRevisionId, saved.production.latestRevisionId);
-  assert.deepEqual(reviewed.revisions, saved.revisions);
+  assert.deepEqual(wordingHistory(reviewed), wordingHistory(saved));
   assert.equal(reviewed.production.approvedRevisionId, null);
   assert.equal(await approveProduction(owner, reviewed.production.id, reviewed.production.latestRevisionId!, reviewed.production.version), null);
 });

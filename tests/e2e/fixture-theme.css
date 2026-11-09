@@ -1,0 +1,6 @@
+/* Synthetic theme tokens only. The authenticated app is verified separately. */
+:root { --font-sans:Arial,sans-serif; --font-serif:Georgia,serif; --ink:#1d1c18; --ink-2:#57534b; --ink-3:#7b766b; --bg:#f3f0e8; --bg-raised:#f8f6f0; --bg-sunk:#eae7de; --rule:#ded9cc; --rule-strong:#c9c1b1; --rubric:#ad3c1c; }
+body { margin:0; font-family:var(--font-sans); background:var(--bg); color:var(--ink); }
+* { box-sizing:border-box; }
+button,input,select,textarea { font:inherit; }
+button { border:0; background:none; color:inherit; }

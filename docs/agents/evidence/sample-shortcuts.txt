@@ -1,0 +1,8 @@
+Browser tab: 1, Title: "On a Piece of Chalk, glossed", URL: "http://localhost:3101/read/on-a-piece-of-chalk".
+1 AXWebArea On a Piece of Chalk, glossed, URL: localhost:3101/read/on-a-piece-of-chalk
+			11 button Sign in
+			15 heading On a Piece of Chalk, Value: 1
+		169 container Keyboard shortcuts
+			170 heading Keys, Value: 2
+				176 text Ask about the selection
+				183 text Next and previous paragraph

@@ -1,3 +1,4 @@
+import {toLibraryBooks,filterBooks,sortBooks} from "../lib/library";
 import { pool, setupPostgres } from "./postgres";
 import { after, before } from "node:test";
 before(setupPostgres);
@@ -5,6 +6,24 @@ after(() => pool.end());
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pushRows, shelveForUser, articleDoc, pullRows } from "../lib/db";
+
+test('Recent positions a thread by its latest saved bookmark, excluding newer fetched context', async () => {
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const {readLibraryThreads}=await import('../lib/library-threads');
+ const owner='thread-recency-'+crypto.randomUUID();
+ const post=(id:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text:'Post '+id,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const saved=await importBookmarks(owner,{posts:[post('31002',{replyToPostId:'31001',contextPosts:[post('31001')],threadPosts:[post('31003',{replyToPostId:'31002'})]})]},'fixture');
+ const bookmark=saved.results[0],opening=bookmark.contextResults![0],context=bookmark.threadResults![0];
+ const library=[
+  {id:opening.itemId!,title:'Opening',words:10,origin:'paste' as const,addedAt:100},
+  {id:bookmark.itemId!,title:'Saved continuation',words:10,origin:'paste' as const,addedAt:300},
+  {id:context.itemId!,title:'Fetched context',words:10,origin:'paste' as const,addedAt:900},
+  {id:'manual-before',title:'Manual before bookmark',words:10,origin:'paste' as const,addedAt:200},
+  {id:'manual-after',title:'Manual after bookmark',words:10,origin:'paste' as const,addedAt:400},
+ ];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:await readLibraryThreads(owner)});
+ assert.deepEqual(sortBooks(books.filter(b=>!b.sample),'recent').map(b=>b.title),['Manual after bookmark','Opening','Manual before bookmark']);
+});
 
 test("stale browser text cannot replace a newer imported source or a manual topic", async () => {
   const owner = "test-owner-" + crypto.randomUUID();
@@ -113,6 +132,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
   const { configureDatabase } = await import("../lib/db");
   const c = await pool.connect(),
     schema = "upgrade_" + crypto.randomUUID().replaceAll("-", "");
+  const originalSearchPath=(await c.query("show search_path")).rows[0].search_path;
   try {
     await c.query(`create schema ${schema}`);
     await c.query(`set search_path to ${schema}`);
@@ -156,7 +176,7 @@ test("recorded migrations upgrade legacy text and annotations without discarding
     assert.equal(page.changes.highlights[0].data.sourceRevision, 1);
   } finally {
     configureDatabase({ query: async (text, params) => (await pool.query(text, params)).rows });
-    await c.query("set search_path to public");
+    await c.query("select set_config('search_path',$1,false)",[originalSearchPath]);
     c.release();
   }
 });
@@ -183,4 +203,63 @@ test("clearing a manual tag choice stays cleared after background source refresh
   await shelveForUser(owner, { id: "cleared", title: "Refreshed", tags: ["new automatic"] }, { id: "cleared", updated: true });
   const latest = (await pullRows(owner, "")).changes.articles.at(-1)!.data;
   assert.equal("tags" in latest, false);
+});
+
+test('a connected thread is represented by its opening post while continuation metadata remains searchable', () => {
+ const library=[
+ {id:'opening',title:'Opening post',author:'Alice',origin:'paste' as const,contentType:'post' as const,postId:'101',words:100,addedAt:1},
+ {id:'tip',title:'Unique continuation tip',author:'Alice',origin:'paste' as const,contentType:'post' as const,postId:'102',words:100,addedAt:2},
+ ];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:{groups:[{rootId:'opening',memberIds:['opening','tip']}],postItemIds:['opening','tip']}}).filter(b=>!b.sample);
+ assert.equal(books.length,1);assert.equal(books[0].id,'opening');assert.equal(books[0].thread?.postCount,2);
+ assert.equal(filterBooks(books,{query:'Unique continuation'}).length,1);
+ assert.equal(filterBooks(books,{query:'needle',postMatches:new Set(['tip'])})[0]?.id,'opening');
+});
+
+test('library threads use a saved opening context post and full-text search includes pending continuations',async()=>{
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const {readLibraryThreads,searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='thread-library-'+crypto.randomUUID();
+ const post=(id:string,text:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const result=await importBookmarks(owner,{posts:[post('13002','Bookmarked middle',{replyToPostId:'13001',contextPosts:[post('13001','First post')],threadPosts:[post('13003','A needle only in the continuation body',{replyToPostId:'13002'})]})]},'birdclaw');
+ const root=result.results[0],index=await readLibraryThreads(owner);
+ assert.equal(index.groups.length,1);assert.equal(index.groups[0].memberIds.length,3);
+ assert.equal(index.groups[0].rootId,root.contextResults![0].itemId);
+ assert.deepEqual(await searchLibraryPosts(owner,'needle continuation'),[root.threadResults![0].itemId]);
+ assert.deepEqual(await readLibraryThreads('different-owner'),{groups:[],postItemIds:[]});
+ assert.deepEqual(await searchLibraryPosts('different-owner','needle'),[]);
+});
+
+test('a quote-only context source stays off the shelf but remains discoverable by full-text search',async()=>{
+ const {importBookmarks}=await import('../lib/bookmarks');const {readLibraryThreads,searchLibraryPosts}=await import('../lib/library-threads');
+ const owner='quoted-search-'+crypto.randomUUID();
+ const post=(id:string,text:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const saved=await importBookmarks(owner,{posts:[post('14001','The bookmark',{quotedPostId:'14002',contextPosts:[post('14002','A unique needle deep in a quoted context source',{author:{name:'Bob',handle:'bob',id:'77'}})]})]},'birdclaw');
+ const root=saved.results[0],quote=root.contextResults![0];
+ const library=[{id:root.itemId!,title:'Bookmark',author:'Alice',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1},{id:quote.itemId!,title:'Quote',author:'Bob',origin:'paste' as const,contentType:'post' as const,words:10,addedAt:1}];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:await readLibraryThreads(owner)}).filter(b=>!b.sample);
+ assert.equal(filterBooks(books,{}).length,1);
+ const matches=new Set(await searchLibraryPosts(owner,'unique needle'));
+ assert.equal(filterBooks(books,{query:'unique needle',postMatches:matches})[0]?.id,quote.itemId);
+});
+
+test('a fresh browser receives each latest saved entity once instead of replaying historical edits',async()=>{
+ const owner='bootstrap-'+crypto.randomUUID();
+ for(const title of ['First title','Intermediate title','Current title'])await shelveForUser(owner,{id:'updated',title},{id:'updated',title});
+ await shelveForUser(owner,{id:'second',title:'Second saved item'},{id:'second'});
+ const page=await pullRows(owner,'');
+ assert.deepEqual(page.changes.articles.map(r=>r.id),['updated','second']);
+ assert.equal(page.changes.articles[0].data.title,'Current title');assert.equal(page.hasMore,false);
+});
+
+test('bootstrap pagination freezes earlier source revisions and then resumes incremental history',async()=>{
+ const owner='snapshot-pages-'+crypto.randomUUID();
+ await shelveForUser(owner,{id:'first',title:'First'},{id:'first'});
+ await shelveForUser(owner,{id:'later',title:'Before snapshot'},{id:'later'});
+ const first=await pullRows(owner,'',1);assert.equal(first.hasMore,true);
+ await shelveForUser(owner,{id:'later',title:'After snapshot'},{id:'later',changed:true});
+ const second=await pullRows(owner,first.cursor,1);
+ assert.equal(second.changes.articles[0].data.title,'Before snapshot');assert.equal(second.hasMore,false);
+ const incremental=await pullRows(owner,second.cursor);
+ assert.equal(incremental.changes.articles[0].data.title,'After snapshot');assert.equal(incremental.hasMore,false);
 });
