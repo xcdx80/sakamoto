@@ -173,7 +173,7 @@ test('Sources shows the current reviewed mapping and labels dirty writer hints u
   });
   await app.open('/');
   await screen.getByRole('tab',{name:'Sources'}).click();
-  await expect(screen.getByText('Your topic')).toBeVisible();
+  await expect(screen.getByText(/^Your notes & topic/)).toBeVisible();
   await expect(screen.getByText('Verified claim sources')).toBeVisible();
   await screen.getByText('Verified claim sources').click();
   await expect(browser.locator('.write-claim-sources')).toContainText('Official memory release');

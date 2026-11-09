@@ -27,6 +27,9 @@ The library offers cards/list, sorting and topic/tag/content-type filters. Reade
 
 MCP supports structured bookmark batches/receipts, thread/source reading, received-work status/processing, direct source recovery, category/index scheduling, metadata/passage search and `ask_library`. `read_saved_source` retrieves the exact retained source separately from bounded retrieval excerpts. In Connect an agent, prepare the daily Grok prompt after entering the public HTTPS Sakamoto origin and routine time. Preparing a prompt does not enable or verify a Grok routine. Save per-item receipts and resume batches; an accepted batch is not proof of a complete bookmark archive.
 
+MCP also supports the complete [post creation and revision workflow](docs/mcp-post-workflow.md): frame a brief, run the existing generation/review stages, retrieve exact drafts, revise or regenerate, and separately approve and publish only with explicit author confirmation. Existing tokens remain owner-scoped full account-agent tokens. No new connection or token is created by these tools.
+
+
 ## Processing budget
 
 `SAKAMOTO_BUDGET_USD=10` is one cumulative deployment-wide cap with no monthly reset. Each paid call reserves a conservative maximum in Neon before dispatch. Reported usage settles the reservation; uncertain dispatched usage remains reserved. New paid work pauses when authorization is unavailable, leaving saved text, manual organization and available lexical search usable. Raising the configured cap is intentional; retries or redeploys do not reset the ledger.

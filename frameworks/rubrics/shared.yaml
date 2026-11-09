@@ -33,6 +33,17 @@ criteria:
     '3': Payoff is present but thin or partly generic.
     '5': Every promised item is delivered with a concrete, usable specific.
   pass_threshold: 3
+- id: narrative-coherence
+  description: The hook, body and ending form one line of thought. Check hook payoff, necessary context, logical
+    transitions and clear references in every adaptation; score the weakest. The brief cannot fill reader-facing gaps.
+  weight: 3
+  anchors:
+    '1': A jump to a method or conclusion leaves its connection to the hook missing, changes topic, or fails the promise.
+    '3': A plausible connection needs a missing premise, referent or reason supplied by the reader.
+    '5': Context and transitions make the hook's payoff clear. A short X post can connect in a single sentence;
+      no mandatory problem paragraph or fixed template. No padding or invented bridging facts.
+  pass_threshold: 4
+  gate: true
 - id: rate-of-revelation
   description: Each line or post adds a new idea or detail; no filler, no restating.
   weight: 2
