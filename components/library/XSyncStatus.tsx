@@ -17,12 +17,12 @@ export function XSyncStatus({ owner, version }: { owner: string; version: number
       >
         {(close) => <>
           <header className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">X sync status</h2>
+            <h2 className="sync-title">X sync status</h2>
             <button type="button" onClick={close} aria-label="Close X sync status" className="grid size-9 place-items-center rounded-full hover:bg-sunk">
               <X size={17} aria-hidden />
             </button>
           </header>
-          <Link href="/library/import" className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-3 font-medium text-bg">Import bookmarks · X or Birdclaw →</Link>
+          <Link href="/library/import" className="sk-btn sk-btn-ink mt-4 w-full">Import bookmarks · X or Birdclaw →</Link>
           <BookmarkDelivery owner={owner} version={version} />
           <Processing owner={owner} version={version} />
         </>}

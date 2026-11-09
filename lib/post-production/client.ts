@@ -6,10 +6,7 @@ export function blankDraft(brief: ProductionBrief): DraftContent {
   return { variants: brief.platforms.map(platform => ({ platform, delivery: deliveryForPlatform(platform, brief.delivery), posts: deliveryForPlatform(platform, brief.delivery) === "thread" ? ["", ""] : [""] })), hooks: [], claimSources: [] };
 }
 
-export function calendarProductions(productions: Production[]): Production[] {
-  return productions.filter(production => production.status === "planned" && production.plannedAt)
-    .sort((first, second) => Date.parse(first.plannedAt!) - Date.parse(second.plannedAt!));
-}
+export { calendarProductions } from "./calendar";
 
 /** Display review provenance separately from immutable writer annotations. This grants no approval. */
 export function projectClaimSources({ content, evidence, review, revisionId, hasUnsavedChanges = false }: {
@@ -92,6 +89,7 @@ export function createWriteClient(ownerId: string, signal?: AbortSignal) {
   }
   return {
     workspace: (sourceId?: string | null) => request<WriteWorkspace>(sourceId ? `?source=${encodeURIComponent(sourceId)}` : ""),
+    refreshXProfile: () => request<NonNullable<WriteWorkspace["xProfile"]>>("", { action: "x_profile" }),
     detail: (id: string) => request<ProductionDetail>(`?productionId=${encodeURIComponent(id)}`),
     weekly: () => request<{ ideas: WeeklyIdea[] }>("?weekly=true"),
     create: (brief: ProductionBrief) => request<ProductionDetail>("", { action: "create", brief }),

@@ -1,3 +1,4 @@
+import { xPreviewProfile, refreshXPreviewProfile, XProfileError } from "../x-credentials";
 /** Session identity enters here; browser payloads cannot claim a different owner or approve themselves. */
 import { boundedJson } from "../request-json";
 import { PaidWorkError } from "../paid-work";
@@ -47,16 +48,17 @@ export async function writeHttp(req: Request, owner: string | null): Promise<Res
         return value ? response(value) : response({ error: "Production is unavailable in this account." }, 404);
       }
       if (url.searchParams.get("weekly") === "true") return response({ ideas: await proposeWeeklyIdeas(owner) });
-      const [profile, productions, history, sources] = await Promise.all([
-        repository.getProfile(owner), repository.listProductions(owner), repository.listHistory(owner), listProductionSources(owner, url.searchParams.get("source")),
+      const [profile, productions, history, sources, xProfile] = await Promise.all([
+        repository.getProfile(owner), repository.listProductions(owner), repository.listHistory(owner), listProductionSources(owner, url.searchParams.get("source")), xPreviewProfile(owner),
       ]);
-      const workspace: WriteWorkspace = { profile,
+      const workspace: WriteWorkspace = { profile, xProfile,
         productions: productions.map(production => ({ ...production, checkpoint: { frameworkId: production.checkpoint.frameworkId, hookPatternId: production.checkpoint.hookPatternId } })),
         history, sources, catalog: summarizeCatalog(loadCatalog()), providers: providerStatus(), publishing: getPublishingCapability(owner) };
       return response(workspace);
     }
     const body = await boundedJson(req, 250000);
     const action = text(body.action, 30);
+    if (action === "x_profile") { fields(body, []); return response(await refreshXPreviewProfile(owner)); }
     if (action === "profile") {
       fields(body, ["profile", "expectedVersion"]);
       const saved = await repository.saveProfile(owner, object(body.profile) as BrandProfile, version(body.expectedVersion));
@@ -134,6 +136,7 @@ export async function writeHttp(req: Request, owner: string | null): Promise<Res
     return value ? response(value) : conflict();
   } catch (error) {
     if (error instanceof PublishingError) return response({error:error.message},error.code === "connection_required" ? 503 : 400);
+    if (error instanceof XProfileError) return response({ error: error.message }, 400);
     if (error instanceof InputError) return response({ error: error.message }, 400);
     if (error instanceof PaidWorkError) return response({ error: error.message }, error.status);
     if (error && typeof error === "object" && "code" in error) return response({ error: "The writing database is unavailable. Check the configured database and apply its pending migrations." }, 503);

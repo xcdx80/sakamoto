@@ -267,6 +267,7 @@ export type WriteCatalogSummary = {
   signals: { id: string; description: string }[];
 };
 export type WriteWorkspace = {
+  xProfile?: import("../x-credentials").XPreviewProfile;
   profile: BrandProfile;
   productions: Production[];
   history: ProductionHistory[];

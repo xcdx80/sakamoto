@@ -1,7 +1,9 @@
 "use client";
 
 import { sourceAddress } from "@/lib/source-revision";
+import { motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { spring } from "@/components/motion/tokens";
 import { ArrowUp, BadgeCheck, BookA, Check, Copy, Ellipsis, Eraser, Feather, Highlighter, Lightbulb, PenLine, Scale, Waypoints, type LucideIcon } from "lucide-react";
 import { ACTIONS, isShortSelection, type Action } from "@/lib/actions";
 import { MARKERS, type Marker } from "@/lib/settings";
@@ -332,7 +334,16 @@ export function Lens({ rootEl, openHighlight }: { rootEl: HTMLElement | null; op
         if (tag !== "INPUT" && tag !== "TEXTAREA") e.preventDefault();
       }}
     >
-      <div className="relative rounded-[14px] bg-lens p-1 text-lens-fg shadow-pop ring-1 ring-black/5">
+      {/* Only this pill morphs: boxRef above stays untransformed, so placement reads true sizes. */}
+      <motion.div
+        layout
+        layoutDependency={lens.mode}
+        initial={false}
+        animate={{ borderRadius: lens.mode === "actions" && !existing?.note ? 22 : 18 }}
+        transition={spring.snap}
+        className="relative bg-lens p-1 text-lens-fg shadow-pop ring-1 ring-black/5"
+      >
+        <motion.div key={lens.mode} layout="position" layoutDependency={lens.mode}>
         {lens.mode === "actions" && existing?.note && (
           <button
             type="button"
@@ -537,6 +548,7 @@ export function Lens({ rootEl, openHighlight }: { rootEl: HTMLElement | null; op
             )}
           </form>
         )}
+        </motion.div>
         {pos && !pos.docked && (
           <span
             aria-hidden
@@ -589,8 +601,7 @@ export function Lens({ rootEl, openHighlight }: { rootEl: HTMLElement | null; op
             </button>
           </div>
         )}
-
-      </div>
+      </motion.div>
     </div>
   );
 }

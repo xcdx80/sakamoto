@@ -68,6 +68,7 @@ export async function decideCategory(
       r.status === 429 || r.status === 529
         ? "TypeSafe throttled classification. Retry after the processing delay."
         : "TypeSafe rejected classification; check server access and configuration.",
+      r.status,
     );
   const reader = r.body?.getReader();
   if (!reader)

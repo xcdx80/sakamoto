@@ -208,7 +208,7 @@ export function Tooltips() {
     if (tip.mode === "pop") {
       const d = 4;
       const [dx, dy] = at.side === "top" ? [0, d] : at.side === "bottom" ? [0, -d] : at.side === "left" ? [d, 0] : [-d, 0];
-      face.animate([{ opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(0.96)` }, { opacity: 1, transform: "none" }], { duration: 150, easing: EASE });
+      face.animate([{ opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(0.96)` }, { opacity: 1, transform: "none" }], { duration: 190, easing: "cubic-bezier(0.34, 1.56, 0.64, 1)" });
     } else {
       face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100, easing: "ease-out" });
     }
@@ -220,7 +220,7 @@ export function Tooltips() {
       <div className={`tip tip-${tip.tone}`}>
         <span className="tip-main">
           <span className="font-medium">{tip.label}</span>
-          {tip.kbd && <kbd className="tip-kbd">{tip.kbd}</kbd>}
+          {tip.kbd && <kbd className="tip-kbd font-mono">{tip.kbd}</kbd>}
         </span>
         {tip.hint && <span className="tip-hint">{tip.hint}</span>}
       </div>

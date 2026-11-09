@@ -20,7 +20,7 @@ export async function finishXConnection(owner:string,state:string,code:string){
  if(!row)throw new Error('X authorization expired or belongs to another session. Connect again.');
  const tokens=await xApi.exchange(new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:callbackUrl(),code_verifier:open<string>(owner,row.encrypted_verifier)})),user=await xApi.identity(tokens.access_token);
  const encrypted=seal(owner,{...tokens,expiresAt:Date.now()+tokens.expires_in*1000});
- await db().query(`insert into x_connections(user_id,x_user_id,handle,generation,encrypted_credentials) values($1,$2,$3,$4,$5) on conflict(user_id) do update set x_user_id=excluded.x_user_id,handle=excluded.handle,generation=excluded.generation,encrypted_credentials=excluded.encrypted_credentials,updated_at=now()`,[owner,user.id,user.username,crypto.randomUUID(),encrypted]);
+ await db().query(`insert into x_connections(user_id,x_user_id,handle,generation,encrypted_credentials,profile,profile_requested_at) values($1,$2,$3,$4,$5,$6::jsonb,now()) on conflict(user_id) do update set x_user_id=excluded.x_user_id,handle=excluded.handle,generation=excluded.generation,encrypted_credentials=excluded.encrypted_credentials,profile=excluded.profile,profile_requested_at=now(),updated_at=now()`,[owner,user.id,user.username,crypto.randomUUID(),encrypted,JSON.stringify({...publicXAuthor(user),fetchedAt:new Date().toISOString()})]);
 }
 export async function disconnectX(owner:string){
  await db().query('delete from x_connections where user_id=$1',[owner]);await db().query('delete from x_oauth_states where user_id=$1',[owner]);
@@ -28,15 +28,47 @@ export async function disconnectX(owner:string){
 }
 export async function xConnectionStatus(owner:string){const [row]=await db().query('select handle from x_connections where user_id=$1',[owner]);return {configured:xConfigured(),connected:Boolean(row),handle:row?.handle??null,callbackUrl:callbackUrl()};}
 /** Refresh only under the sync run's exclusive lease; CAS prevents publishing into a replaced connection. */
-export async function xAccess(owner:string,expectedId:string){
+export async function xAccess(owner:string,expectedId:string,allowRefresh=true){
  const [row]=await db().query('select x_user_id,generation,encrypted_credentials from x_connections where user_id=$1',[owner]);
  if(!row||row.x_user_id!==expectedId)throw new Error('Reconnect the X account that started this sync.');
  let tokens=open<XTokens>(owner,row.encrypted_credentials);
  if((tokens.expiresAt??0)<Date.now()+60_000){
+  if(!allowRefresh)throw new XProfileError('X access expired. Reconnect X to load your current profile.');
   if(!tokens.refresh_token)throw new Error('X access expired. Reconnect X.');
   const refreshed=await xApi.exchange(new URLSearchParams({grant_type:'refresh_token',refresh_token:tokens.refresh_token}));tokens={...refreshed,refresh_token:refreshed.refresh_token??tokens.refresh_token,expiresAt:Date.now()+refreshed.expires_in*1000};
   const updated=await db().query('update x_connections set encrypted_credentials=$3,updated_at=now() where user_id=$1 and generation=$2 returning user_id',[owner,row.generation,seal(owner,tokens)]);
   if(!updated.length)throw new Error('X connection changed; resume with the current connection.');
  }
  return tokens.access_token;
+}
+
+/** Read-only metadata projection: no provider calls and no credential fields. */
+export class XProfileError extends Error {}
+export type XPreviewProfile = { connected: boolean; author?: { name: string; handle: string; imageUrl?: string }; fetchedAt?: string; refreshAllowedAt?: string };
+function publicXAuthor(user: { username: string; name?: string; profile_image_url?: string }) {
+ let imageUrl: string | undefined;
+ try { const url = new URL(user.profile_image_url ?? ""); if (url.protocol === "https:" && url.hostname === "pbs.twimg.com" && !url.username && !url.password) imageUrl = url.toString(); } catch { /* Missing or unsafe avatar uses the neutral silhouette. */ }
+ return { name: user.name?.trim().slice(0, 100) || `@${user.username}`, handle: user.username, ...(imageUrl ? { imageUrl } : {}) };
+}
+export async function xPreviewProfile(owner: string): Promise<XPreviewProfile> {
+ const [row] = await db().query('select handle,profile,profile_requested_at from x_connections where user_id=$1',[owner]);
+ if (!row) return { connected: false };
+ const cached = row.profile;
+ return { connected: true, author: publicXAuthor({ username: row.handle, name: cached?.name, profile_image_url: cached?.imageUrl }),
+  ...(cached?.fetchedAt ? { fetchedAt: cached.fetchedAt } : {}),
+  ...(row.profile_requested_at ? { refreshAllowedAt: new Date(new Date(row.profile_requested_at).getTime() + 15 * 60_000).toISOString() } : {}) };
+}
+/** Explicit bounded identity read. A durable cooldown prevents concurrent/repeated paid reads even on failure. */
+export async function refreshXPreviewProfile(owner: string): Promise<XPreviewProfile> {
+ const [row] = await db().query(`update x_connections set profile_requested_at=now() where user_id=$1
+  and (profile_requested_at is null or profile_requested_at < now()-interval '15 minutes') returning x_user_id,generation`,[owner]);
+ if (!row) throw new XProfileError('Connect X, or wait 15 minutes after your last profile request before refreshing.');
+ // Profile reads must not rotate tokens concurrently with a bookmark/thread sync lease.
+ const token = await xAccess(owner,row.x_user_id,false);
+ const user = await xApi.identity(token);
+ if (user.id !== row.x_user_id) throw new XProfileError('X returned a different connected account. Reconnect X.');
+ const profile = { ...publicXAuthor(user), fetchedAt: new Date().toISOString() };
+ const updated = await db().query('update x_connections set handle=$3,profile=$4::jsonb where user_id=$1 and generation=$2 returning user_id',[owner,row.generation,user.username,JSON.stringify(profile)]);
+ if (!updated.length) throw new XProfileError('X connection changed. Reload the current connection.');
+ return xPreviewProfile(owner);
 }

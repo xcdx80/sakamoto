@@ -2,7 +2,8 @@
 import { threadCoverageOf } from "./thread-coverage";
 import type { Database, SqlValue } from 'sql.js/dist/sql-wasm-browser.js';
 import { normalizePost, attachContext, type ImportedPost } from './bookmark-normalize';
-export type BirdclawArchive={accounts:{id:string;name:string;handle:string;count:number}[];accountId:string|null;posts:ImportedPost[]};
+import { bookmarkOrderOf, type BookmarkOrder } from './bookmark-order-input';
+export type BirdclawArchive={accounts:{id:string;name:string;handle:string;count:number}[];accountId:string|null;posts:ImportedPost[];orders?:BookmarkOrder[]};
 function query(database:Database,sql:string,params:SqlValue[]=[]){
  const statement=database.prepare(sql);try{statement.bind(params);const result:Record<string,SqlValue>[]=[];while(statement.step())result.push(statement.getAsObject());return result;}finally{statement.free();}
 }
@@ -57,6 +58,17 @@ export async function extractBirdclaw(bytes:Uint8Array,accountId?:string,wasmBin
     const p=map.get(id);if(p)queue.push(p.replyToPostId,p.quotedPostId);
    }
   }
-  return {accounts,accountId:selected,posts:posts.map(p=>attachContext(p,map))};
+  const orders:BookmarkOrder[]=[];
+  const savedIds=new Set(posts.map(post=>post.postId));
+  const cacheColumns=cache?.type==='table'?new Set(query(database,'pragma table_info(sync_cache)').map(row=>String(row.name))):new Set<string>();
+  if(cacheColumns.has('updated_at'))for(const row of query(database,"select cache_key,value_json,updated_at from sync_cache where cache_key like 'bookmarks:%' or cache_key like 'timeline-collection:v2:bookmarks:%' order by updated_at,cache_key")){
+   if(!String(row.cache_key).includes(`:${selected}:`))continue;
+   const value=json(row.value_json),data=value.payload?.data??value.data;
+   if(!Array.isArray(data))continue;
+   const postIds=[...new Set<string>(data.map(post=>post?.id).filter(id=>savedIds.has(id)))];
+   if(!postIds.length)continue;
+   try{orders.push(bookmarkOrderOf({postIds,observedAt:row.updated_at}));}catch{/* An invalid cached observation cannot establish bookmark order. */}
+  }
+  return {accounts,accountId:selected,posts:posts.map(p=>attachContext(p,map)),orders};
  }finally{database.close();}
 }

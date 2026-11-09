@@ -1,26 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SignInButton, useAuth, useUser } from "@clerk/nextjs";
-import { ArrowLeft, ArrowRight, Feather, Plus, RotateCcw, Sparkles, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { ArrowLeft, RotateCcw, X } from "lucide-react";
+import { DrawingMark } from "@/components/account/DrawingMark";
+import { WriteGate } from "./WriteGate";
 import { TopBar } from "@/components/ui/TopBar";
-import { calendarProductions, createWriteClient, WriteRequestError, type WriteClient } from "@/lib/post-production/client";
+import { createWriteClient, WriteRequestError, type WriteClient } from "@/lib/post-production/client";
 import type { BrandProfile, ProductionBrief, ProductionDetail, WeeklyIdea, WriteWorkspace } from "@/lib/post-production/types";
 import { BriefForm } from "./WritingForms";
 import { ProfileForm } from "./WritingForms";
 import { ProductionEditor } from "./ProductionEditor";
+import { PostsOverview } from "./PostsOverview";
+import { PostCalendar } from "./PostCalendar";
+import type { PlatformPreviewAuthor } from "./PlatformPostPreview";
 
-export function WriteDesk() {
+export function WriteDesk({ surface = "posts" }: { surface?: "posts" | "calendar" }) {
   const { isLoaded, isSignedIn, userId, sessionId } = useAuth();
   const { user } = useUser();
-  return <div className="write-page"><TopBar here="write" />
-    {!isLoaded || (isSignedIn && user?.id !== userId) ? <main className="write-gate" aria-busy="true"><Feather size={28} /><h1>Opening your writing desk…</h1></main>
-      : !isSignedIn || !userId ? <main className="write-gate"><span className="write-eyebrow">From reading to writing</span><h1>A place for your<br /><em>next good idea.</em></h1><p>Bring your notes and saved sources. Shape a draft in your voice, review it, and make it yours.</p><SignInButton mode="modal"><button className="write-button write-primary">Sign in to write <ArrowRight size={16} /></button></SignInButton></main>
-      : <AccountDesk key={`${userId}:${sessionId}`} ownerId={userId} />}
+  return <div className="write-page">{(!isLoaded || !isSignedIn || !userId || user?.id !== userId) && <TopBar here={surface === "calendar" ? "calendar" : "write"} />}
+    {!isLoaded || (isSignedIn && user?.id !== userId) ? <main className="write-gate" aria-busy="true"><DrawingMark className="size-11" /><h1>Opening your writing desk…</h1></main>
+      : !isSignedIn || !userId ? <WriteGate />
+      : <AccountDesk key={`${userId}:${sessionId}`} ownerId={userId} surface={surface} author={{ name: user?.fullName || user?.username || "Your profile", handle: user?.username || undefined, imageUrl: user?.imageUrl }} />}
   </div>;
 }
 
-function AccountDesk({ ownerId }: { ownerId: string }) {
+function AccountDesk({ ownerId, author, surface }: { ownerId: string; author: PlatformPreviewAuthor; surface: "posts" | "calendar" }) {
+  const router = useRouter();
   const [client, setClient] = useState<WriteClient | null>(null);
   const [workspace, setWorkspace] = useState<WriteWorkspace | null>(null);
   const [detail, setDetail] = useState<ProductionDetail | null>(null);
@@ -39,16 +46,19 @@ function AccountDesk({ ownerId }: { ownerId: string }) {
     const controller = new AbortController();
     const adapter = createWriteClient(ownerId, controller.signal);
     setClient(adapter);
-    const initialSource = new URL(window.location.href).searchParams.get("source");
+    const parameters = new URL(window.location.href).searchParams;
+    const initialSource = parameters.get("source");
+    const initialPost = surface === "posts" ? parameters.get("post") : null;
     setSourceId(initialSource);
-    adapter.workspace(initialSource).then(value => {
+    Promise.all([adapter.workspace(initialSource), initialPost ? adapter.detail(initialPost) : Promise.resolve(null)]).then(([value, saved]) => {
       if (controller.signal.aborted) return;
       setWorkspace(value);
-      if (new URL(window.location.href).searchParams.has("source")) setView("brief");
+      if (saved) { setDetail(saved); setView("editor"); }
+      else if (initialSource) setView("brief");
     }).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Your writing desk could not be loaded."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [ownerId]);
+  }, [ownerId, surface]);
 
   async function run<T,>(label: string, work: () => Promise<T>, accept: (value: T) => void) {
     if (busy) return;
@@ -80,28 +90,26 @@ function AccountDesk({ ownerId }: { ownerId: string }) {
       if (value.detail) acceptDetail(value.detail);
     });
   }
+  function leavePost() {
+    if (hasUnsavedDraft && !window.confirm("Leave this draft without saving your edits?")) return;
+    setView("desk"); setDetail(null); setHasUnsavedDraft(false); setSourceId(null);
+    router.replace("/write", { scroll: false });
+  }
   function newBrief(value?: ProductionBrief) { setBrief(value); setView("brief"); setError(""); }
 
-  if (loading) return <main className="write-gate" aria-busy="true"><span className="write-eyebrow">Your writing desk</span><h1>Gathering your ideas…</h1></main>;
-  if (!workspace || !client) return <main className="write-gate"><h1>The desk is taking a moment.</h1><p role="alert">{error || "Your writing desk could not be loaded."}</p><button className="write-button" onClick={() => window.location.reload()}><RotateCcw size={15} /> Try again</button></main>;
+  const navigation = <TopBar here={surface === "calendar" ? "calendar" : "write"} writingState={{dirty:hasUnsavedDraft,busy:Boolean(busy)}} />;
+  if (loading) return <>{navigation}<main className="write-gate" aria-busy="true"><DrawingMark className="size-11" /><span className="write-eyebrow">Your writing desk</span><h1>Gathering your ideas…</h1></main></>;
+  if (!workspace || !client) return <>{navigation}<main className="write-gate"><svg viewBox="0 0 96 64" className="write-gate-tea" aria-hidden="true"><path d="M26 26h38v13c0 11-8 19-19 19s-19-8-19-19Z" fill="var(--bg-raised)" stroke="var(--ink-3)" strokeLinejoin="round" /><path d="M64 31h6c8 0 8 13-1 13h-7" fill="none" stroke="var(--ink-3)" /><path d="M38 18c-3-4 3-6 0-11M50 18c-3-4 3-6 0-11" fill="none" stroke="var(--ink-4)" strokeLinecap="round" /></svg><h1>The desk is taking a moment.</h1><p role="alert">{error || "Your writing desk could not be loaded."}</p><button className="write-button" onClick={() => window.location.reload()}><RotateCcw size={15} /> Try again</button></main></>;
 
-  return <main className="write-shell" id="write-main">
-    <div className="write-masthead"><div><span className="write-eyebrow">Sakamoto · The writing desk</span><h1>Read. Think. <em>Write.</em></h1></div><button className="write-profile-button" onClick={() => setProfileOpen(!profileOpen)} aria-expanded={profileOpen}><span className="write-profile-dot" /> Your voice <span>{profileOpen ? "−" : "+"}</span></button></div>
+  return <>{navigation}<main className={`write-shell${view === "editor" ? " write-shell-editor" : ""}`} id="write-main">
+    {view === "editor" ? <h1 className="write-sr-only">Write</h1> : <div className="write-masthead write-masthead-compact"><div><h1>{surface === "calendar" ? "Calendar" : "Write"}</h1></div><button className="write-profile-button" onClick={() => setProfileOpen(!profileOpen)} aria-expanded={profileOpen}><span className="write-profile-dot" /> Your voice <span>{profileOpen ? "−" : "+"}</span></button></div>}
     {error && <div className="write-notice write-error" role="alert"><div>{error}{stale && <p>Your draft on this desk is still available to copy. Reload the saved version before trying another change.</p>}</div>{stale && <button className="write-button" disabled={Boolean(busy)} onClick={reloadSaved}>Reload saved work</button>}<button className="write-icon-button" aria-label="Dismiss error" onClick={() => setError("")}><X size={16} /></button></div>}
     {profileOpen && <section className="write-profile-panel" aria-labelledby="voice-title"><div className="write-section-head"><div><span className="write-eyebrow">The author, in your words</span><h2 id="voice-title">Your voice profile</h2></div><button className="write-icon-button" aria-label="Close voice profile" onClick={() => setProfileOpen(false)}><X size={18} /></button></div><ProfileForm key={workspace.profile.version} profile={workspace.profile} busy={Boolean(busy)} onSave={profile => void run("Saving voice profile", () => client.profile(profile, workspace.profile.version), saved => { setProfile(saved); setProfileOpen(false); })} /></section>}
-    {view !== "desk" && <button className="write-back" disabled={Boolean(busy)} onClick={() => { if (hasUnsavedDraft && !window.confirm("Leave this draft without saving your edits?")) return; setView("desk"); setDetail(null); setHasUnsavedDraft(false); }}><ArrowLeft size={14} /> All productions</button>}
-    {view === "desk" && <>
-      <section className="write-intro"><div><span className="write-eyebrow">A thought worth sharing</span><h2>What have you<br /><em>been thinking about?</em></h2><p>Start with an idea, a lesson, or something from your library. There is room to work it out here.</p><button className="write-button write-primary" disabled={Boolean(busy)} onClick={() => newBrief()}><Plus size={16} /> Start a post</button></div><div className="write-intro-note"><Feather size={30} strokeWidth={1} /><p>Good writing begins<br />before the first sentence.</p><span>Your ideas. Your sources. Your voice.</span></div></section>
-      <section className="write-productions" aria-labelledby="productions-title"><div className="write-section-head"><div><span className="write-eyebrow">Work in progress & beyond</span><h2 id="productions-title">Your productions <span className="write-count">{workspace.productions.length}</span></h2></div><button className="write-button write-quiet" disabled={Boolean(busy)} onClick={() => void run("Looking for ideas", () => client.weekly(), value => setIdeas(value.ideas))}><Sparkles size={15} /> Suggest this week’s ideas</button></div>
-        {ideas && <div className="write-ideas"><div className="write-section-head"><h3>Possibilities for the week</h3><button className="write-icon-button" aria-label="Dismiss weekly ideas" onClick={() => setIdeas(null)}><X size={16} /></button></div>{ideas.length ? <div className="write-idea-grid">{ideas.map((idea, i) => <article className="write-idea" key={i}><span className="write-eyebrow">Idea {String(i + 1).padStart(2, "0")}</span><h3>{idea.brief.idea}</h3><p>{idea.reason}</p>{idea.warnings.map(w => <p className="write-warning" key={w}>{w}</p>)}<button className="write-text-button" disabled={Boolean(busy)} onClick={() => newBrief(idea.brief)}>Develop this idea <ArrowRight size={14} /></button></article>)}</div> : <p>No ideas are available yet. Add your voice profile and a few saved sources, or start with your own idea.</p>}</div>}
-        {workspace.productions.length ? <div className="write-production-list">{workspace.productions.map((p, i) => <button className="write-production-row" key={p.id} disabled={Boolean(busy)} onClick={() => openProduction(p.id)}><span className="write-row-number">{String(i + 1).padStart(2, "0")}</span><div><h3>{p.brief.idea}</h3><p>{p.brief.platforms.map(p => p === "x" ? "X" : "LinkedIn").join(" + ")}<span>·</span>{p.brief.pillar}{p.plannedAt && <><span>·</span>{new Date(p.plannedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>}</p></div><span className={`write-status write-status-${p.status}`}>{p.status.replaceAll("_", " ")}</span><ArrowRight size={17} /></button>)}</div> : <div className="write-empty"><span className="write-empty-rule" /><p>No productions yet.<br /><span>One good thought is enough to begin.</span></p></div>}
-      </section>
-      <section className="write-calendar" aria-labelledby="calendar-title"><div className="write-section-head"><div><span className="write-eyebrow">Your planned posts</span><h2 id="calendar-title">Publication calendar</h2><p>Saved publication plans. Calendar entries do not post automatically.</p></div></div>{calendarProductions(workspace.productions).length ? <div className="write-calendar-list">{calendarProductions(workspace.productions).map(production => <button className="write-calendar-entry" key={production.id} disabled={Boolean(busy)} onClick={() => openProduction(production.id)}><time dateTime={production.plannedAt!}>{new Date(production.plannedAt!).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time><strong>{production.brief.idea}</strong></button>)}</div> : <p className="write-calendar-empty">Approve a draft, then add a publication time here.</p>}</section>
-    </>}
+    {view === "brief" && <button className="write-back" disabled={Boolean(busy)} onClick={leavePost}><ArrowLeft size={14} /> All posts</button>}
+    {view === "desk" && (surface === "calendar" ? <PostCalendar productions={workspace.productions} /> : <PostsOverview posts={workspace.productions} ideas={ideas} busy={Boolean(busy)} onStart={newBrief} onOpen={openProduction} onSuggest={() => void run("Looking for ideas", () => client.weekly(), value => setIdeas(value.ideas))} onDismissIdeas={() => setIdeas(null)} />)}
     {view === "brief" && <section className="write-brief-sheet"><div className="write-section-head"><div><span className="write-eyebrow">01 · The beginning</span><h2>Give your idea some shape.</h2><p>Tell us the topic. Add direction if you have it, then review the draft.</p></div></div><BriefForm key={brief?.idea || sourceId || "new"} profile={workspace.profile} sources={workspace.sources} initial={brief} sourceId={sourceId} busy={Boolean(busy)} onSubmit={createProduction} /></section>}
-    {view === "editor" && detail && <ProductionEditor key={detail.production.id} detail={detail} workspace={workspace} client={client} busy={busy} onAction={(label, work) => void run(label, work, acceptDetail)} onProgress={acceptDetail} onProfile={setProfile} onDirty={setHasUnsavedDraft} />}
+    {view === "editor" && detail && <ProductionEditor key={detail.production.id} detail={detail} workspace={workspace} client={client} busy={busy} author={author} onXProfile={xProfile => setWorkspace(previous => previous ? { ...previous, xProfile } : previous)} onAction={(label, work) => void run(label, work, acceptDetail)} onProgress={acceptDetail} onProfile={setProfile} onDirty={setHasUnsavedDraft} back={<button className="write-back" disabled={Boolean(busy)} onClick={leavePost}><ArrowLeft size={14} /> All posts</button>} voice={<button className="write-profile-button" onClick={() => setProfileOpen(!profileOpen)} aria-expanded={profileOpen}><span className="write-profile-dot" /> Your voice</button>} />}
     {busy && <div className="write-busy" role="status"><span />{busy}…</div>}
     {!workspace.providers.ready && <div className="write-provider-note"><span className="write-eyebrow">A note from the desk</span><p>{workspace.providers.notice || "Draft generation is not available right now."} You can still write, save revisions, and copy your work.</p></div>}
-    <footer className="write-footer"><span>A little less noise. A little more thought.</span><span>Review, approve, and choose when to share.</span></footer>
-  </main>;
+  </main></>;
 }

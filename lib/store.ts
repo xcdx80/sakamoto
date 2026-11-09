@@ -73,6 +73,9 @@ export type LibraryItem = {
   /** Optional for entries saved before content types were introduced. */
   contentType?: ContentType;
   addedAt: number;
+  /** Effective save time recovered from X order; absent for ordinary manual saves. */
+  savedAt?: number;
+  bookmarkOrderObservedAt?: string;
   /** Bumped when the text itself is replaced (read more carefully), so sync sends it again. */
   rev?: number;
   pendingSource?: string | null;

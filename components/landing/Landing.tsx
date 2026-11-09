@@ -15,6 +15,10 @@ import type { Busy } from "./ImportBar";
 import { LibraryLine, type Saved } from "./LibraryLine";
 import { ShelfSheet, type ShelfItem } from "./ShelfSheet";
 import { LibraryAnswer } from "@/components/library/LibraryAnswer";
+import { AnimatePresence, motion } from "motion/react";
+import { spring } from "@/components/motion/tokens";
+import { HomeStage } from "./story/HomeStage";
+import "@/app/landing.css";
 
 /** Questions lead; manual imports and existing share links remain available. */
 export function Landing() {
@@ -220,17 +224,27 @@ export function Landing() {
     <div className={`landing relative z-[1] flex min-h-dvh flex-col transition-[opacity,filter,transform] duration-300 ease-[var(--ease-out)] ${leaving ? "scale-[0.995] opacity-0 blur-[2px]" : ""}`}>
       <TopBar />
 
-      <main className="relative flex flex-1 flex-col pb-[clamp(20px,4vh,44px)]">
-        <div className="home-primary">
-          <Hero>
-            <LibraryAnswer key={account ?? "anonymous"} owner={account ?? null} filters={{}} presentation="home" />
-          </Hero>
-        </div>
-        {(busy || error) && <div className="mx-auto w-full max-w-[740px] px-6 text-sm">
-          {busy && <p role="status">{busy.label}</p>}
-          {error && <p role="alert">{error}</p>}
-        </div>}
-        <div className="home-secondary"><LibraryLine saved={saved} /></div>
+      <main className="relative flex flex-1 flex-col">
+        <HomeStage story={account === null}>
+          <div className="home-primary">
+            <Hero>
+              <LibraryAnswer key={account ?? "anonymous"} owner={account ?? null} filters={{}} presentation="home" />
+            </Hero>
+          </div>
+          {(busy || error) && (
+            <div className="home-feedback">
+              {busy && (
+                <p role="status" className="home-busy">
+                  <span className="home-busy-dot" aria-hidden />
+                  {busy.label}
+                  {typeof busy.pct === "number" && <span className="home-busy-pct">{Math.round(busy.pct * 100)}%</span>}
+                </p>
+              )}
+              {error && <p role="alert" className="home-error">{error}</p>}
+            </div>
+          )}
+          <div className="home-secondary"><LibraryLine saved={saved} /></div>
+        </HomeStage>
       </main>
 
       <ShelfSheet
@@ -240,14 +254,22 @@ export function Landing() {
         onRemove={(it) => (it.sample ? hideSample(it.id) : removeFromLibrary(it.id))}
       />
 
-      {dragging && (
-        <div className="pointer-events-none fixed inset-0 z-[90] grid place-items-center bg-bg/80 backdrop-blur-sm" style={{ animation: "fade 0.15s" }}>
-          <div className="rounded-[28px] border-[1.5px] border-dashed border-[var(--rubric)] px-16 py-14 text-center">
-            <p className="font-serif text-[40px] leading-none text-ink">Drop to read</p>
-            <p className="mt-3 text-[14px] text-ink-3">PDF, .txt or .md</p>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {dragging && (
+          <motion.div className="home-drop sk-desk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <motion.div
+              className="home-drop-page"
+              initial={{ y: "-110vh", rotate: -14 }}
+              animate={{ y: 0, rotate: -2 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={spring.bouncy}
+            >
+              <p className="sk-display">Drop to read</p>
+              <p className="sk-eyebrow">PDF, .txt or .md</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

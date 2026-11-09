@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Scribble } from "@/components/motion/Ink";
 import { anchorToRange, blockEl } from "@/lib/anchor";
 import { MARKERS } from "@/lib/settings";
 import { useStore, type Gloss, type Highlight } from "@/lib/store";
@@ -150,6 +151,9 @@ export function Margin({
     if (articleEl) {
       ro.observe(articleEl);
       if (articleEl.parentElement) ro.observe(articleEl.parentElement);
+      // Anything above the text that changes height (the overview unfolding) moves every passage.
+      const grid = articleEl.closest(".reader-grid");
+      if (grid) ro.observe(grid);
     }
     for (const el of cards.current.values()) ro.observe(el);
     window.addEventListener("resize", schedule);
@@ -225,11 +229,12 @@ export function Margin({
 function EmptyMargin({ top }: { top: number }) {
   return (
     <div
-      className="rise absolute inset-x-0 border-l-[1.5px] border-rule-strong py-1 pl-[15px] text-[13px] leading-relaxed text-ink-3"
-      style={{ top, animationDelay: "500ms" }}
+      className="rise absolute inset-x-0 pl-1 font-hand text-[24px] leading-[1.02] text-ink-3"
+      style={{ top, animationDelay: "900ms" }}
     >
-      <p className="font-medium text-ink-2">This area is for notes.</p>
-      <p className="mt-1">Select any passage, then just start typing to ask.</p>
+      <Scribble kind="arrow" className="-ml-1 mb-1 h-8 w-11 -scale-x-100 rotate-[28deg]" color="var(--ink-4)" width={1.4} delay={1.1} inView={false} />
+      <p className="text-ink-2">This area is for notes.</p>
+      <p className="mt-1.5 max-w-[15rem]">Select any passage, then just start typing to ask.</p>
     </div>
   );
 }

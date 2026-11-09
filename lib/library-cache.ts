@@ -10,7 +10,7 @@ function groupOf(key:string):string {
  if(key===ANONYMOUS)return 'anonymous';
  const account=key.match(/^sakamoto:account:([^:]+):gloss:v1$/);
  if(account)return `account:${account[1]}`;
- for(const prefix of ['sakamoto:sync:v2:','sakamoto:threads:v2:'])if(key.startsWith(prefix))return `account:${encodeURIComponent(key.slice(prefix.length))}`;
+ for(const prefix of ['sakamoto:sync:v2:','sakamoto:threads:v1:','sakamoto:threads:v2:'])if(key.startsWith(prefix))return `account:${encodeURIComponent(key.slice(prefix.length))}`;
  throw new Error('Unknown library cache key.');
 }
 const fallbackKey = (group:string) => `sakamoto:cache-fallback:v1:${group}`;

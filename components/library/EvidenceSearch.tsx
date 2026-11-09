@@ -44,12 +44,12 @@ export function EvidenceSearch({
   }
   return (
     <section
-      className="my-5 rounded-xl border border-ink/15 p-4"
+      className="lib-evidence"
       aria-label="Saved passage search"
     >
       <button
         type="button"
-        className="underline"
+        className="lib-evidence-go"
         disabled={busy || !options.query.trim()}
         onClick={() => void run()}
       >
@@ -72,15 +72,19 @@ export function EvidenceSearch({
                 ? `${result.semanticError ?? "Meaning search is paused."} Showing exact-word matches.`
                 : "Showing exact-word matches; semantic indexing may still be pending."}
           </p>
-          <ol className="mt-4 space-y-4">
+          {result.coverage && result.coverage.indexedSources < result.coverage.sources && (
+            <p className="mt-1 text-sm text-ink-3">Meaning search covers {result.coverage.indexedSources} of {result.coverage.sources} eligible saved sources. Other sources can still match by wording.</p>
+          )}
+          <ol className="mt-4">
             {result.results.map((r) => (
               <li
+                className="lib-evidence-hit"
                 key={`${r.itemId}:${r.sourceRevision}:${r.address.blockId}:${r.address.start}`}
               >
-                <Link className="font-medium underline" href={r.readUrl}>
+                <Link className="lib-evidence-title" href={r.readUrl}>
                   {r.title}
                 </Link>
-                <p className="mt-1 whitespace-pre-wrap">{r.excerpt}</p>
+                <p className="lib-evidence-excerpt whitespace-pre-wrap">{r.excerpt}</p>
                 <p className="mt-1 text-xs text-ink-3">
                   {r.contentType} · revision {r.sourceRevision}
                   {r.address.page ? ` · page ${r.address.page}` : ""}

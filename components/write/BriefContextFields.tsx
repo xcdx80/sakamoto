@@ -12,6 +12,7 @@ export function BriefContextFields({ brief, onChange, busy = false }: {
   const full = (brief.agentContext?.length ?? 0) >= 8 && !pasted;
   const error = contextInputError(brief);
   return <>
+    <i className="write-step-n" aria-hidden="true">03</i>
     <label className="write-field write-field-wide"><span>Paste supporting material</span>
       <textarea rows={5} maxLength={12000} disabled={busy || full} value={pasted} onChange={event => onChange(withPastedContext(brief, event.target.value))} placeholder="Paste research, excerpts, or background for this post…" aria-invalid={Boolean(error)} />
       <small>Used as reference material, not as proof of your personal experience. Up to 12,000 characters here and 24,000 UTF-8 bytes across all context.</small>
@@ -22,6 +23,7 @@ export function BriefContextFields({ brief, onChange, busy = false }: {
       <p>Existing material and its source details are kept when you edit or generate another version.</p>
       {brief.agentContext!.map(item => <details key={item.id} className="write-decision-disclosure"><summary>{item.title}</summary><p>{item.kind.replaceAll("_", " ")} · {item.provenance.label}{item.provenance.author ? ` · ${item.provenance.author}` : ""}</p><blockquote style={{ whiteSpace: "pre-wrap" }}>{item.text}</blockquote>{sourceLink(item.provenance.url) && <a href={sourceLink(item.provenance.url)} target="_blank" rel="noreferrer">Open original source</a>}</details>)}
     </details>}
+    <i className="write-step-n" aria-hidden="true">04</i>
     <fieldset className="write-field-wide write-platform-choice" disabled={busy}><legend>Find additional sources</legend>
       <label><input type="checkbox" checked={policy.library} onChange={event => onChange(withSourcePolicy(brief, "library", event.target.checked))} /><span>Library</span><small>Search saved material and use pinned sources</small></label>
       <label><input type="checkbox" checked={policy.web} onChange={event => onChange(withSourcePolicy(brief, "web", event.target.checked))} /><span>Web search</span><small>Find supporting material on the web</small></label>

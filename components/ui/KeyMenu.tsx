@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Wallet } from "lucide-react";
+import { motion } from "motion/react";
+import { ease } from "@/components/motion/tokens";
 import { accountEpoch } from "@/lib/account-scope";
 import {
   budgetDollars as dollars,
@@ -61,9 +63,7 @@ export function KeyMenu() {
     >
       {() => (
         <div>
-          <p className="text-[13.5px] font-medium text-ink">
-            Processing budget
-          </p>
+          <p className="sk-eyebrow">Processing budget</p>
           {error && (
             <p role="status" className="mt-2 text-[12.5px] text-rubric-text">
               {error}
@@ -71,21 +71,33 @@ export function KeyMenu() {
           )}
           {budget && (
             <>
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-[12.5px]">
+              <p className="sk-display mt-3 text-[40px] text-ink">
+                {dollars(budget.remainingUsd)}
+                <span className="ml-2 font-sans text-[13px] font-normal tracking-normal text-ink-3">left</span>
+              </p>
+              <span aria-hidden className="mt-3 block h-[3px] overflow-hidden rounded-full bg-sunk">
+                <motion.span
+                  className="block h-full origin-left rounded-full bg-ink"
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: budget.capUsd > 0 ? Math.min(1, (budget.settledUsd + budget.reservedUsd) / budget.capUsd) : 0 }}
+                  transition={{ duration: 0.9, ease: ease.out }}
+                />
+              </span>
+              <dl className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 border-b border-rule pb-3 text-[12.5px] text-ink-2">
                 <dt>Used</dt>
-                <dd className="text-right tabular-nums">
+                <dd className="text-right font-mono text-[12px] tabular-nums text-ink">
                   {dollars(budget.settledUsd)}
                 </dd>
                 <dt>Reserved</dt>
-                <dd className="text-right tabular-nums">
+                <dd className="text-right font-mono text-[12px] tabular-nums text-ink">
                   {dollars(budget.reservedUsd)}
                 </dd>
                 <dt>Remaining</dt>
-                <dd className="text-right tabular-nums">
+                <dd className="text-right font-mono text-[12px] tabular-nums text-ink">
                   {dollars(budget.remainingUsd)}
                 </dd>
                 <dt>Cumulative limit</dt>
-                <dd className="text-right tabular-nums">
+                <dd className="text-right font-mono text-[12px] tabular-nums text-ink">
                   {dollars(budget.capUsd)}
                 </dd>
               </dl>
@@ -133,7 +145,7 @@ export function KeyMenu() {
           <button
             type="button"
             onClick={() => void refresh()}
-            className="mt-3 rounded-lg border border-rule px-3 py-1.5 text-[12px]"
+            className="sk-btn sk-btn-ghost mt-3 !min-h-[32px] !px-3.5 !text-[12.5px]"
           >
             Refresh usage
           </button>

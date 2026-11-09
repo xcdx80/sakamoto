@@ -18,6 +18,25 @@ before(() => {
   } }) });
 });
 
+test('Recent keeps fetched linked readings with their bookmark and preserves a manually saved shared URL',async()=>{
+ const a=await account();
+ const {shelveForUser,shelfOf}=await import('../lib/db');
+ const {readLibraryThreads}=await import('../lib/library-threads');
+ const {toLibraryBooks,filterBooks,sortBooks}=await import('../lib/library');
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const owner=a.owner;
+ await shelveForUser(owner,{id:'second-article',title:'Manual shared reading',words:10,origin:'url',sourceUrl:'https://public.example/second',addedAt:Date.parse('2026-10-18T00:00:00Z')},{id:'second-article',sourceUrl:'https://public.example/second',blocks:[]});
+ const post=(postId:string,extra:object={})=>({postId,url:`https://x.com/reader/status/${postId}`,text:'Bookmark '+postId,author:{name:'Reader',handle:'reader'},observedAt:'2026-10-17T00:00:00Z',...extra});
+ await importBookmarks(owner,{posts:[post('32001',{quotedPostId:'32002',links:['https://public.example/second'],contextPosts:[post('32002',{author:{name:'Quote author',handle:'quote'},links:['https://public.example/first']})]})]},'fixture');
+ await importBookmarks(owner,{posts:[],order:{postIds:['32001'],observedAt:'2026-10-17T00:00:00Z'}},'fixture');
+ await a.call('process_library',{limit:4});
+ await importBookmarks(owner,{posts:[post('32003')]},'fixture');
+ await importBookmarks(owner,{posts:[],order:{postIds:['32003','32001'],observedAt:'2026-10-19T00:00:00Z'}},'fixture');
+ const shelf=await shelfOf(owner),index=await readLibraryThreads(owner);
+ const books=sortBooks(filterBooks(toLibraryBooks({library:shelf.map(row=>({...row.data,id:row.id})) as any,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:index}),{}),'recent');
+ assert.deepEqual(books.filter(book=>!book.sample).map(book=>book.title),['Bookmark 32003','Manual shared reading','Bookmark 32001','First linked reading']);
+});
+
 test("connections deduplicate link aliases and exclude removed or obsolete sources without changing saved text revisions", async () => {
   const a = await account();
   const saved = await a.call("save_bookmarks", { posts: [{
@@ -81,7 +100,7 @@ async function account() {
     assert.equal(result.isError, undefined);
     return result.structuredContent;
   };
-  return { request, call };
+  return { request, call, owner };
 }
 
 test("library and focused reader relationships identify a post and all its linked reading without duplicates or cross-account access", async () => {

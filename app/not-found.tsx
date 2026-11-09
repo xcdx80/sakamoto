@@ -1,17 +1,15 @@
 import Link from "next/link";
-import { SakamotoMark } from "@/components/brand/Sakamoto";
+import { FallingPage } from "@/components/ui/FallingPage";
 
 export default function NotFound() {
   return (
-    <main className="relative z-[1] grid min-h-dvh place-items-center px-6 text-center">
-      <div className="rise">
-        <SakamotoMark className="mx-auto size-10 text-ink-4" />
-        <h1 className="mt-6 font-serif text-[clamp(2rem,5vw,3rem)] font-[380] leading-tight tracking-[-0.02em] text-ink">Nothing written here.</h1>
-        <p className="mt-3 text-[15px] text-ink-3">This page is blank in every edition.</p>
-        <Link href="/" className="mt-8 inline-flex h-11 items-center rounded-full bg-ink px-6 text-[14px] font-medium text-bg transition-transform active:scale-[0.97]">
-          Back to Sakamoto
-        </Link>
-      </div>
+    <main className="sk-desk relative z-[1] flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-16 text-center">
+      <FallingPage />
+      <h1 className="sk-display mt-14 text-[clamp(2.75rem,7vw,5rem)] text-ink">Nothing written here.</h1>
+      <p className="mt-4 text-[16px] text-ink-3">This page is blank in every edition.</p>
+      <Link href="/" className="sk-btn sk-btn-ink relative z-10 mt-9">
+        Back to Sakamoto
+      </Link>
     </main>
   );
 }

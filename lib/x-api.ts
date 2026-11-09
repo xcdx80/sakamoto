@@ -25,23 +25,36 @@ const real={
   if(typeof result.access_token!=='string'||!Number.isFinite(result.expires_in)||result.expires_in<=0)throw new Error('X did not return a valid access token.');
   return result;
  },
- async identity(token:string):Promise<{id:string;username:string}>{
-  const result=await json(await fetch('https://api.x.com/2/users/me',{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15_000),redirect:'error',cache:'no-store'}));
+ async identity(token:string):Promise<{id:string;username:string;name?:string;profile_image_url?:string}>{
+  const result=await json(await fetch('https://api.x.com/2/users/me?user.fields=name,username,profile_image_url',{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15_000),redirect:'error',cache:'no-store'}));
   if(!/^[1-9]\d*$/.test(result.data?.id)||!/^\w{1,15}$/.test(result.data?.username??''))throw new Error('X did not return the connected account.');return result.data;
  },
- async bookmarks(token:string,id:string,cursor:string|null):Promise<Record<string,any>>{
+ async bookmarks(token:string,id:string,cursor:string|null,pageSize:number):Promise<Record<string,any>>{
   const url=new URL(`https://api.x.com/2/users/${id}/bookmarks`);
-  // Follow Birdclaw's conservative 90-result paginated walk; default to the wire vocabulary used by the installed Birdclaw.
+  // Page size belongs to the durable sync run; keep the configured X wire vocabulary.
   const modern=process.env.X_API_VOCABULARY==='posts';
-  url.searchParams.set('max_results','90');
+  url.searchParams.set('max_results',String(pageSize));
   url.searchParams.set(modern?'post.fields':'tweet.fields',modern?'created_at,conversation_id,entities,referenced_posts,note_post,article':'created_at,conversation_id,entities,referenced_tweets,note_tweet,article');
   url.searchParams.set('expansions',modern?'author_id,referenced_posts':'author_id,referenced_tweets.id,referenced_tweets.id.author_id');url.searchParams.set('user.fields','id,name,username');
   if(cursor)url.searchParams.set('pagination_token',cursor);
   return json(await fetch(url,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(18_000),redirect:'error',cache:'no-store'}));
  },
+ async searchThreads(token:string,options:{query:string;startTime:string;endTime:string;cursor?:string;maxResults:number}):Promise<Record<string,any>>{
+  const url=threadUrl('/2/tweets/search/all');url.searchParams.set('query',options.query);url.searchParams.set('start_time',options.startTime);url.searchParams.set('end_time',options.endTime);url.searchParams.set('max_results',String(options.maxResults));if(options.cursor)url.searchParams.set('next_token',options.cursor);
+  return json(await fetch(url,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(18_000),redirect:'error',cache:'no-store'}));
+ },
+ async lookupPosts(token:string,ids:string[]):Promise<Record<string,any>>{
+  const url=threadUrl('/2/tweets');url.searchParams.set('ids',ids.join(','));
+  return json(await fetch(url,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(18_000),redirect:'error',cache:'no-store'}));
+ },
 };
+function threadUrl(path:string){
+ const modern=process.env.X_API_VOCABULARY==='posts',url=new URL(path,'https://api.x.com');
+ url.searchParams.set(modern?'post.fields':'tweet.fields',modern?'created_at,author_id,conversation_id,entities,referenced_posts,note_post,article':'created_at,author_id,conversation_id,entities,referenced_tweets,note_tweet,article');
+ url.searchParams.set('expansions',modern?'author_id,referenced_posts':'author_id,referenced_tweets.id,referenced_tweets.id.author_id');url.searchParams.set('user.fields','id,name,username');return url;
+}
 export type XTransport=typeof real;
 let transport:XTransport=real;
 /** Only the external provider transport is substitutable in deterministic HTTP tests. */
 export function configureXTransport(overrides:Partial<XTransport>={}){transport={...real,...overrides};}
-export const xApi: XTransport={exchange:p=>transport.exchange(p),identity:t=>transport.identity(t),bookmarks:(t,id,c)=>transport.bookmarks(t,id,c)};
+export const xApi: XTransport={exchange:p=>transport.exchange(p),identity:t=>transport.identity(t),bookmarks:(t,id,c,size)=>transport.bookmarks(t,id,c,size),searchThreads:(t,o)=>transport.searchThreads(t,o),lookupPosts:(t,ids)=>transport.lookupPosts(t,ids)};

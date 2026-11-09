@@ -91,7 +91,7 @@ function TurnBody({ t }: { t: Turn }) {
   if (t.streaming && !t.content)
     return (
       <>
-        {t.searching && <p className="mb-2 text-[12.5px] text-ink-3">Searching the web</p>}
+        {t.searching && <p className="sk-eyebrow mb-2.5 !text-[10.5px]">Searching the web</p>}
         <Writing />
       </>
     );
@@ -182,11 +182,11 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
             )}
           </p>
           {follow > 0 && (
-            <span className="shrink-0 text-[11px] tabular-nums text-ink-4" data-tip={`${follow} follow-up${follow > 1 ? "s" : ""}`}>
+            <span className="shrink-0 font-mono text-[10.5px] text-ink-4" data-tip={`${follow} follow-up${follow > 1 ? "s" : ""}`}>
               +{follow}
             </span>
           )}
-          {where && <span className="shrink-0 text-[11px] tabular-nums text-ink-4">{where}</span>}
+          {where && <span className="shrink-0 font-mono text-[10.5px] text-ink-4">{where}</span>}
         </div>
         {!mini && <Gist t={first} />}
       </article>
@@ -209,7 +209,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
       onMouseLeave={() => setUI({ hoverGloss: null })}
     >
       <header className="mb-2 flex h-5 items-center gap-2 text-[12px] leading-none">
-        <span className="font-semibold text-rubric-text">{label}</span>
+        <span className="gloss-label">{label}</span>
         {where && (
           <button
             type="button"
@@ -243,9 +243,9 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
       </header>
 
       {gloss.anchor && gloss.action !== "ask" && (
-        <p className="mb-2.5 line-clamp-2 border-l-2 border-[var(--rubric-line)] pl-2.5 font-serif text-[15px] leading-snug text-ink-3">{gloss.anchor.quote}</p>
+        <p className="mb-2.5 line-clamp-2 border-l border-[var(--rubric-line)] pl-2.5 font-serif text-[15px] italic leading-snug text-ink-3">{gloss.anchor.quote}</p>
       )}
-      {gloss.question && <p className="mb-1.5 text-[14px] font-medium leading-snug text-ink">{gloss.question}</p>}
+      {gloss.question && <p className="mb-1.5 font-serif text-[17px] leading-[1.28] tracking-[-0.008em] text-ink [font-variation-settings:'opsz'_24]">{gloss.question}</p>}
 
       <div className="gloss-body">
         <TurnBody t={first} />
@@ -267,7 +267,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
       {active && variant !== "list" && (
         <>
           <footer className="mt-3 flex items-center gap-0.5 text-ink-3">
-            <span className="min-w-0 flex-1 truncate text-[11.5px] tabular-nums text-ink-4">
+            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink-4">
               <Receipt t={last.role === "assistant" ? last : first} />
             </span>
             {busy ? (
@@ -295,7 +295,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
             )}
           </footer>
           <form
-            className="mt-2.5 flex items-center gap-1.5 rounded-[10px] border border-rule bg-bg px-2.5 transition-colors focus-within:border-rule-strong"
+            className="mt-2.5 flex items-center gap-1.5 rounded-full border border-rule bg-bg pl-3.5 pr-1.5 transition-colors focus-within:border-rule-strong"
             onSubmit={(e) => {
               e.preventDefault();
               submit();
@@ -322,7 +322,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
               aria-label="Send follow-up"
               data-tip="Send"
               data-tip-kbd={"\u21b5"}
-              className="grid size-6 place-items-center rounded-md bg-ink text-bg transition-opacity disabled:opacity-20"
+              className="grid size-6 place-items-center rounded-full bg-ink text-bg transition-[opacity,transform] active:scale-90 disabled:opacity-20"
             >
               <ArrowUp size={14} strokeWidth={2.4} />
             </button>

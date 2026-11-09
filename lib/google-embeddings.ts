@@ -15,7 +15,9 @@ export async function embedText(
   text: string,
   operationId: string,
   signal?: AbortSignal,
+  deadline?: number,
 ): Promise<number[]> {
+  if(signal?.aborted && deadline !== undefined) throw new PaidWorkError('dispatch_deferred','Indexing yielded before dispatch because its request window ended.');
   signal?.throwIfAborted();
   if (
     (process.env.GOOGLE_EMBEDDING_MODEL &&
@@ -49,7 +51,11 @@ export async function embedText(
   // Cancellation while durable authorization waited is known to precede dispatch.
   if (signal?.aborted) {
     await releaseRejectedPaidWork(reservation);
-    signal.throwIfAborted();
+    throw new PaidWorkError('dispatch_deferred','Indexing yielded before dispatch because its request window ended.');
+  }
+  if (deadline !== undefined && Date.now()+10_000 >= deadline) {
+    await releaseRejectedPaidWork(reservation);
+    throw new PaidWorkError('dispatch_deferred','Indexing yielded before dispatch because its request window is ending.');
   }
   try {
     const res = await fetch(
@@ -68,11 +74,12 @@ export async function embedText(
       await res.body?.cancel();
       if ([400, 401, 403, 404, 413, 415, 422].includes(res.status)) {
         await releaseRejectedPaidWork(reservation);
-        throw new RejectedEmbedding();
+        throw new RejectedEmbedding(res.status);
       }
       throw new PaidWorkError(
         "provider_error",
-        "Google embedding work is temporarily unavailable. Retry processing later.",
+        `Google embedding work failed (HTTP ${res.status}). Retry processing after checking provider limits.`,
+        res.status,
       );
     }
     // A bounded body prevents a malformed provider from retaining unbounded source/job memory.
@@ -96,7 +103,7 @@ export async function embedText(
     }
     const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const tokens = data.usageMetadata?.promptTokenCount;
-    if (tokens === undefined) await markPaidWorkUncertain(reservation);
+    if (tokens === undefined) await markPaidWorkUncertain(reservation,{code:"missing_usage",status:res.status});
     else
       await settlePaidWork(
         reservation,
@@ -121,10 +128,12 @@ export async function embedText(
     if (error instanceof RejectedEmbedding)
       throw new PaidWorkError(
         "provider_rejected",
-        "Google rejected this embedding request. Check credentials/model access before retrying.",
+        `Google rejected this embedding request (HTTP ${error.status}). Check credentials/model access before retrying.`,
       );
     await recordPaidFailure(reservation, error);
     throw error;
   }
 }
-class RejectedEmbedding extends Error {}
+class RejectedEmbedding extends Error {
+  constructor(public status: number) { super("Embedding request rejected."); }
+}

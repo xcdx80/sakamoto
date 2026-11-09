@@ -2,13 +2,14 @@
 import { db } from './db';
 import { allow } from './ratelimit';
 export type LibraryThreadGroup = { rootId: string; bookmarkIds?: string[]; memberIds: string[]; missingPostCount?: number; contextOnly?: boolean };
-export type LibraryThreadIndex = { groups: LibraryThreadGroup[]; postItemIds: string[] };
-type Node = { article_id: string; post_id: string; role: string; author: {id?:string;handle?:string}|null; parents: string[]; missing: string[] };
+export type LibraryThreadIndex = { groups: LibraryThreadGroup[]; postItemIds: string[]; linkedSaveTimes?: Record<string,number> };
+type Node = { article_id: string; post_id: string; role: string; saved_at:number|null; added_at:number|null; author: {id?:string;handle?:string}|null; parents: string[]; references:string[]; missing: string[] };
 const sameAuthor=(a:Node,b:Node)=>a.author&&b.author&&(a.author.id&&b.author.id?a.author.id===b.author.id:Boolean(a.author.handle&&b.author.handle&&a.author.handle.toLowerCase()===b.author.handle.toLowerCase()));
 const compare=(a:Node,b:Node)=>a.post_id.length-b.post_id.length||a.post_id.localeCompare(b.post_id);
 export async function readLibraryThreads(owner:string):Promise<LibraryThreadIndex>{
- const rows=await db().query(`select p.article_id,p.post_id,p.role,a.doc#>'{post,author}' as author,
+ const rows=await db().query(`select p.article_id,p.post_id,p.role,a.data->'savedAt' as saved_at,a.data->'addedAt' as added_at,a.doc#>'{post,author}' as author,
  coalesce((select jsonb_agg(r.target_post_id) from post_relationships r where r.user_id=p.user_id and r.post_id=p.post_id and r.kind='reply'),'[]') as parents,
+ coalesce((select jsonb_agg(r.target_post_id) from post_relationships r where r.user_id=p.user_id and r.post_id=p.post_id),'[]') as references,
  coalesce(p.thread_coverage->'missingPostIds','[]') as missing
  from post_sources p join articles a on a.user_id=p.user_id and a.id=p.article_id
  where p.user_id=$1 and not a.deleted order by length(p.post_id),p.post_id limit 50001`,[owner]) as Node[];
@@ -26,7 +27,31 @@ export async function readLibraryThreads(owner:string):Promise<LibraryThreadInde
   const missing=new Set(nodes.flatMap(n=>n.missing).filter(id=>!byId.has(id)));
   groups.push({contextOnly,rootId:root.article_id,bookmarkIds:nodes.filter(n=>n.role==='bookmark').sort(compare).map(n=>n.article_id),memberIds:nodes.sort(compare).map(n=>n.article_id),...(missing.size?{missingPostCount:missing.size}:{})});
  }
- return {groups,postItemIds:rows.map(n=>n.article_id)};
+ // Fetched readings inherit their discovery's save time, including links in
+ // author continuations and necessary parent/quote context. This does not make
+ // a quoted post itself a bookmark or change its own thread's position.
+ const recency=new Map<string,number>(),references=new Map<string,Set<string>>();
+ for(const [key,nodes] of components){
+  const bookmarks=nodes.filter(node=>node.role==='bookmark');
+  if(bookmarks.length)recency.set(key,Math.max(...bookmarks.map(node=>node.saved_at??node.added_at??0)));
+  references.set(key,new Set(nodes.flatMap(node=>node.references.filter(id=>byId.has(id)).map(find)).filter(id=>id!==key)));
+ }
+ const queue=[...recency.keys()];
+ for(let at=0;at<queue.length;at++)for(const target of references.get(queue[at])??[]){
+  const saved=recency.get(queue[at])!;
+  if(saved>(recency.get(target)??0)){recency.set(target,saved);queue.push(target);}
+ }
+ const links=rows.length?await db().query(`select distinct l.source_id,l.article_id from linked_sources l
+ join articles p on p.user_id=l.user_id and p.id=l.source_id and not p.deleted and p.source_revision=l.source_revision
+ join articles a on a.user_id=l.user_id and a.id=l.article_id and not a.deleted and a.data->>'addedVia'='Linked source'
+ where l.user_id=$1 limit 50001`,[owner]):[];
+ if(links.length>50000)throw new Error('This library has more links than the thread view can load.');
+ const linkedSaveTimes:Record<string,number>={},byItem=new Map(rows.map(node=>[node.article_id,node]));
+ for(const link of links){
+  const source=byItem.get(link.source_id),saved=source?recency.get(find(source.post_id))??0:0;
+  linkedSaveTimes[link.article_id]=Math.max(linkedSaveTimes[link.article_id]??0,saved);
+ }
+ return {groups,postItemIds:rows.map(n=>n.article_id),...(links.length?{linkedSaveTimes}:{})};
 }
 export class PostSearchError extends Error {
  constructor(message:string,readonly status:number,readonly retryAfter?:number){super(message);}

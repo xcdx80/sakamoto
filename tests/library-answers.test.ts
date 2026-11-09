@@ -383,7 +383,7 @@ test("removed, changed, or newly filtered-out sources are rechecked after genera
       });
     };
     const body = {
-      query: "Supernova alignment",
+      query: '"Supernova alignment"',
       tags: ["alignment"],
       semantic: false,
     };
@@ -398,6 +398,26 @@ test("removed, changed, or newly filtered-out sources are rechecked after genera
     ).json();
     assert.equal(again.status, "no_evidence", change);
   }
+});
+
+test("insufficient answers retain current discovered sources separately from supporting citations", async () => {
+  await save("discovery-only", "Expo announces native iOS components; this announcement contains no setup instructions.");
+  globalThis.fetch = async () => stream({
+    status: "insufficient", claims: [], gaps: ["No installation steps were saved."],
+  });
+  const result = await (await ask(request({ query: "Expo iOS components", semantic: false }))).json();
+  assert.equal(result.status, "insufficient");
+  assert.deepEqual(result.citations, []);
+  assert.ok(result.matches.some((source: any) => source.itemId === "discovery-only"));
+});
+
+test("an answer provider failure still returns fresh discovered reading", async () => {
+  await save("cedar-guide", "Cedar field methods compare canopy measurements across plots.");
+  globalThis.fetch = async () => new Response(null, { status: 503 });
+  const result = await (await ask(request({ query: "Cedar field methods", semantic: false }))).json();
+  assert.equal(result.status, "failed");
+  assert.deepEqual(result.citations, []);
+  assert.ok(result.matches.some((source: any) => source.itemId === "cedar-guide"));
 });
 
 test("an incomplete saved post exposes agent-reported coverage to the answer and its citations", async () => {

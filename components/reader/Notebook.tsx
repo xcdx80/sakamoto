@@ -1,10 +1,12 @@
 "use client";
 
 import { annotationMatchesSource, sameSourceRevision, revisionUrl } from "@/lib/source-revision";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Scribble } from "@/components/motion/Ink";
+import { spring } from "@/components/motion/tokens";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { Check, Copy, Download, Trash2, X } from "lucide-react";
-import { SakamotoMark } from "@/components/brand/Sakamoto";
 import { cmp } from "@/lib/anchor";
 import { undash } from "@/lib/article";
 import { stopGloss } from "@/lib/ask";
@@ -50,8 +52,6 @@ export function Notebook() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setUI]);
 
-  if (!open) return null;
-
   const both = glosses.length > 0 && highlights.length > 0;
   const shown = entries.filter((e) => !both || filter === "all" || (filter === "q" ? e.kind === "gloss" : e.kind === "hl"));
   const markdown = () =>
@@ -64,16 +64,28 @@ export function Notebook() {
     .join(", ");
 
   return (
-    <aside
+    <AnimatePresence>
+    {open && (
+    <motion.aside
+      key="notebook"
       aria-label="Notebook"
-      className="fixed bottom-2.5 left-2.5 right-2.5 top-[calc(var(--topbar-h)+6px)] z-[45] flex flex-col overflow-hidden rounded-[18px] border border-rule bg-raised shadow-pop sm:left-auto sm:w-[420px]"
-      style={{ animation: "sheet-in 0.38s var(--ease-out)" }}
+      className="nb-sheet fixed bottom-0 right-0 top-[var(--topbar-h)] z-[45] flex w-full flex-col overflow-hidden sm:w-[440px]"
+      style={{ transformOrigin: "right center", transformPerspective: 1600 }}
+      initial={{ x: 60, rotateY: -16, opacity: 0 }}
+      animate={{ x: 0, rotateY: 0, opacity: 1 }}
+      exit={{ x: 44, rotateY: -10, opacity: 0, transition: { duration: 0.22 } }}
+      transition={spring.soft}
     >
-      <header className={`shrink-0 border-b px-5 pb-3.5 pt-4 transition-colors duration-200 ${scrolled ? "border-rule" : "border-transparent"}`}>
+      <div aria-hidden className="nb-holes">
+        <i />
+        <i />
+        <i />
+      </div>
+      <header className={`relative shrink-0 border-b pb-3.5 pl-[62px] pr-5 pt-5 transition-colors duration-200 ${scrolled ? "border-rule" : "border-transparent"}`}>
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
-            <h2 className="font-serif text-[23px] font-[420] leading-none tracking-[-0.015em] text-ink [font-variation-settings:'opsz'_36]">Notebook</h2>
-            <p className="mt-1.5 text-[12.5px] leading-none text-ink-3">{summary || "Empty for now"}</p>
+            <h2 className="sk-display text-[30px] leading-none text-ink">Notebook</h2>
+            <p className="sk-eyebrow mt-2 !text-[10.5px] leading-none">{summary || "Empty for now"}</p>
           </div>
           <HeadBtn
             label={copied ? "Copied" : "Copy as Markdown"}
@@ -109,7 +121,7 @@ export function Notebook() {
         </div>
 
         {both && (
-          <div role="tablist" aria-label="Show" className="mt-4 grid grid-cols-3 rounded-[10px] bg-sunk p-[3px]">
+          <div role="tablist" aria-label="Show" className="mt-3.5 flex gap-5">
             {(
               [
                 ["all", "All", entries.length],
@@ -123,12 +135,11 @@ export function Notebook() {
                 role="tab"
                 aria-selected={filter === k}
                 onClick={() => setFilter(k)}
-                className={`flex h-7 items-center justify-center gap-1.5 rounded-[8px] text-[12.5px] font-medium transition-colors ${
-                  filter === k ? "bg-pill text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]" : "text-ink-3 hover:text-ink"
-                }`}
+                className="nb-tab"
               >
                 {label}
-                <span className="tabular-nums text-ink-4">{count}</span>
+                <span className="ml-1.5 font-mono text-[10.5px] text-ink-4">{count}</span>
+                {filter === k && <motion.span layoutId="nb-tab" aria-hidden className="absolute inset-x-0 bottom-0 h-px bg-ink" transition={spring.snap} />}
               </button>
             ))}
           </div>
@@ -136,27 +147,27 @@ export function Notebook() {
       </header>
 
       {!entries.length ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-10 pb-16 text-center">
-          <SakamotoMark className="size-11 text-ink-4" />
-          <p className="mt-5 font-serif text-[20px] leading-tight text-ink">Nothing here yet</p>
-          <p className="mt-2 max-w-[270px] text-[13.5px] leading-relaxed text-ink-3">
+        <div className="relative flex flex-1 flex-col items-center justify-center pb-20 pl-[62px] pr-10 text-center">
+          <p className="sk-display text-[28px] text-ink">Nothing here yet</p>
+          <Scribble kind="underline" className="mt-1 h-2.5 w-[9.5rem]" width={1.8} delay={0.3} inView={false} />
+          <p className="mt-4 max-w-[270px] text-[13.5px] leading-relaxed text-ink-3 text-pretty">
             Select a line and type a question, or highlight it. Every question and answer lands here, in reading order.
           </p>
         </div>
       ) : (
-        <div onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 2)} className="scroll-thin flex-1 overflow-y-auto px-3.5 pb-4 pt-0.5">
-          <ol className="space-y-2.5">
+        <div onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 2)} className="scroll-thin relative flex-1 overflow-y-auto pb-6">
+          <ol>
             {shown.map((e, i) => (
-              <li key={e.key} className="rise" style={{ animationDuration: "0.45s", animationDelay: `${Math.min(i, 8) * 35}ms` }}>
+              <li key={e.key} className="rise" style={{ animationDuration: "0.5s", animationDelay: `${120 + Math.min(i, 8) * 40}ms` }}>
                 {e.kind === "hl" ? <HighlightEntry h={e.h} /> : <GlossEntry g={e.g} />}
               </li>
             ))}
           </ol>
           <Show when="signed-out">
-            <p className="px-1 pb-1 pt-4 text-center text-[12.5px] leading-relaxed text-ink-3">
+            <p className="pb-1 pl-[62px] pr-8 pt-5 font-hand text-[22px] leading-[1.05] text-ink-3">
               These live in this browser only.{" "}
               <SignInButton mode="modal">
-                <button type="button" className="font-medium text-ink-2 underline decoration-rule-strong underline-offset-4 transition-colors hover:text-ink">
+                <button type="button" className="text-[var(--rubric-text)] underline decoration-[var(--rubric-line)] underline-offset-4">
                   Sign in
                 </button>
               </SignInButton>{" "}
@@ -165,7 +176,9 @@ export function Notebook() {
           </Show>
         </div>
       )}
-    </aside>
+    </motion.aside>
+    )}
+    </AnimatePresence>
   );
 }
 
@@ -195,9 +208,9 @@ function ago(t: number) {
 function Meta({ n, label, at }: { n?: number; label?: string; at: number }) {
   return (
     <span className="flex items-center gap-2 text-[11.5px] leading-none text-ink-3">
-      {n !== undefined && <span className="cite pointer-events-none !m-0 !text-[11px]">¶{n}</span>}
-      {label && <span className="font-medium text-ink-2">{label}</span>}
-      <span className="text-ink-4">{ago(at)}</span>
+      {n !== undefined && <span className="nb-entry-n">¶{n}</span>}
+      {label && <span className="nb-tag !text-ink-2">{label}</span>}
+      <span className="nb-tag !text-ink-4">{ago(at)}</span>
     </span>
   );
 }
@@ -220,15 +233,15 @@ function GlossEntry({ g }: { g: Gloss }) {
   };
 
   return (
-    <article className="group relative rounded-[14px] border border-rule bg-bg px-4 pb-4 pt-3.5 transition-colors hover:border-rule-strong">
-      <button type="button" onClick={go} className="block w-full pr-7 text-left">
+    <article className="nb-entry group">
+      <button type="button" onClick={go} className="block w-full text-left">
         <Meta
           n={n}
           label={archived ? (sameSourceRevision(g, ix.article) ? "Saved passage unavailable" : `Earlier source revision ${g.sourceRevision ?? 1}`) : label}
           at={g.createdAt}
         />
         {g.anchor && (
-          <span className="mt-2.5 line-clamp-2 border-l-2 border-[var(--rubric-line)] pl-3 font-serif text-[15px] leading-[1.45] text-ink-3 transition-colors group-hover:text-ink-2">
+          <span className="mt-2.5 line-clamp-2 font-serif text-[15.5px] italic leading-[1.42] text-ink-3 transition-colors group-hover:text-ink-2">
             {g.anchor.quote}
           </span>
         )}
@@ -237,16 +250,8 @@ function GlossEntry({ g }: { g: Gloss }) {
       <div className="mt-3.5 space-y-4">
         {pairsOf(g).map((p, i) => (
           <div key={i} className={i > 0 ? "border-t border-rule pt-3.5" : ""}>
-            <div className="grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-2">
-              <span aria-hidden className="text-[11.5px] font-semibold leading-none text-rubric-text">Q</span>
-              <p className="font-serif text-[16.5px] leading-[1.35] text-ink [font-variation-settings:'opsz'_24]">{p.q}</p>
-            </div>
-            <div className="mt-2 grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-2">
-              <span aria-hidden className="text-[11.5px] font-semibold leading-none text-ink-4">
-                A
-              </span>
-              <div className="min-w-0">{archived ? <p className="whitespace-pre-wrap text-sm">{p.a?.content}</p> : <AnswerBody t={p.a} />}</div>
-            </div>
+            <p className="font-serif text-[18px] leading-[1.28] tracking-[-0.008em] text-ink [font-variation-settings:'opsz'_24]">{p.q}</p>
+            <div className="mt-2 min-w-0">{archived ? <p className="whitespace-pre-wrap text-sm">{p.a?.content}</p> : <AnswerBody t={p.a} />}</div>
           </div>
         ))}
       </div>
@@ -259,7 +264,7 @@ function GlossEntry({ g }: { g: Gloss }) {
           stopGloss(g.id);
           removeGloss(g.articleId, g.id);
         }}
-        className="absolute right-2.5 top-2.5 grid size-7 place-items-center rounded-full text-ink-4 opacity-0 transition-opacity hover:bg-sunk hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        className="absolute right-2.5 top-3.5 grid size-7 place-items-center rounded-full text-ink-4 opacity-0 transition-opacity hover:bg-sunk hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
       >
         <Trash2 size={13} />
       </button>
@@ -309,7 +314,7 @@ function HighlightEntry({ h }: { h: Highlight }) {
   const removeHighlight = useStore((s) => s.removeHighlight);
   const setUI = useStore((s) => s.setUI);
   return (
-    <article className="group relative rounded-[14px] border border-rule bg-bg px-4 pb-3.5 pt-3.5 transition-colors hover:border-rule-strong">
+    <article className="nb-entry group">
       <button
         type="button"
         onClick={() => {
@@ -320,7 +325,7 @@ function HighlightEntry({ h }: { h: Highlight }) {
           if (covers()) setUI({ notebookOpen: false });
           jumpToBlock(h.anchor.start.b);
         }}
-        className="block w-full pr-7 text-left"
+        className="block w-full text-left"
       >
         <Meta
           n={archived ? undefined : ix.numbers.get(h.anchor.start.b)}
@@ -339,7 +344,7 @@ function HighlightEntry({ h }: { h: Highlight }) {
         aria-label="Remove highlight"
         data-tip="Remove"
         onClick={() => removeHighlight(ix.article.id, h.id)}
-        className="absolute right-2.5 top-2.5 grid size-7 place-items-center rounded-full text-ink-4 opacity-0 transition-opacity hover:bg-sunk hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        className="absolute right-2.5 top-3.5 grid size-7 place-items-center rounded-full text-ink-4 opacity-0 transition-opacity hover:bg-sunk hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
       >
         <X size={14} />
       </button>

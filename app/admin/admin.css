@@ -1,0 +1,59 @@
+.admin-dashboard { max-width: 1120px; margin: 0 auto; padding: 24px 32px 96px; color: var(--ink); }
+.admin-dashboard nav { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; color: var(--ink-2); }
+.admin-dashboard nav a { padding: 8px 0; transition: color .16s var(--ease-out); }
+.admin-dashboard nav a:hover { color: var(--ink); }
+.admin-dashboard header { margin: 56px 0 72px; }
+.admin-eyebrow { display: inline-block; padding: 4px 9px 3px; border: 1.5px solid var(--rubric-text); border-radius: 3px; color: var(--rubric-text); font: 500 11px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; transform: rotate(-1.5deg); }
+.admin-dashboard h1 { margin: 22px 0 14px; font: 340 clamp(44px, 7vw, 80px)/1 var(--font-serif); letter-spacing: -.035em; font-variation-settings: "opsz" 72; }
+.admin-dashboard h2 { margin-bottom: 8px; font: 380 26px/1.2 var(--font-serif); letter-spacing: -.018em; }
+.admin-dashboard header > p:last-child, .admin-caption, .admin-count p, .admin-panel > p { max-width: 62ch; color: var(--ink-3); font-size: 13.5px; line-height: 1.6; }
+.admin-dashboard header > p:last-child { font-size: 17px; }
+.admin-dashboard > section { margin-bottom: 72px; }
+.admin-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 40px; margin-top: 22px; border-bottom: 1px solid var(--rule); }
+.admin-count { padding: 18px 0 22px; border-top: 1px solid var(--rule); }
+.admin-count dt { font-size: 13.5px; font-weight: 500; line-height: 1.4; }
+.admin-count dd { margin: 14px 0 8px; font: 400 38px/1 var(--font-mono); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.admin-count p { font-size: 12.5px; }
+.admin-compact { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0 24px; }
+.admin-compact .admin-count dd { font-size: 26px; }
+.admin-columns { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 64px; }
+.admin-panel { padding: 0; }
+.admin-side { display: grid; gap: 56px; }
+.admin-panel table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 14px; }
+.admin-panel :is(th, td) { padding: 11px 0; border-bottom: 1px solid var(--rule); text-align: left; font-weight: 400; }
+.admin-panel thead th { color: var(--ink-3); font: 400 11px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.admin-panel :is(td, th:last-child) { text-align: right; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.admin-detail { margin-top: 20px; font-size: 14px; line-height: 1.5; }
+.admin-detail > div { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.admin-detail dt { color: var(--ink-2); }
+.admin-detail dd { text-align: right; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-sign-in { margin-top: 22px; }
+.admin-dashboard :is(a, button):focus-visible { outline: 2px solid var(--rubric-text); outline-offset: 5px; }
+.admin-failure-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 14px; }
+.admin-failures button { min-height: 38px; padding: 0 16px; border: 1px solid var(--rule-strong); border-radius: 999px; background: transparent; font-size: 13.5px; font-weight: 500; transition: border-color .16s var(--ease-out), background-color .16s var(--ease-out); }
+.admin-failures button:hover:not(:disabled) { border-color: var(--ink-3); background: var(--bg-raised); }
+.admin-failures button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-action-status { margin: 12px 0; font-size: 13px; }
+.admin-table-scroll { overflow-x: auto; }
+.admin-failures table { min-width: 480px; }
+.admin-failures :is(th, td) { vertical-align: top; padding: 14px 10px 14px 0; }
+.admin-failures :is(th:last-child, td:last-child) { text-align: left; font-family: var(--font-sans); }
+.admin-failures td:nth-child(2) { text-align: right; white-space: nowrap; font-family: var(--font-mono); }
+.admin-failures th:first-child { width: 55%; }
+.admin-task-kind { display: block; margin-bottom: 5px; color: var(--ink-3); font: 400 11px/1.4 var(--font-mono); }
+.admin-failure-reason { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
+.admin-failures summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+.admin-failures form { display: grid; min-width: 190px; gap: 8px; padding-top: 12px; font-size: 13px; }
+.admin-failures textarea { width: 100%; min-height: 80px; padding: 10px 12px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--bg-raised); color: var(--ink); }
+.admin-lost { margin-top: 24px; }
+.admin-lost p { margin-top: 12px; }
+@media (max-width: 900px) { .admin-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .admin-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+  .admin-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-columns { grid-template-columns: minmax(0, 1fr); gap: 48px; }
+  .admin-dashboard { padding: 16px 20px 64px; }
+  .admin-dashboard header { margin: 36px 0 48px; }
+  .admin-count dd { font-size: 30px; }
+}
+@media (max-width: 380px) { .admin-counts { grid-template-columns: minmax(0, 1fr); } }

@@ -5,6 +5,9 @@ import { wordCount, type Article } from "./article";
 import { db } from "./db";
 import { threadSourceSummaries } from "./thread-storage";
 import { beginDelivery, finishDelivery } from "./bookmark-deliveries";
+import { ThreadSourceChanged } from './birdclaw-threads';
+import { bookmarkOrderOf } from './bookmark-order-input';
+import { repairBookmarkOrder } from './bookmark-order';
 
 export type PostSource = {
   postId: string;
@@ -85,15 +88,28 @@ function sourceOf(raw: unknown, via: string, context = false): PostSource {
 export type BookmarkReceipt = { title?: string; words?: number; completeness?: PostSource["completeness"]; receiptId: string; postId?: string; itemId?: string; sourceRevision?: number; status: "saved" | "incomplete" | "duplicate" | "removed" | "rejected"; reason?: string; processing?: ProcessingState; contextResults?: BookmarkReceipt[]; threadResults?: BookmarkReceipt[] };
 const rejected = (raw: unknown, error: unknown): BookmarkReceipt => ({ receiptId: "input:" + createHash("sha256").update(JSON.stringify(raw)).digest("hex").slice(0, 24), status: "rejected", reason: error instanceof Error ? error.message : "Unable to save this post; retry it separately." });
 
-async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context"): Promise<BookmarkReceipt> {
+type ThreadWriteScope={runId:string;leaseToken:string;anchors:{id:string;revision:number}[]};
+async function persistSource(owner: string, source: PostSource, role: "bookmark" | "context",threadScope?:ThreadWriteScope): Promise<BookmarkReceipt> {
   // A post has no inferred document title: every supplied character belongs to its body.
   const blocks: Article["blocks"] = source.fullText.split(/\n\s*\n/).filter((text) => text.trim()).map((text, i) => ({ id: `b${i + 1}`, type: "p", runs: [{ text }] }));
   const a: Article = { origin: "paste", blocks, id: crypto.randomUUID(), title: source.title ?? Array.from(source.fullText.trim()).slice(0, 100).join(""), author: source.author.name, source: "X", sourceUrl: source.url, published: source.publishedAt, contentType: "post", post: source };
   const processing: ProcessingState = { classification: "pending", indexing: "pending" };
   const item = { id: a.id, title: a.title, author: a.author, source: "X", sourceUrl: a.sourceUrl, origin: "paste", contentType: "post", words: wordCount(a), addedAt: Date.now(), addedBy: "agent", addedVia: source.provenance.via, processing, postId: source.postId };
-  const rows = await db().query("select intake_bookmark($1,$2,$3,$4::jsonb,$5::jsonb,$6) as receipt", [owner, source.postId, source.url, JSON.stringify(item), JSON.stringify(a), role]);
+  const rows = threadScope
+    ? await db().query('select intake_x_thread_context($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8::jsonb) as receipt',[owner,source.postId,source.url,JSON.stringify(item),JSON.stringify(a),threadScope.runId,threadScope.leaseToken,JSON.stringify(threadScope.anchors)])
+    : await db().query("select intake_bookmark($1,$2,$3,$4::jsonb,$5::jsonb,$6) as receipt", [owner, source.postId, source.url, JSON.stringify(item), JSON.stringify(a), role]);
+  if(rows[0].receipt.status==='stale')throw new ThreadSourceChanged('Source or thread lease changed during expansion.');
   return { receiptId: "x:" + source.postId, postId: source.postId, ...rows[0].receipt };
 }
+
+/** Server-only adapter for sources selected by the rooted Birdclaw thread collector.
+ * No HTTP/MCP operation accepts this as an unvalidated context-writing endpoint.
+ */
+export async function persistCollectedThreadContext(owner:string,raw:unknown,scope:ThreadWriteScope) {
+  return persistSource(owner,sourceOf(raw,'X API thread'),'context',scope);
+}
+/** The thread adapter validates a received wire page against this receiving contract before caching it. */
+export function validateCollectedThreadContext(raw:unknown):void { sourceOf(raw,'X API thread'); }
 
 /** Only context-role descendants connected to the actual saved bookmark author are admitted.
  * Saved ancestry is bounded by the reader's 100-post depth and 1000 relationship observations.
@@ -131,8 +147,10 @@ async function saveThreadPosts(owner:string, root:PostSource, raw:unknown[], via
 }
 
 export async function importBookmarks(owner: string, args: Record<string, unknown>, via: string) {
-  only(args, ["posts", "delivery"]);
-  if (!Array.isArray(args.posts) || (!args.posts.length && args.delivery === undefined) || args.posts.length > MAX_POSTS) throw new Error("Send 1 to 25 posts per batch. Resume with the next batch after receiving receipts.");
+  only(args, ["posts", "delivery", "order"]);
+  const order=args.order===undefined?undefined:bookmarkOrderOf(args.order);
+  if(order && (args.delivery!==undefined || !Array.isArray(args.posts) || args.posts.length))throw new Error('Send order separately after the source batches are acknowledged.');
+  if (!Array.isArray(args.posts) || (!args.posts.length && args.delivery === undefined && !order) || args.posts.length > MAX_POSTS) throw new Error("Send 1 to 25 posts per batch. Resume with the next batch after receiving receipts.");
   if (Buffer.byteLength(JSON.stringify(args), "utf8") > MAX_BATCH_BYTES) throw new Error("Batch exceeds 2 MB; send smaller batches and resume after the returned receipts.");
   const delivery = await beginDelivery(owner, args.posts, via, args.delivery);
   if ("replay" in delivery) return delivery.replay;
@@ -171,6 +189,7 @@ export async function importBookmarks(owner: string, args: Record<string, unknow
       results.push(receipt);
     } catch (error) { results.push(rejected(raw, error)); }
   }
+  if(order)await repairBookmarkOrder(owner,order);
   return finishDelivery(owner, delivery, { results, deliveryComplete: false, resume: "Keep each receipt, retry rejected transient failures, and send the next bounded batch. This receipt confirms only the supplied posts, not your complete X bookmark history." });
 }
 

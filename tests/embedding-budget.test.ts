@@ -50,6 +50,7 @@ test("unknown Google usage retains its reservation, caps paid queries and leaves
 });
 test("credible over-bound Google usage durably halts all paid work while preserving saved text and lexical retrieval", async () => {
   process.env.SAKAMOTO_BUDGET_USD = "10";
+  await budgetStatus("budget-search");
   let calls = 0;
   globalThis.fetch = async () => {
     calls++;

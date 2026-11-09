@@ -9,6 +9,7 @@ import {
   recordPaidFailure,
   releaseRejectedPaidWork,
   PaidWorkError,
+  isProcessingBlock,
   type PaidReservation,
 } from "./paid-work";
 import type { ProcessingContext, ProcessingOutcome } from "./processing";
@@ -41,11 +42,11 @@ export async function classifySavedSource({
       state = state.slice(0, Math.floor(state.length * 0.9));
     const body = jevRequest(state),
       serializedInput = JSON.stringify(body);
-    signal.throwIfAborted();
+    if(signal.aborted) throw new PaidWorkError('dispatch_deferred','Categorization yielded before dispatch because its request window ended.');
     reservation = await reservePaidWork({
       owner,
       operationId: `classify:${job.id}`,
-      attemptId: `${job.attempts}`,
+      attemptId: crypto.randomUUID(),
       model: "jev-latest",
       serializedInput,
       maxOutputTokens: 32768,
@@ -54,7 +55,7 @@ export async function classifySavedSource({
     if (signal.aborted) {
       await releaseRejectedPaidWork(reservation);
       reservation = undefined;
-      throw signal.reason;
+      throw new PaidWorkError('dispatch_deferred','Categorization yielded before dispatch because its request window ended.');
     }
     const { data, cost } = await decideCategory(body, signal, (id) =>
       recordPaidResponse(reservation!, id ?? ""),
@@ -81,6 +82,9 @@ export async function classifySavedSource({
       e instanceof PaidWorkError
         ? e.message
         : "Classification could not complete; source remains saved.";
+    if (isProcessingBlock(e) || e instanceof PaidWorkError && e.code==='dispatch_deferred') return {state:"blocked", error:message, checkpoint:{processingBlock:{code:e.code,operationId:e.operationId}}};
+    if (e instanceof PaidWorkError && [429, 529].includes(e.status))
+      return { state: "retryable", error: message };
     return {
       state: "complete",
       error: message,
@@ -116,6 +120,7 @@ export async function scheduleClassification(
  select user_id,id,source_revision,'classification',$3 from articles where user_id=$1 and id=$2 and not deleted and doc is not null
  on conflict(user_id,source_id,source_revision,kind,target) do update set
  state=case when $4 and processing_jobs.state<>'running' then 'pending' else processing_jobs.state end,
+ checkpoint=case when $4 and processing_jobs.state<>'running' then processing_jobs.checkpoint-'processingBlock' else processing_jobs.checkpoint end,
  max_attempts=case when $4 and processing_jobs.state<>'running' then processing_jobs.attempts+4 else processing_jobs.max_attempts end,
  next_attempt_at=case when $4 and processing_jobs.state<>'running' then case when processing_jobs.error like 'TypeSafe throttled%' then greatest(clock_timestamp(),processing_jobs.updated_at+interval '1 minute') else clock_timestamp() end else processing_jobs.next_attempt_at end,
  error=case when $4 and processing_jobs.state<>'running' then null else processing_jobs.error end returning id::text,state`,

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, NotebookPen } from "lucide-react";
+import Link from "next/link";
+import { Keyboard, NotebookPen, PenLine } from "lucide-react";
 import { Account } from "@/components/account/Account";
 import { Lockup } from "@/components/brand/Sakamoto";
 import { KeyMenu } from "@/components/ui/KeyMenu";
@@ -81,9 +82,9 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-40 h-[var(--topbar-h)] transition-[transform,background-color,border-color] duration-300 ease-[var(--ease-out)] ${
+      className={`fixed inset-x-0 top-0 z-40 h-[var(--topbar-h)] transition-[transform,background-color,border-color] duration-500 ease-[var(--ease-out)] ${
         tucked ? "-translate-y-full" : ""
-      } ${scrolled ? "border-b border-rule bg-bg/85 backdrop-blur-md" : "border-b border-transparent"}`}
+      } ${scrolled ? "border-b border-rule bg-bg" : "border-b border-transparent"}`}
     >
       <div className="mx-auto flex h-full max-w-[1440px] items-center gap-4 px-4 sm:px-6">
         <Lockup />
@@ -94,7 +95,7 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
             <button
               type="button"
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              className="min-w-0 truncate rounded-full px-2.5 py-1.5 font-serif text-[16px] leading-none text-ink transition-colors hover:bg-sunk"
+              className="min-w-0 truncate rounded-full px-2.5 py-1.5 font-serif text-[15.5px] leading-none tracking-[-0.01em] text-ink-2 transition-colors hover:bg-sunk hover:text-ink"
               data-tip="Back to the top"
             >
               {ix.article.title}
@@ -118,10 +119,10 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
         <nav aria-label="Reader tools" className="flex items-center gap-1">
           <span className="hidden sm:block">
             <button type="button" className={barBtn} onClick={() => setUI({ shortcutsOpen: true })} aria-label="Keyboard shortcuts" data-tip="Shortcuts" data-tip-kbd="?">
-              <Keyboard size={17} strokeWidth={1.8} />
+              <Keyboard size={17} strokeWidth={1.6} />
             </button>
           </span>
-          <ListenButton from={listenFrom} />
+          <span className="hidden sm:block"><ListenButton from={listenFrom} /></span>
           <SettingsMenu />
           <KeyMenu />
           <button
@@ -133,16 +134,17 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
             data-tip={notebookOpen ? "Close notebook" : "Your notes and highlights"}
             data-tip-kbd="N"
           >
-            <NotebookPen size={16} strokeWidth={1.8} />
+            <NotebookPen size={16} strokeWidth={1.6} />
             <span className="hidden sm:inline">Notebook</span>
             {count > 0 && (
-              <span className="min-w-[18px] rounded-full bg-[var(--rubric)] px-1.5 text-center text-[11px] font-semibold leading-[18px] tabular-nums text-white">{count}</span>
+              <span className="min-w-[18px] rounded-full bg-[var(--rubric)] px-1.5 text-center font-mono text-[10.5px] leading-[18px] text-[var(--bg-raised)]">{count}</span>
             )}
           </button>
+          <Link href={`/write?source=${encodeURIComponent(ix.article.id)}`} className={`${barBtn} max-sm:!hidden`} aria-label="Write from this source" title="Write from this source"><PenLine size={16} strokeWidth={1.6} aria-hidden /></Link>
           <Account />
         </nav>
       </div>
-      <span ref={barRef} aria-hidden className="absolute inset-x-0 -bottom-px h-[2px] origin-left bg-[var(--rubric)] opacity-80" style={{ transform: "scaleX(0)" }} />
+      <span ref={barRef} aria-hidden className="absolute inset-x-0 -bottom-px h-px origin-left bg-[var(--rubric)]" style={{ transform: "scaleX(0)" }} />
     </header>
   );
 }

@@ -21,6 +21,9 @@ _Avoid_: Article, when referring to an X post
 **Bookmark**:
 A reader's saved reference to a post on X. The bookmark and the post it refers to are distinct.
 
+**Bookmark order**:
+The newest-saved-first sequence of a reader's bookmarks on X, independent of when the posts were published or imported.
+
 **Author thread**:
 A connected sequence of posts by the same author, linked through replies.
 _Avoid_: Conversation, which can include replies by other people
@@ -46,8 +49,15 @@ A portion of a saved source, with its original location and source revision, tha
 **Evidence search**:
 Finding supporting saved passages by meaning or exact wording within the reader's eligible library.
 
+**Discovered source**:
+A saved source relevant to a reader's question, whether or not it supplies enough evidence for a particular answer. Discovery alone does not make the source support a claim.
+
+**Lost task**:
+An unsuccessful processing task the reader has chosen to stop retrying. Its reason is retained, and any already saved source remains in the library.
+
 **Production**:
 An original content idea being developed for publication. Its X and LinkedIn adaptations belong to the same production.
+The writing interface calls this a **post**; production remains the internal term for the shared idea and workflow.
 
 **Writing brief**:
 The intended audience, purpose, perspective and supporting material for a production.

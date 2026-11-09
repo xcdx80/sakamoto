@@ -4,8 +4,8 @@ import { receivedBookmarkDeliveries,type DeliveryStatus } from '@/lib/bookmark-d
 export function BookmarkDelivery({owner,version}:{owner:string;version:number}) {
  const [status,setStatus]=useState<DeliveryStatus|null>(null),[error,setError]=useState('');
  useEffect(()=>{let active=true; const refresh=()=>receivedBookmarkDeliveries().then(r=>{if(active){setStatus(r);setError('');}},e=>{if(active)setError(e.message);});void refresh();const timer=setInterval(refresh,15000);return()=>{active=false;clearInterval(timer);};},[owner,version]);
- return <section aria-label="Bookmark delivery and backfill" className="my-4 rounded-xl border border-rule p-4 text-sm">
-  <strong>X bookmark delivery</strong>
+ return <section aria-label="Bookmark delivery and backfill" className="sync-section">
+  <strong className="sk-eyebrow">X bookmark delivery</strong>
   {error&&<p role="alert">{error}</p>}
   <p className="mt-1">Last posts delivered: {status?.lastDeliveryAt?<time dateTime={status.lastDeliveryAt}>{new Date(status.lastDeliveryAt).toLocaleString()}</time>:'none recorded'}. Last agent check: {status?.lastContactAt?new Date(status.lastContactAt).toLocaleString():'none recorded'}.</p>
   {status&&<>

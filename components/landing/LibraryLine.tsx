@@ -63,12 +63,10 @@ export function LibraryLine({ saved }: { saved: Saved | null }) {
 
   if (saved)
     return (
-      <p className="lib-line" key={saved.id}>
-        <span className="lib-line-note">
-          <Check size={14} className="shrink-0 text-good" />
-          <span className="min-w-0 truncate">
-            Saved <span className="text-ink">{tidyTitle(saved.title)}</span> to your library
-          </span>
+      <p className="home-receipt" key={saved.id}>
+        <span className="home-receipt-stamp" aria-hidden><Check size={14} strokeWidth={2.4} /></span>
+        <span className="min-w-0 truncate">
+          Saved <span className="text-ink">{tidyTitle(saved.title)}</span> to your library
         </span>
         <Link href="/library" className="lib-line-go">
           Open <ArrowRight size={13} />

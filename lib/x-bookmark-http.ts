@@ -2,6 +2,7 @@
 import { boundedJson } from './request-json';
 import { beginXConnection, finishXConnection, disconnectX, xConnectionStatus, callbackUrl } from './x-credentials';
 import { startXSync, resumeXSync, stepXSync, xSyncStatus } from './x-bookmark-sync';
+import { startXThreads,resumeXThreads,stepXThreads,xThreadStatus } from './x-thread-sync';
 const headers={'Cache-Control':'private, no-store'};
 export async function xConnectionHttp(req:Request,owner:string|null){
  if(!owner)return Response.json({error:'Sign in to manage your X connection.'},{status:401,headers});
@@ -22,8 +23,13 @@ export async function xConnectionHttp(req:Request,owner:string|null){
 export async function xSyncHttp(req:Request,owner:string|null){
  if(!owner)return Response.json({error:'Sign in to sync bookmarks.'},{status:401,headers});
  try{
-  if(req.method==='GET')return Response.json(await xSyncStatus(owner),{headers});
+  if(req.method==='GET')return Response.json(await (new URL(req.url).searchParams.get('kind')==='threads'?xThreadStatus(owner):xSyncStatus(owner)),{headers});
   const body=await boundedJson(req,4096);
+  if(typeof body.action==='string'&&body.action.startsWith('threads:')){
+   if(Object.keys(body).some(k=>!['action','maxRequests','afterRunId'].includes(k)))throw new Error('Unsupported thread option.');
+   const result=body.action==='threads:start'?await startXThreads(owner,body.maxRequests,body.afterRunId):body.action==='threads:resume'?await resumeXThreads(owner,body.maxRequests):body.action==='threads:step'?await stepXThreads(owner):null;
+   if(!result)throw new Error('Choose a thread start, resume or step.');return Response.json(result,{headers});
+  }
   if(Object.keys(body).some(k=>!['action','maxPages'].includes(k)))throw new Error('Unsupported sync option.');
   const result=body.action==='restart'?await startXSync(owner,body.maxPages,true):body.action==='start'?await startXSync(owner,body.maxPages):body.action==='resume'?await resumeXSync(owner,body.maxPages):body.action==='step'?await stepXSync(owner):null;
   if(!result)throw new Error('Choose start, resume or step.');return Response.json(result,{headers});

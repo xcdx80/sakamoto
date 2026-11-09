@@ -4,7 +4,10 @@ import { scopedKey } from "@/lib/account-scope";
 
 import { useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FileText, LayoutGrid, List, Search, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { LayoutGrid, List, Search, X } from "lucide-react";
+import { Words } from "@/components/motion/Reveal";
+import { spring } from "@/components/motion/tokens";
 import { TopBar } from "@/components/ui/TopBar";
 import type { ContentType } from "@/lib/article";
 import { forgetCover } from "@/lib/covers";
@@ -17,9 +20,11 @@ import { AddButton, AddPanel, type AddTab } from "./AddPanel";
 import { Arrivals, type Wave } from "./Arrivals";
 import { ContentCards, ContentDetails, type LibraryView } from "./ContentCards";
 import { XSyncStatus } from "./XSyncStatus";
+import { LibraryProcessing } from "./LibraryProcessing";
 import { EvidenceSearch } from "./EvidenceSearch";
 import { LibraryAnswer } from "./LibraryAnswer";
 import { Starter } from "./Starter";
+import { EmptyDesk } from "./EmptyDesk";
 import { useLibraryThreads } from "@/lib/library-threads-client";
 import { useLibraryRelations } from "@/lib/library-relations-client";
 
@@ -176,49 +181,48 @@ export function Library() {
       <div className="lib-top" data-scrolled={scrolled || undefined}>
         <TopBar here="library" onLibrary={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
       </div>
-      <main className="mx-auto w-full max-w-[1180px] px-4 pb-32 sm:px-8">
-        {syncNotice && <p role="status" className="mx-auto max-w-6xl px-6 py-4 text-sm">{syncNotice} <button className="underline" onClick={()=>useStore.getState().setUI({syncNotice:null})}>Dismiss</button></p>}
+      <main className="lib-room">
+        {syncNotice && <p role="status" className="lib-slip">{syncNotice} <button onClick={()=>useStore.getState().setUI({syncNotice:null})}>Dismiss</button></p>}
         {syncError && (
-          <p role="alert" className="mx-auto max-w-6xl px-6 py-4 text-sm">
+          <p role="alert" className="lib-slip is-alert">
             {syncError}{" "}
-            <button onClick={retrySync} className="underline">
+            <button onClick={retrySync}>
               Retry sync
             </button>
           </p>
         )}
         {account && anonymousCount > 0 && !adopted && (
-          <aside className="mx-auto max-w-6xl px-6 py-4" aria-label="Anonymous library">
+          <aside className="lib-slip is-offer" aria-label="Anonymous library">
             <p>{anonymousCount} items remain saved on this device outside your account.</p>
-            <button className="underline" onClick={() => void adopt().then(() => setAdopted(true)).catch(() => {})}>
+            <button onClick={() => void adopt().then(() => setAdopted(true)).catch(() => {})}>
               Copy anonymous library into this account
             </button>
-            <button className="ml-4 underline" onClick={() => setAdopted(true)}>
+            <button onClick={() => setAdopted(true)}>
               Keep separate
             </button>
           </aside>
         )}
 
         <section className="lib-hero">
+          <p className="sk-eyebrow">A place for what stays with you</p>
           <div className="lib-hero-row">
-            <div className="min-w-0">
-              <p className="content-eyebrow">A place for what stays with you</p>
-              <h1 className="lib-title">{user?.firstName ? `${user.firstName}'s library` : "Your library"}</h1>
-              <p className="lib-stats">
-                {ready ? <>
-                  <span><b>{stats.count}</b> {stats.count === 1 ? "item" : "items"}</span>
-                  {stats.topics > 0 && <span><b>{stats.topics}</b> {stats.topics === 1 ? "topic" : "topics"}</span>}
-                  <span><b>{stats.hours}</b> {stats.hours === 1 ? "hour" : "hours"} of reading</span>
-                  {stats.reading > 0 && <span><b>{stats.reading}</b> in progress</span>}
-                  {stats.read > 0 && <span><b>{stats.read}</b> read</span>}
-                </> : <span role="status">Loading your library…</span>}
-              </p>
-            </div>
-            <div className="library-hero-actions">
+            <h1 className="lib-title sk-display"><Words text={user?.firstName ? `${user.firstName}'s library` : "Your library"} delay={0.1} /></h1>
+            <motion.div className="library-hero-actions" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring.soft, delay: 0.35 }}>
               <AddButton onClick={() => setAdding("links")} />
               {account && <Link href="/library/import" className="library-sync-trigger">Import bookmarks</Link>}
               {account && <XSyncStatus key={account} owner={account} version={library.length} />}
-            </div>
+            </motion.div>
           </div>
+          <p className="lib-stats">
+            {ready ? <>
+              <span><b>{stats.count}</b> {stats.count === 1 ? "item" : "items"}</span>
+              {stats.topics > 0 && <span><b>{stats.topics}</b> {stats.topics === 1 ? "topic" : "topics"}</span>}
+              <span><b>{stats.hours}</b> {stats.hours === 1 ? "hour" : "hours"} of reading</span>
+              {stats.reading > 0 && <span><b>{stats.reading}</b> in progress</span>}
+              {stats.read > 0 && <span><b>{stats.read}</b> read</span>}
+            </> : <span role="status">Loading your library…</span>}
+          </p>
+          {account && <LibraryProcessing key={account} owner={account} />}
           {ready && fromAgent.length > 0 && (
             <button type="button" className="lib-news" onClick={() => { clearFilters(); setStatus("agent"); }}>
               {fromAgent.length} new from your agent since you last looked
@@ -229,7 +233,7 @@ export function Library() {
         <section className="content-tools" aria-label="Library controls">
           <div className="content-toolbar">
             <div className="lib-search content-search">
-              <Search size={16} className="shrink-0 text-ink-3" aria-hidden />
+              <Search size={19} strokeWidth={1.5} className="shrink-0 text-ink-3" aria-hidden />
               <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search titles, authors and all thread posts…" aria-label="Search the library" />
               {q ? <button type="button" aria-label="Clear search" onClick={() => setQ("")}><X size={15} /></button> : <kbd className="max-sm:hidden">/</kbd>}
             </div>
@@ -240,16 +244,16 @@ export function Library() {
               </select>
             </label>
             <div className="content-view-switch" role="group" aria-label="Library view">
-              <button type="button" aria-pressed={view === "grid"} onClick={() => setView("grid")}><LayoutGrid size={16} aria-hidden /> Grid</button>
-              <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}><List size={17} aria-hidden /> List</button>
+              <ViewButton on={view === "grid"} onClick={() => setView("grid")}><LayoutGrid size={15} strokeWidth={1.6} aria-hidden /> Grid</ViewButton>
+              <ViewButton on={view === "list"} onClick={() => setView("list")}><List size={16} strokeWidth={1.6} aria-hidden /> List</ViewButton>
             </div>
           </div>
           <div className="content-filter-row">
             <div className="content-types" role="group" aria-label="Content type">
-              <Chip on={!contentType} onClick={() => setContentType(null)}>All types</Chip>
-              <Chip on={contentType === "article"} onClick={() => setContentType(contentType === "article" ? null : "article")}>Articles</Chip>
-              <Chip on={contentType === "document"} onClick={() => setContentType(contentType === "document" ? null : "document")}>Documents</Chip>
-              <Chip on={contentType === "post"} onClick={() => setContentType(contentType === "post" ? null : "post")}>Posts</Chip>
+              <Chip group="type" on={!contentType} onClick={() => setContentType(null)}>All types</Chip>
+              <Chip group="type" on={contentType === "article"} onClick={() => setContentType(contentType === "article" ? null : "article")}>Articles</Chip>
+              <Chip group="type" on={contentType === "document"} onClick={() => setContentType(contentType === "document" ? null : "document")}>Documents</Chip>
+              <Chip group="type" on={contentType === "post"} onClick={() => setContentType(contentType === "post" ? null : "post")}>Posts</Chip>
             </div>
             <div className="content-filter-selects">
               <label className="content-select">
@@ -269,7 +273,7 @@ export function Library() {
             </div>
           </div>
           <div className="content-status-row" role="group" aria-label="Reading filters">
-            {TAGS.map((t) => <Chip key={t.key} on={status === t.key} onClick={() => setStatus(status === t.key ? null : t.key)}>{t.label}</Chip>)}
+            {TAGS.map((t) => <Chip key={t.key} group="status" on={status === t.key} onClick={() => setStatus(status === t.key ? null : t.key)}>{t.label}</Chip>)}
           </div>
         </section>
 
@@ -282,17 +286,18 @@ export function Library() {
           {filtered && <button type="button" onClick={clearFilters}>Clear filters <X size={13} aria-hidden /></button>}
         </div>
         {hydrated ? <>
-          {connections.error && <p role="alert" className="mb-3 text-sm text-ink-3">{connections.error} <button className="underline" onClick={connections.refresh}>Retry connections</button></p>}
-          {threads.error && <p role="alert">{threads.error} <button onClick={threads.refresh}>Retry threads</button></p>}
-          {threads.searchError && <p role="alert">{threads.searchError} Showing metadata matches. <button onClick={threads.refresh}>Retry search</button></p>}
-          {threads.searching && <p role="status">Searching all saved post text…</p>}
-          {!ready ? <p role="status">{threads.error ? "Thread view unavailable." : "Loading saved threads…"}</p> : <ContentCards scope={account ?? "anonymous"} books={visible} view={view} fresh={fresh} onManage={manageItem} onFavorite={favoriteItem} onTag={setTag} selectedTag={tag} connections={connections.index} />}
+          {connections.error && <p role="alert" className="lib-line-note">{connections.error} <button onClick={connections.refresh}>Retry connections</button></p>}
+          {threads.error && <p role="alert" className="lib-line-note">{threads.error} <button onClick={threads.refresh}>Retry threads</button></p>}
+          {threads.searchError && <p role="alert" className="lib-line-note">{threads.searchError} Showing metadata matches. <button onClick={threads.refresh}>Retry search</button></p>}
+          {threads.searching && <p role="status" className="lib-line-note">Searching all saved post text…</p>}
+          {!ready ? <p role="status" className="lib-line-note">{threads.error ? "Thread view unavailable." : "Loading saved threads…"}</p> : <ContentCards scope={account ?? "anonymous"} books={visible} view={view} fresh={fresh} onManage={manageItem} onFavorite={favoriteItem} onTag={setTag} selectedTag={tag} connections={connections.index} />}
           {ready && !visible.length && !threads.searching && (
             <div className="content-empty">
-              <FileText size={28} strokeWidth={1.2} aria-hidden />
+              <EmptyDesk filtered={filtered} />
               <h2>{filtered ? "Nothing here just yet" : "Make room for a good idea"}</h2>
               <p>{filtered ? "Try a different search or loosen a filter to find something in your library." : "Save an article or document to start your library."}</p>
-              <button type="button" onClick={filtered ? clearFilters : () => setAdding("links")}>{filtered ? "Clear filters" : "Add something to read"}</button>
+              <button type="button" className="sk-btn sk-btn-ghost" onClick={filtered ? clearFilters : () => setAdding("links")}>{filtered ? "Clear filters" : "Add something to read"}</button>
+              <p className="content-empty-aside" aria-hidden>{filtered ? "we looked twice" : "very tidy, at least"}</p>
             </div>
           )}
           {ready && stats.ownCount < SAMPLES_UNTIL && <Starter count={stats.ownCount} signedIn={Boolean(isSignedIn)} onAdd={setAdding} />}
@@ -310,11 +315,28 @@ export function Library() {
           }}
         />
       )}
-      {adding && <AddPanel tab={adding} onTab={setAdding} onClose={() => setAdding(null)} signedIn={Boolean(isSignedIn)} />}
+      <AnimatePresence>
+        {adding && <AddPanel key="add" tab={adding} onTab={setAdding} onClose={() => setAdding(null)} signedIn={Boolean(isSignedIn)} />}
+      </AnimatePresence>
     </div>
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" aria-pressed={on} onClick={onClick} className="lib-chip">{children}</button>;
+/** A filter. One soft pill per group slides to whichever is on. */
+function Chip({ on, onClick, group, children }: { on: boolean; onClick: () => void; group: "type" | "status"; children: React.ReactNode }) {
+  return (
+    <button type="button" aria-pressed={on} onClick={onClick} className="lib-chip">
+      {on && <motion.span layoutId={`lib-chip-${group}`} className="lib-chip-pill" transition={spring.snap} aria-hidden />}
+      <span className="relative">{children}</span>
+    </button>
+  );
+}
+
+function ViewButton({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" aria-pressed={on} onClick={onClick}>
+      {on && <motion.span layoutId="lib-view" className="lib-view-pill" transition={spring.snap} aria-hidden />}
+      <span className="relative inline-flex items-center gap-1.5">{children}</span>
+    </button>
+  );
 }

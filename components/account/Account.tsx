@@ -1,15 +1,14 @@
 "use client";
 
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
-import { barBtn } from "@/components/ui/Popover";
 
-/** Signed out: a quiet "Sign in". Signed in: the avatar, with Clerk's account menu. */
+/** Signed out: a small ink "Sign in". Signed in: the avatar, with Clerk's account menu. */
 export function Account() {
   return (
     <>
       <Show when="signed-out">
         <SignInButton mode="modal">
-          <button type="button" className={`${barBtn} !px-3 whitespace-nowrap`} data-tip="Keep your highlights and notes on every device">
+          <button type="button" className="sk-btn sk-btn-ink ml-1 !min-h-[32px] !px-3.5 !text-[13px]" data-tip="Keep your highlights and notes on every device">
             Sign in
           </button>
         </SignInButton>

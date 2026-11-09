@@ -85,6 +85,7 @@ export const topicOf = (v: unknown): TopicKey => (isTopic(v) ? v : "unsorted");
 
 /** One text as the shelves see it: the shelf entry, with your reading laid over it. */
 export type Book = {
+  linked?: boolean;
   /** Opening post presentation; id and editable metadata still belong to the saved bookmark. */
   reading?: {id:string;title:string;dek?:string};
   contextOnly?: boolean;
@@ -220,7 +221,7 @@ const TOPIC_ORDER = Object.fromEntries(TOPICS.map((t, i) => [t.key, i])) as Reco
 export function sortBooks(books: Book[], sort: Sort): Book[] {
   const by = [...books];
   if (sort === "topic") by.sort((a, b) => TOPIC_ORDER[a.topic] - TOPIC_ORDER[b.topic] || a.added - b.added);
-  if (sort === "recent") by.sort((a, b) => b.added - a.added);
+  if (sort === "recent") by.sort((a, b) => b.added - a.added || Number(Boolean(a.linked))-Number(Boolean(b.linked)) || a.id.localeCompare(b.id));
   if (sort === "title") by.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true }));
   if (sort === "color") by.sort((a, b) => lookOf(a).hue - lookOf(b).hue || lookOf(a).h - lookOf(b).h);
   if (sort === "length") by.sort((a, b) => a.minutes - b.minutes);
@@ -320,7 +321,8 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
     url: item.sourceUrl, topic: topicOf(item.topic), contentType: contentTypeOf(item),
     minutes: readingMinutes(item.words), dek: item.dek, tags: item.tags ?? [],
     favorite: Boolean(item.favorite), pct: read(item.id), highlights: marks(item.id),
-    added: item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
+    linked:item.addedVia==='Linked source',
+    added: item.addedVia==='Linked source' ? threads?.linkedSaveTimes?.[item.id]??0 : item.savedAt ?? item.addedAt, finished: item.finishedAt, image: item.image, cover: item.cover,
     agent: item.addedBy === "agent", sample: item.origin === "sample",
   }));
   let projected = mine;
@@ -333,8 +335,9 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
       if(!members.length)continue;
       const first=byId.get(group.rootId)??members[0];
       const saved=group.bookmarkIds?.flatMap(id=>byId.get(id)??[])[0]??first;
+      const bookmarks=(group.bookmarkIds??[first.id]).flatMap(id=>byId.get(id)??[]);
       const thread=group.memberIds.length>1||group.missingPostCount?{postCount:group.memberIds.length,memberIds:group.memberIds,missingPostCount:group.missingPostCount,searchText:members.map(b=>`${b.title} ${b.author} ${b.tags.join(' ')} ${b.url??''}`).join(' ')}:undefined;
-      grouped.push({...saved,...(saved.id!==first.id?{reading:{id:first.id,title:first.title,dek:first.dek}}:{}),pct:first.pct,highlights:first.highlights,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
+      grouped.push({...saved,added:bookmarks.length?Math.max(...bookmarks.map(b=>b.added)):saved.added,...(saved.id!==first.id?{reading:{id:first.id,title:first.title,dek:first.dek}}:{}),pct:first.pct,highlights:first.highlights,contextOnly:group.contextOnly,...(thread?{thread}:{}),minutes:readingMinutes(group.memberIds.reduce((words,id)=>words+(wordsById.get(id)??0),0))});
     }
     projected = [...mine.filter(book=>!postIds.has(book.id)),...grouped];
   }

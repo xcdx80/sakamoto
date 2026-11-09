@@ -108,6 +108,35 @@ function price(model: string) {
     );
   return prices[model as keyof typeof prices];
 }
+/** Maximum authorization envelope shared by dispatch and processing readiness. */
+export function processingReservationMicros(kind: string): number {
+  const model = kind === "indexing" ? "gemini-embedding-2" : kind === "classification" ? "jev-latest" : null;
+  if (!model) return 0;
+  const p = price(model);
+  return Math.ceil(p.inputLimit * Math.max(p.input, p.write) + p.outputLimit * p.output);
+}
+async function durableBudget() {
+  const cap=capMicros();
+  let [budget]=await db().query("select * from paid_budget where id=true");
+  if (!budget || Number(budget.cap_micros)<cap) {
+    [budget]=await db().query("insert into paid_budget(id,cap_micros) values(true,$1) on conflict(id) do update set cap_micros=greatest(paid_budget.cap_micros,excluded.cap_micros) returning *",[cap]);
+  }
+  return budget;
+}
+export async function processingBudget() {
+  const budget=await durableBudget();
+  const remaining=Number(budget.cap_micros)-Number(budget.settled_micros)-Number(budget.reserved_micros);
+  return {
+    allows(kind:string) {
+      if (!['classification','indexing'].includes(kind)) return true;
+      try { return !budget.halted && remaining >= processingReservationMicros(kind); }
+      catch { return false; }
+    },
+  };
+}
+export function isProcessingBlock(error: unknown): error is PaidWorkError {
+  return error instanceof PaidWorkError && ['budget_paused','budget_unavailable','configuration','reconciliation_required','duplicate_attempt'].includes(error.code);
+}
 const integer = (v: number) => Number.isSafeInteger(v) && v >= 0;
 export function usageMicros(model: string, usage: PaidUsage): number {
   const p = price(model),
@@ -307,12 +336,7 @@ export async function markPaidWorkUncertain(reservation: PaidReservation, receip
   );
 }
 export async function budgetStatus(owner?: string) {
-  const cap = capMicros();
-  await db().query(
-    "insert into paid_budget(id,cap_micros) values(true,$1) on conflict(id) do update set cap_micros=greatest(paid_budget.cap_micros,excluded.cap_micros)",
-    [cap],
-  );
-  const [b] = await db().query("select * from paid_budget where id=true");
+  const b=await durableBudget();
   const attempts = owner
     ? await db().query(
         "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,failure_receipt,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
@@ -333,9 +357,7 @@ export async function budgetStatus(owner?: string) {
       ) / 1e6,
     halted: Boolean(b.halted),
     paused:
-      b.halted ||
-      Number(b.settled_micros) + Number(b.reserved_micros) >=
-        Number(b.cap_micros),
+      Boolean(b.halted) || Number(b.cap_micros)-Number(b.settled_micros)-Number(b.reserved_micros) < Math.min(processingReservationMicros('indexing'),processingReservationMicros('classification')),
     attempts: attempts.map((a) => ({
       id: a.id,
       operationId: a.operation_id,
@@ -344,7 +366,7 @@ export async function budgetStatus(owner?: string) {
       model: a.model,
       providerRequestId: a.provider_request_id,
       status: a.status,
-      failureReceipt: a.failure_receipt ?? null,
+      failureReceipt:a.failure_receipt ?? null,
       reservedUsd: Number(a.reserved_micros) / 1e6,
       actualUsd:
         a.actual_micros === null ? null : Number(a.actual_micros) / 1e6,

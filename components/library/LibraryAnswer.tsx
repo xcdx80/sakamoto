@@ -147,18 +147,19 @@ export function LibraryAnswer({
               ))}
             </ul>
           )}
-          {result.citations.length > 0 && (
+          {(result.matches ?? result.citations).length > 0 && (
             <details className="library-answer-sources mt-4" open>
               <summary className="cursor-pointer font-medium">
-                Supporting saved passages
+                Retrieved saved passages
               </summary>
               <ol className="mt-3 space-y-4">
-                {result.citations.map((source) => (
+                {(result.matches ?? result.citations).map((source) => (
                   <li key={source.id} className="library-answer-source">
                     <Link className="underline" href={source.readUrl}>
                       [{source.id}] {source.title}
                     </Link>
                     {source.author && <span> · {source.author}</span>}
+                    {result.citations.some(citation => citation.id === source.id) && <span> · Cited in answer</span>}
                     <p className="mt-1 whitespace-pre-wrap">{source.excerpt}</p>
                     <p className="mt-1 text-xs text-ink-3">
                       {source.contentType} · revision {source.sourceRevision} ·

@@ -1,4 +1,4 @@
-import {toLibraryBooks,filterBooks} from "../lib/library";
+import {toLibraryBooks,filterBooks,sortBooks} from "../lib/library";
 import { databaseAdapter, pool, setupPostgres } from "./postgres";
 import { after, before } from "node:test";
 before(setupPostgres);
@@ -6,6 +6,24 @@ after(() => pool.end());
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pushRows, shelveForUser, articleDoc, pullRows } from "../lib/db";
+
+test('Recent positions a thread by its latest saved bookmark, excluding newer fetched context', async () => {
+ const {importBookmarks}=await import('../lib/bookmarks');
+ const {readLibraryThreads}=await import('../lib/library-threads');
+ const owner='thread-recency-'+crypto.randomUUID();
+ const post=(id:string,extra:object={})=>({postId:id,url:`https://x.com/alice/status/${id}`,text:'Post '+id,author:{name:'Alice',handle:'alice',id:'42'},observedAt:'2026-10-18T10:00:00Z',...extra});
+ const saved=await importBookmarks(owner,{posts:[post('31002',{replyToPostId:'31001',contextPosts:[post('31001')],threadPosts:[post('31003',{replyToPostId:'31002'})]})]},'fixture');
+ const bookmark=saved.results[0],opening=bookmark.contextResults![0],context=bookmark.threadResults![0];
+ const library=[
+  {id:opening.itemId!,title:'Opening',words:10,origin:'paste' as const,addedAt:100},
+  {id:bookmark.itemId!,title:'Saved continuation',words:10,origin:'paste' as const,addedAt:300},
+  {id:context.itemId!,title:'Fetched context',words:10,origin:'paste' as const,addedAt:900},
+  {id:'manual-before',title:'Manual before bookmark',words:10,origin:'paste' as const,addedAt:200},
+  {id:'manual-after',title:'Manual after bookmark',words:10,origin:'paste' as const,addedAt:400},
+ ];
+ const books=toLibraryBooks({library,progress:{},highlights:{},hydrated:true,hiddenSamples:[],threads:await readLibraryThreads(owner)});
+ assert.deepEqual(sortBooks(books.filter(b=>!b.sample),'recent').map(b=>b.reading?.title??b.title),['Manual after bookmark','Opening','Manual before bookmark']);
+});
 
 test("stale browser text cannot replace a newer imported source or a manual topic", async () => {
   const owner = "test-owner-" + crypto.randomUUID();

@@ -8,6 +8,32 @@ import { makeToken } from '../lib/agent';
 import { extractBirdclaw } from '../lib/birdclaw-import';
 import { POST } from '../app/api/bookmark-import/route';
 before(setupPostgres); before(()=>{process.env.TYPESAFE_API_KEY='fixture';process.env.GOOGLE_API_KEY='fixture';}); after(()=>pool.end());
+test('cached X order repairs existing bookmarks without moving manual saves or changing text and reader choices',async()=>{
+ const SQL=await initSql(),database=new SQL.Database();
+ database.run(`create table accounts(id text,name text,handle text);create table profiles(id text,handle text,display_name text);create table tweets(id text,author_profile_id text,text text,created_at text);create table tweet_collections(account_id text,tweet_id text,kind text,raw_json text,updated_at text);create table sync_cache(cache_key text,value_json text,updated_at text);`);
+ database.run(`insert into accounts values('a','Account','account');insert into profiles values('p','author','Author');`);
+ for(const id of ['101','102','103']){
+  database.run('insert into tweets values(?,?,?,?)',[id,'p','Saved '+id,'2020-01-01T00:00:00Z']);
+  database.run('insert into tweet_collections values(?,?,?,?,?)',['a',id,'bookmarks','{}','2026-10-17T01:00:00Z']);
+ }
+ database.run('insert into sync_cache values(?,?,?)',['bookmarks:xurl:a:100:all:20',JSON.stringify({data:[{id:'101'},{id:'103'},{id:'102'}]}),'2026-10-17T01:00:00Z']);
+ const archive=await extractBirdclaw(database.export(),'a',new Uint8Array(await readFile('public/vendor/sql.js/sql-wasm-browser.wasm')));database.close();
+ const owner='repair-order-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+ const call=(body:unknown)=>POST(new Request('http://localhost/api/bookmark-import',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify(body)}));
+ const {shelveForUser,pushRows,pullRows}=await import('../lib/db');
+ await shelveForUser(owner,{id:'manual',title:'Manual',words:10,origin:'paste',addedAt:Date.parse('2026-10-17T02:00:00Z')},{id:'manual',blocks:[]});
+ await call({posts:archive.posts});
+ const first=(await shelfOf(owner)).find(row=>row.data.postId==='101')!;
+ const original=await articleDoc(owner,first.id);
+ await pushRows(owner,{articles:[{id:first.id,article_id:first.id,data:{...first.data,title:'My title',favorite:true},revision:1,changedFields:['title','favorite'],deleted:false}]});
+ for(const order of archive.orders??[]){const response=await call({posts:[],order});assert.equal(response.status,200);}
+ assert.deepEqual((await shelfOf(owner)).map(row=>row.data.postId??row.id),['manual','101','103','102']);
+ assert.deepEqual(await articleDoc(owner,first.id),original);
+ const changed=(await shelfOf(owner)).find(row=>row.id===first.id)!;assert.equal(changed.data.title,'My title');assert.equal(changed.data.favorite,true);
+ const snapshot=(await pullRows(owner,'')).changes.articles.find(row=>row.id===first.id)!;
+ await pushRows(owner,{articles:[{id:first.id,article_id:first.id,data:{...first.data,title:'Edited again'},revision:snapshot.revision,changedFields:['title'],deleted:false}]});
+ assert.equal((await shelfOf(owner)).find(row=>row.id===first.id)?.data.savedAt,changed.data.savedAt,'an older client must preserve server save order');
+});
 test('a Birdclaw database imports only selected-account bookmarks, exact stored text and reachable context, with replay-safe receipts',async()=>{
  const SQL=await initSql(), database=new SQL.Database();
  database.run(`create table accounts(id text,name text,handle text); create table profiles(id text,handle text,display_name text); create table tweets(id text,author_profile_id text,text text,created_at text,reply_to_id text,quoted_tweet_id text,entities_json text); create table tweet_collections(account_id text,tweet_id text,kind text,raw_json text,updated_at text);`);

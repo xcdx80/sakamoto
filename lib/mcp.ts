@@ -1,4 +1,5 @@
 import { POST_TOOLS, POST_WORKFLOW_INSTRUCTIONS, callPostTool, isPostTool, postToolFailure } from "./post-production/mcp";
+import { BOOKMARK_ORDER_SCHEMA } from "./bookmark-order-input";
 /**
  * The Sakamoto MCP server: a reader's agent saves articles (by link, or as text it
  * has read itself) to their library and looks through it. Streamable HTTP, stateless: every request is one JSON-RPC
@@ -81,8 +82,8 @@ const TOOLS = [
   },
   {
     name: "save_bookmarks", title: "Save full bookmarked X posts",
-    description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim.",
-    inputSchema: { type: "object", properties: { delivery: DELIVERY_SCHEMA, posts: { type: "array", minItems: 1, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." }, threadPosts: {type:"array",maxItems:8,items:POST_SCHEMA,description:"Connected same-author descendants, retained as context rather than individually bookmarked. Bounded batches may resume through saved same-author ancestry."} } } } }, required: ["posts"], additionalProperties: false },
+    description: "Save 1–25 full posts per batch (2 MB total), without paid enrichment. Returns an ordered stable receipt for every item: saved, incomplete, duplicate, removed or rejected. Parent/quote context gets separate receipts and identities. Retry safely; repeated source text is not silently replaced. Each delivery is only a batch, not a complete bookmark-history claim. After delivery, send posts:[] and order:{postIds,observedAt} without delivery to preserve observed newest-saved-first X order; never infer it from publication dates.",
+    inputSchema: { type: "object", properties: { delivery: DELIVERY_SCHEMA, order: BOOKMARK_ORDER_SCHEMA, posts: { type: "array", minItems: 0, maxItems: 25, items: { ...POST_SCHEMA, properties: { ...POST_SCHEMA.properties, contextPosts: { type: "array", maxItems: 8, items: POST_SCHEMA, description: "Necessary supplied parent/quote context only; no crawl or unrelated replies." }, threadPosts: {type:"array",maxItems:8,items:POST_SCHEMA,description:"Connected same-author descendants, retained as context rather than individually bookmarked. Bounded batches may resume through saved same-author ancestry."} } } } }, required: ["posts"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {

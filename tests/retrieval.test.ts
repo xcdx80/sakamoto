@@ -456,6 +456,7 @@ test("long structured documents bound every actual Google request and retain exa
     assert.equal(
       processed.jobs.find((j) => j.kind === "indexing")?.state,
       "complete",
+      JSON.stringify(processed.jobs.find(j=>j.kind==='indexing')),
     );
     assert.ok(inputs.length > 5);
     assert.ok(inputs.every((t) => t.startsWith("title: ")));
@@ -487,7 +488,7 @@ test("long structured documents bound every actual Google request and retain exa
   }
 });
 
-test("interrupted indexing retries reuse completed vectors and never publish a partial semantic index", async () => {
+test("interrupted indexing reuses cached vectors and waits for reconciliation before paid replay", async () => {
   const { processLibrary } = await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const { budgetStatus } = await import("../lib/paid-work");
@@ -537,9 +538,9 @@ test("interrupted indexing retries reuse completed vectors and never publish a p
     });
     assert.equal(
       retried.jobs.find((job: any) => job.kind === "indexing")!.state,
-      "complete",
+      "blocked",
     );
-    assert.equal(calls, 3, "completed passage is not billed again");
+    assert.equal(calls, 2, "neither a cached passage nor an unresolved paid operation is billed again");
     assert.equal(
       (await budgetStatus("retry-reader")).attempts.filter(
         (a) => a.status === "uncertain",
@@ -777,7 +778,7 @@ test("healthy bounded indexing continues beyond eight windows without consuming 
     now += 1000;
     let state = "pending";
     let windows = 0;
-    while (state !== "complete" && windows < 12) {
+    while (state !== "complete" && windows < 24) {
       const result = await processLibrary("continuation-reader", { limit: 1 });
       state = result.jobs.find((job: any) => job.kind === "indexing")!.state;
       now = Math.max(
@@ -903,7 +904,7 @@ test("a metadata-only item receives its first indexing job when source text arri
   }
 });
 
-test("planned job deadlines during paid embedding preserve progress beyond eight windows and retain uncertain attempts", async () => {
+test("indexing yields before a paid call cannot fit its window and preserves progress beyond eight windows", async () => {
   const { processLibrary } = await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const { budgetStatus } = await import("../lib/paid-work");
@@ -970,12 +971,12 @@ test("planned job deadlines during paid embedding preserve progress beyond eight
     assert.equal(state, "complete");
     assert.ok(windows > 8);
     assert.equal(successful, 40);
-    assert.ok(interrupted > 8);
+    assert.equal(interrupted, 0);
     const after = await budgetStatus("inflight-reader");
     assert.equal(
       Math.round((after.reservedUsd - before.reservedUsd) * 1e6),
       interrupted * 1639,
-      "each interrupted paid call remains fully reserved",
+      "yielding before dispatch does not create uncertain reservations",
     );
     const result = await searchEvidence("inflight-reader", {
       query: "astronomical measurements",
@@ -989,7 +990,7 @@ test("planned job deadlines during paid embedding preserve progress beyond eight
   }
 });
 
-test("zero-progress embedding timeouts retain the four automatic and eight deliberate failure limit", async () => {
+test("zero-progress embedding timeouts block paid replay while retaining saved lexical evidence", async () => {
   const { processLibrary, processingStatus } = await import("../lib/processing");
   const { searchEvidence } = await import("../lib/retrieval");
   const originalFetch = globalThis.fetch,
@@ -1033,30 +1034,16 @@ test("zero-progress embedding timeouts retain the four automatic and eight delib
     // Scheduling uses the database clock; another fixture may hold its publication lock.
     const queued = await processingStatus("zero-progress-reader");
     now = Math.max(now, Date.parse(queued.jobs.find((j) => j.kind === "indexing")!.nextAttemptAt) + 1);
-    let job;
-    for (let attempt = 1; attempt <= 8; attempt++) {
-      const result = await processLibrary("zero-progress-reader", {
-        limit: 1,
-        ...(attempt >= 5 ? { retryJobId: job!.id } : {}),
-      });
-      job = result.jobs.find((j) => j.kind === "indexing")!;
-      assert.equal(job.attempts, attempt);
-      assert.equal(
-        job.state,
-        attempt === 4 || attempt === 8 ? "terminal" : "retryable",
-      );
-      now = Math.max(now, Date.parse(job.nextAttemptAt) + 1);
-    }
-    assert.equal(
-      (
-        await processLibrary("zero-progress-reader", {
-          limit: 1,
-          retryJobId: job!.id,
-        })
-      ).processed,
-      0,
-    );
-    assert.equal(calls, 8);
+    const first = await processLibrary("zero-progress-reader", {limit:1});
+    let job=first.jobs.find(j=>j.kind==='indexing')!;
+    assert.equal(job.state,'retryable');assert.equal(job.attempts,1);
+    now=Math.max(now,Date.parse(job.nextAttemptAt)+1);
+    const next=await processLibrary("zero-progress-reader",{limit:1});
+    job=next.jobs.find(j=>j.kind==='indexing')!;
+    assert.equal(job.state,'blocked');assert.equal(job.attempts,1);
+    assert.equal(next.finished,0);assert.equal(calls,1);
+    now=Math.max(now,Date.parse(job.nextAttemptAt)+1);
+    assert.equal((await processLibrary("zero-progress-reader",{limit:1})).processed,0);
     const found = await searchEvidence("zero-progress-reader", {
       query: "survives",
       semantic: false,

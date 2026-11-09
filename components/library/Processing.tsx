@@ -59,11 +59,11 @@ export function Processing({
     <section
       aria-label="Received material processing"
       id="library-processing"
-      className="my-4 rounded-xl border border-rule p-4 text-sm"
+      className="sync-section"
     >
       <div className="flex items-center justify-between gap-3">
-        <strong>Received material</strong>
-        <button disabled={busy} onClick={() => run()}>
+        <strong className="sk-eyebrow">Received material</strong>
+        <button className="sk-chip" disabled={busy} onClick={() => run()}>
           {busy ? "Processing…" : "Process now"}
         </button>
       </div>
@@ -115,7 +115,7 @@ export function Processing({
                   {" · Read saved item"}
                 </a>
               )}
-              {(job.state === "retryable" || job.state === "terminal") &&
+              {(job.state === "retryable" || job.state === "terminal" || job.state === "blocked") &&
                 job.attempts < 8 && (
                   <button
                     className="ml-2 underline"

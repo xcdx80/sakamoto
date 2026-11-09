@@ -38,7 +38,7 @@ test('regeneration preserves imported context across close reopen reset and repe
   await app.open('/'); await screen.getByRole('button', { name: 'Brief', exact: true }).click();
   const pasted = screen.getByLabel(/^Paste supporting material/);
   await pasted.fill('Unsaved temporary research');
-  await screen.getByRole('button', { name: 'Close generation settings', exact: true }).click();
+  await screen.getByRole('button', { name: 'Hide draft context', exact: true }).click();
   await screen.getByRole('button', { name: 'Brief', exact: true }).click();
   await expect(pasted).toHaveValue('Unsaved temporary research');
   await screen.getByRole('button', { name: 'Reset settings', exact: true }).click(); await expect(pasted).toHaveValue('');
@@ -64,8 +64,8 @@ test('research status distinguishes disabled searches from selected source reuse
   current.production.checkpoint.research = { library: 'disabled', web: 'disabled', notice: null };
   await browser.route('**/api/write**', route => route.fulfill({ json: current }));
   await app.open('/');
-  await expect(screen.getByRole('status')).toContainText('Library research is off. Web research is off.');
+  await expect(browser.locator('.write-research-status')).toContainText('Library research is off. Web research is off.');
   current.production.checkpoint.research = { library: 'selected', web: 'selected', notice: null };
   await app.open('/');
-  await expect(screen.getByRole('status')).toContainText('Selected library sources retained. Selected web sources retained.');
+  await expect(browser.locator('.write-research-status')).toContainText('Selected library sources retained. Selected web sources retained.');
 });

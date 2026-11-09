@@ -227,7 +227,13 @@ export async function scheduleSearchRebuild(
   const rows = await db().query(
     `insert into processing_jobs(user_id,source_id,source_revision,kind,target)
  select user_id,id,source_revision,'indexing',$3 from articles where user_id=$1 and id=any($2::text[]) and not deleted and doc is not null
- on conflict(user_id,source_id,source_revision,kind,target) do update set target=excluded.target returning source_id,state`,
+ on conflict(user_id,source_id,source_revision,kind,target) do update set
+ state=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then 'pending' else processing_jobs.state end,
+ max_attempts=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then least(8,processing_jobs.attempts+4) else processing_jobs.max_attempts end,
+ next_attempt_at=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then clock_timestamp() else processing_jobs.next_attempt_at end,
+ checkpoint=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then processing_jobs.checkpoint-'processingBlock' else processing_jobs.checkpoint end,
+ error=case when processing_jobs.state in ('terminal','retryable','blocked') and processing_jobs.attempts<8 then null else processing_jobs.error end
+ returning source_id,state`,
     [owner, sources.slice(0, limit).map((r) => r.id), INDEX_CONTRACT],
   );
   return {

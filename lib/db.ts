@@ -11,6 +11,7 @@ export type SqlAdapter = {
   /** Server-enforced transaction-local deadline; adapters without it cannot run bounded searches. */
   queryWithTimeout?: (text:string,params:unknown[],timeoutMs:number)=>Promise<Record<string,any>[]>;
 };
+const storedSaveOrder="(select coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb) from jsonb_each(articles.data) e where e.key in ('savedAt','bookmarkOrderObservedAt'))";
 let client: SqlAdapter | null = null;
 /** External SQL adapter substitution for isolated integration environments. Never reads another database implicitly. */
 export function configureDatabase(adapter: SqlAdapter) {
@@ -115,7 +116,7 @@ export async function pushRows(userId: string, changes: Partial<Record<Collectio
       const result = await db().query(
         `insert into ${table}(user_id,id,article_id,data,deleted${article ? ",doc,manual_fields" : ""})
         select $1,$2,$3,$4::jsonb,$5${article ? ", $7::jsonb, $8::jsonb" : ""} where $6=0 or exists(select 1 from ${table} where user_id=$1 and id=$2)
-        on conflict(user_id,id) do update set data=${article ? "case when excluded.deleted then articles.data else excluded.data end" : "excluded.data"}, deleted=excluded.deleted${
+        on conflict(user_id,id) do update set data=${article ? `case when excluded.deleted then articles.data else excluded.data || ${storedSaveOrder} end` : "excluded.data"}, deleted=excluded.deleted${
           article
             ? `,
           doc=case when excluded.deleted then ${table}.doc else coalesce(excluded.doc,${table}.doc) end,
@@ -227,7 +228,7 @@ export async function shelfOf(userId: string): Promise<ShelfRow[]> {
     if (!page.next) break;
     cursor = page.next;
   } while (cursor);
-  return result.sort((a, b) => Number(b.data.addedAt ?? 0) - Number(a.data.addedAt ?? 0));
+  return result.sort((a, b) => Number(b.data.savedAt ?? b.data.addedAt ?? 0) - Number(a.data.savedAt ?? a.data.addedAt ?? 0));
 }
 
 /** Put one imported text on a reader's shelf, as their browser would: the next sync brings it down. */
@@ -235,7 +236,7 @@ export async function shelveForUser(userId: string, item: { id: string; [key: st
   await db().query(
     `insert into articles(user_id,id,article_id,data,doc) values($1,$2,$2,$3::jsonb,$4::jsonb)
      on conflict(user_id,id) do update set
-       data=(excluded.data - array(select jsonb_object_keys(articles.manual_fields))) || (select coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb) from jsonb_each(articles.data) e where articles.manual_fields ? e.key),
+       data=(excluded.data - array(select jsonb_object_keys(articles.manual_fields))) || (select coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb) from jsonb_each(articles.data) e where articles.manual_fields ? e.key) || ${storedSaveOrder},
        doc=excluded.doc where not articles.deleted`,
     [userId, item.id, JSON.stringify(item), JSON.stringify(doc)],
   );
