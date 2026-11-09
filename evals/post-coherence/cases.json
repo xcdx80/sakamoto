@@ -1,0 +1,204 @@
+[
+  {
+    "id": "original-personalization-jump",
+    "split": "development",
+    "platform": "x",
+    "delivery": "long",
+    "posts": [
+      "Underrated AI education advice: personalization must earn its place in learning. I’d evaluate an AI learning tool in three distinct layers: offline checks of agent behavior, simulated learners as limited proxies, and real, delayed tests of retention and transfer. Keep the layers separate: offline checks can verify what the agent produces, not whether learners retain or apply an idea. Prior knowledge, goals, available time, and learner control should shape the design. Bloom’s two-sigma question can motivate inquiry, not prove an AI effect. FSRS, item difficulty, and forgetting can inform review scheduling, not certify mastery. The practical test is whether learners retain and apply concepts, not whether the agent sounds helpful."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "The user reported that the opening jumps from personalization earning its place to evaluation layers without first making the problem clear. A later distinction does not repair the initial reasoning jump.",
+    "targetedDefect": "missing-problem-bridge",
+    "labelProvenance": "user-reported-original"
+  },
+  {
+    "id": "compact-x-bridge",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "Personalization should earn its place in learning. I would test what learners retain a week later, not just whether an AI answer feels tailored."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "One short paragraph ties the claim directly to the proposed learning test; no separate problem paragraph is needed.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "question-first",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "What would convince me that personalization is worth adding? Better recall a week later. I would compare delayed recall with and without it before shipping."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "The opening question creates the need and the body answers it with a proposed comparison.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "direct-thesis",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "I would judge an AI tutor by delayed learner recall, not polished answers. My first test would compare what learners can explain a week later with and without the tutor."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "A direct thesis already supplies the distinction; adding a separate problem section would be padding.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "false-therefore",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "Personalization should earn its place in learning. Therefore I would organize my evaluation dashboard into three tabs: speed, cost, and color."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "Therefore asserts a connection but never explains how these tabs establish learning value.",
+    "targetedDefect": "false-causal-hinge",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "bridge-no-payoff",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "Personalization should earn its place in learning. To separate a tailored answer from lasting learning, I would test recall a week later. Here is my test design: keep asking better questions."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "The bridge is present but the promised test design never arrives.",
+    "targetedDefect": "missing-payoff",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "padding-not-repair",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "Personalization should earn its place in learning. This is important. It matters because it is an important consideration. We should think deeply about this. I would use three evaluation layers."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "Extra sentences say that the topic matters without supplying the missing reasoning link.",
+    "targetedDefect": "padding",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "invented-result-control",
+    "split": "development",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "I tested personalized tutoring with 500 learners and doubled their retention. That result is why I would keep personalization and repeat the experiment in a second cohort."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "The reasoning is connected, but the invented study has no evidence and must fail factual grounding. A coherent bridge is not permission to invent results.",
+    "targetedDefect": "unsupported-invented-facts",
+    "labelProvenance": "proposed-needs-human-calibration",
+    "expectedOverall": "revise",
+    "expectedGrounding": "revise"
+  },
+  {
+    "id": "linkedin-missing-problem",
+    "split": "validation",
+    "platform": "linkedin",
+    "delivery": "long",
+    "posts": [
+      "Underrated AI education advice: personalization must earn its place in learning. I’d evaluate an AI learning tool in three distinct layers: offline checks of agent behavior, simulated learners as limited proxies, and real, delayed tests of retention and transfer. Keep the layers separate: offline checks can verify what the agent produces, not whether learners retain or apply an idea.\n\nPrior knowledge, goals, available time, and learner control should shape the design. Bloom’s two-sigma question can motivate inquiry, not prove an AI effect. FSRS, item difficulty, and forgetting can inform review scheduling, not certify mastery.\n\nThe practical test is whether learners retain and apply concepts, not whether the agent sounds helpful."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "Paragraph breaks and a detailed evaluation plan do not establish why the hook leads to that plan.",
+    "targetedDefect": "missing-problem-bridge",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "linkedin-connected-proposal",
+    "split": "validation",
+    "platform": "linkedin",
+    "delivery": "long",
+    "posts": [
+      "Personalization should earn its place in learning. A tailored explanation is not the outcome I want to optimize; I want learners to retain and apply the concept. That distinction sets the evaluation I would propose.\n\nFirst, inspect the agent’s responses. Then use simulated learners to explore potential failures, without treating those simulations as evidence of real learning. Finally, compare delayed recall and application with real learners, with and without personalization.\n\nI would keep personalization only if that last comparison justified it."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "The problem motivates each proposed layer and the ending returns to the original decision.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "thread-connected",
+    "split": "validation",
+    "platform": "x",
+    "delivery": "thread",
+    "posts": [
+      "How would I decide whether to keep personalization in a tutor? I would separate answer quality from lasting learning.",
+      "First I would inspect the answers for errors. That checks the tutor, not whether a learner can use the idea later.",
+      "For that second question I would compare delayed recall with and without personalization. That comparison would guide whether I keep it."
+    ],
+    "frameworkId": "framework-thread",
+    "expected": "pass",
+    "reason": "Each post advances the same distinction and the final post answers the opening decision.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "thread-detour",
+    "split": "validation",
+    "platform": "x",
+    "delivery": "thread",
+    "posts": [
+      "How would I decide whether to keep personalization in a tutor? I would test delayed recall.",
+      "For the product launch, my favorite color is blue. I would use a blue logo and a short brand name.",
+      "I would therefore retain personalization in the tutor."
+    ],
+    "frameworkId": "framework-thread",
+    "expected": "revise",
+    "reason": "The middle post changes subject and the ending draws a decision unsupported by the proposed test.",
+    "targetedDefect": "thread-progression",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "short-implicit-bridge",
+    "split": "validation",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "My bar for a personalized tutor: what can I explain without it a week later? I would compare that with studying the same material without personalization."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "pass",
+    "reason": "The question itself establishes the learning problem and comparison, with no formulaic transition.",
+    "targetedDefect": "none",
+    "labelProvenance": "proposed-needs-human-calibration"
+  },
+  {
+    "id": "unrelated-payoff",
+    "split": "validation",
+    "platform": "x",
+    "delivery": "single",
+    "posts": [
+      "Before adding personalization, I would ask whether it improves delayed recall. To answer that, I would let users choose between a blue theme and a green theme."
+    ],
+    "frameworkId": "single-paragraph-insight",
+    "expected": "revise",
+    "reason": "The proposed action does not answer the learning question even though the transition claims it does.",
+    "targetedDefect": "missing-payoff",
+    "labelProvenance": "proposed-needs-human-calibration"
+  }
+]

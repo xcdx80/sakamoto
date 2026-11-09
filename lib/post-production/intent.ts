@@ -16,3 +16,8 @@ export function authorIdeaEvidence(idea: string): ProductionEvidence {
   return { id: "AUTHOR_IDEA", itemId: "", sourceRevision: 0, kind: "author_idea",
     title: "Author's intended topic and proposed structure; not factual evidence", excerpt: idea };
 }
+
+/** Caller synthesis may guide framing but cannot independently substantiate factual findings. */
+export function isNonfactualEvidence(evidence: ProductionEvidence): boolean {
+  return isAuthorIdea(evidence) || evidence.kind === "agent_context" && evidence.provenance?.kind === "analysis";
+}

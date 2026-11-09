@@ -8,6 +8,7 @@ export type FrameworkSelection = { recommendations: FrameworkRecommendation[]; r
 /** Essential signals are eligibility constraints, never points that a good goal fit can buy back. */
 export function evaluateFrameworks(
   catalog: PostCatalog, brief: ProductionBrief, signals: EvidenceSignal[], history: ProductionHistory[],
+  preference?: { frameworkId: string | null; hookPatternId: string | null },
 ): FrameworkSelection {
   const known = new Set<string>(catalog.signals.map(signal => signal.id));
   const detected = new Map<string, EvidenceSignal>();
@@ -33,6 +34,10 @@ export function evaluateFrameworks(
   };
   const ranked: FrameworkRecommendation[] = [];
   for (const framework of catalog.frameworks) {
+    if (preference?.hookPatternId && !framework.hook_patterns.some(h => h.pattern === preference.hookPatternId)) {
+      rejected.push({ frameworkId: framework.id, reasons: ["The author-selected hook does not belong to this framework."] });
+      continue;
+    }
     const missing = essentialSignals(framework).filter(signal => !detected.has(signal.signal));
     if (missing.length) {
       rejected.push({ frameworkId: framework.id, reasons: missing.map(signal => `Missing essential evidence signal: ${signal.signal}.`) });
@@ -89,7 +94,8 @@ export function evaluateFrameworks(
   // Research findings can support other forms without replacing the author's
   // proposed form. Reserve one eligible option whose essentials all come from
   // intent; existing cadence ranking chooses which truthful option survives.
-  const intendedCandidate = ranked.find(candidate => {
+  const preferredCandidate = ranked.find(candidate => candidate.frameworkId === preference?.frameworkId);
+  const intendedCandidate = preferredCandidate ?? ranked.find(candidate => {
     const essential = essentialSignals(catalog.frameworks.find(framework => framework.id === candidate.frameworkId)!);
     return essential.length > 0 && essential.every(signal => intended.has(signal.signal));
   });
@@ -101,7 +107,8 @@ export function evaluateFrameworks(
     const count = familyCounts.get(candidate.family) ?? 0;
     if (count >= Math.min(2, defaults.max_per_family)) rejected.push({ frameworkId: candidate.frameworkId, reasons: ["Family diversity cap reached by selected eligible frameworks."] });
     else if (selected.size >= Math.min(3, defaults.max_candidates)) rejected.push({ frameworkId: candidate.frameworkId, reasons: [intendedCandidate
-      ? "The bounded shortlist preserves a form supported by author intent alongside the best-ranked eligible alternatives."
+      ? preferredCandidate ? "The bounded shortlist preserves the author's selected eligible framework alongside the best-ranked alternatives."
+        : "The bounded shortlist preserves a form supported by author intent alongside the best-ranked eligible alternatives."
       : "Other eligible frameworks ranked higher for the evidence, goal and production history."] });
     else {
       selected.add(candidate.frameworkId);
@@ -115,8 +122,9 @@ export function evaluateFrameworks(
 
 export function recommendFrameworks(
   catalog: PostCatalog, brief: ProductionBrief, signals: EvidenceSignal[], history: ProductionHistory[],
+  preference?: { frameworkId: string | null; hookPatternId: string | null },
 ): FrameworkRecommendation[] {
-  return evaluateFrameworks(catalog, brief, signals, history).recommendations;
+  return evaluateFrameworks(catalog, brief, signals, history, preference).recommendations;
 }
 
 /** Unknown IDs never select a fallback framework. */

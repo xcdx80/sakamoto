@@ -19,6 +19,16 @@ export type BrandProfile = {
   examples: string[];
 };
 
+export type SourcePolicy = { library: boolean; web: boolean };
+/** Caller-supplied material; provenance is asserted by the caller, not independently verified. */
+export type AgentContextItem = {
+  id: string;
+  title: string;
+  text: string;
+  kind: "author_statement" | "reference" | "analysis";
+  provenance: { label: string; url?: string; author?: string; capturedAt?: string };
+};
+
 export type ProductionBrief = {
   idea: string;
   notes: string;
@@ -28,6 +38,16 @@ export type ProductionBrief = {
   platforms: PostPlatform[];
   delivery: PostDelivery;
   sourceIds: string[];
+  sourcePolicy?: SourcePolicy;
+  agentContext?: AgentContextItem[];
+};
+
+export type GenerationParameters = {
+  brief: ProductionBrief;
+  frameworkId: string | null;
+  hookPatternId: string | null;
+  sourceMode: "automatic" | "selected";
+  evidenceIds: string[];
 };
 
 export type ProductionEvidence = {
@@ -41,8 +61,10 @@ export type ProductionEvidence = {
   readUrl?: string;
   address?: Record<string, unknown>;
   publishedAt?: string;
-  kind: "saved_source" | "author_note" | "author_idea" | "web_source";
+  kind: "saved_source" | "author_note" | "author_idea" | "web_source" | "agent_context";
+  provenance?: AgentContextItem["provenance"] & { suppliedBy: "caller"; contextId: string; kind: AgentContextItem["kind"] };
   retrievedAt?: string;
+  researchProvider?: "monid-octen";
 };
 
 export type EvidenceSignal = {
@@ -144,10 +166,15 @@ export type DraftRevision = {
   content: DraftContent;
   createdAt: string;
   origin: "writer" | "author" | "revision";
+  generationContext?: GenerationContext | null;
+  review?: (DraftReview & { revisionId: string }) | null;
 };
 export type ProductionStatus = "draft" | "working" | "needs_input" | "paused" | "review" | "ready" | "approved" | "planned" | "published" | "cancelled";
 export type ProductionStage = "context" | "selection" | "writing" | "review" | "revision" | "complete";
 export type ProductionCheckpoint = {
+  generationParameters?: GenerationParameters;
+  pendingGeneration?: boolean;
+  manualSelection?: { frameworkId: string | null; hookPatternId: string | null; reason: string };
   profile?: BrandProfile;
   catalogVersion?: string;
   evidence?: ProductionEvidence[];
@@ -177,7 +204,7 @@ export type ProductionCheckpoint = {
     framework: EditorialDecision;
     hook: EditorialDecision | null;
   };
-  research?: { library: "searched"; web: "searched" | "unconfigured"; notice: string | null };
+  research?: { library: "searched" | "disabled" | "selected"; web: "searched" | "unconfigured" | "disabled" | "selected"; notice: string | null };
   publication?: {
     status: "submitting" | "submitted" | "uncertain";
     revisionId: string;
@@ -185,6 +212,12 @@ export type ProductionCheckpoint = {
     posts?: { platform: PostPlatform; postId: string; integrationId: string }[];
   } | null;
 };
+/** Immutable source and decision snapshot for one saved wording version. */
+export type GenerationContext = Pick<ProductionCheckpoint, "profile" | "catalogVersion" | "evidence" | "signals" | "authorSignalAssessments" | "recommendations" | "frameworkId" | "hookPatternId" | "editorialDecision" | "manualSelection" | "research" | "writerModel" | "promptVersion"> & {
+  brief: ProductionBrief;
+  parameters?: GenerationParameters | null;
+};
+
 export type EditorialDecision = {
   selectedId: string;
   mode: "jev" | "editorial_tiebreak" | "sol_resolved_uncertainty";

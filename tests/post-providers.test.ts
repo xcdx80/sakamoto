@@ -1118,3 +1118,92 @@ test("presentation gates use draft evidence while factual framework gates still 
   await assert.rejects(reviewWithScore("structure-not-content", uncertain, "passed", undefined, c => c.id === "structure-not-content" ? { ...c, score: 5, evidenceIds: [], draftSupport: proof } : c, transferred), /uncertain source gate.*source evidence/i);
   await assert.rejects(reviewWithScore("story-is-real", uncertain, "passed", undefined, c => c.id === "story-is-real" ? { ...c, score: 5, evidenceIds: [], draftSupport: proof } : c), /uncertain source gate.*source evidence/i);
 });
+
+test("writer receives full supplied context with caller provenance and no automatic factual authority", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch;
+  const material = "A proposed distinction between learner outcomes and agent behavior. ".repeat(70);
+  ctx.evidence = [{ id: "AGENT_discussion", kind: "agent_context", itemId: "", sourceRevision: 0, title: "Conversation synthesis", excerpt: material,
+    provenance: { suppliedBy: "caller", contextId: "discussion", kind: "analysis", label: "Caller synthesis", url: "https://example.com/context" } }];
+  globalThis.fetch = async (_, options) => {
+    const body = JSON.parse(String(options?.body));
+    const packet = JSON.parse(body.messages[1].content);
+    assert.equal(packet.untrustedEvidenceData[0].excerpt, material);
+    assert.deepEqual(packet.untrustedEvidenceData[0].provenance, ctx.evidence[0].provenance);
+    assert.match(packet.suppliedContextPolicy, /never.*author.*experience/i);
+    return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ ...content, claimSources: [] }) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
+  };
+  try { await writePost(ctx, framework); } finally { globalThis.fetch = original; }
+});
+
+test("agent analysis cannot establish factual signals or independent source consensus", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch;
+  ctx.evidence = [{ id: "AGENT_analysis", kind: "agent_context", itemId: "", sourceRevision: 0, title: "Agent inference", excerpt: "I infer that two approaches improved learning.",
+    provenance: { suppliedBy: "caller", contextId: "analysis", kind: "analysis", label: "Agent inference" } }];
+  globalThis.fetch = async (_, options) => {
+    const body = JSON.parse(String(options?.body));
+    return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id,
+      q.type === "choice" ? { type: "choice", choice: "source_0", confidence: 1, probabilities: { source_0: 1, none: 0 } }
+        : { type: "score", score: ["multiple_sources_same_topic", "personal_story", "data_or_stats"].includes(id) ? 2 : 0, confidence: 1, probabilities: ["multiple_sources_same_topic", "personal_story", "data_or_stats"].includes(id) ? { "0": 0, "1": 0, "2": 1 } : { "0": 1, "1": 0, "2": 0 } },
+    ])), usage: { input_tokens: 500, output_tokens: 300 } });
+  };
+  try {
+    const signals = await decidePostSignals(ctx);
+    for (const name of ["multiple_sources_same_topic", "personal_story", "data_or_stats"]) assert.equal(signals.find(s => s.signal === name)?.strength, 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test("writer and revision requests carry platform-aware hook-to-body guidance without a mandatory paragraph formula", async () => {
+  configureKeys();
+  const ctx = context(), original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (_, options) => {
+    calls++;
+    const body = JSON.parse(String(options?.body)), packet = JSON.parse(body.messages[1].content);
+    assert.match(packet.writingRequirements.coherence, /hook/i);
+    assert.match(packet.writingRequirements.coherence, /problem|question/i);
+    assert.match(packet.writingRequirements.coherence, /single sentence|one sentence/i);
+    assert.match(packet.writingRequirements.coherence, /no mandatory|not.*mandatory|not.*fixed/i);
+    assert.match(packet.writingRequirements.coherence, /invent/i);
+    if (calls === 2) assert.equal(packet.review.issues[0].message, "Explain why learner outcomes require a different test before introducing the evaluation layers.");
+    return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
+  };
+  try {
+    await writePost(ctx, framework);
+    await writePost({ ...ctx, operationId: `${ctx.operationId}:revision`, attemptId: crypto.randomUUID(), priorContent: content }, framework, {
+      status: "changes_requested", issues: [{ code: "narrative_coherence", severity: "revise", platform: "x", postIndex: 0,
+        message: "Explain why learner outcomes require a different test before introducing the evaluation layers." }], criteria: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
+    });
+    assert.equal(calls, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test("coherence review judges actual draft connections and short-form context rather than requiring source proof", async () => {
+  const uncertain = { type: "score", score: 2.55, confidence: 0.1, probabilities: { "0": 0.05, "1": 0.05, "2": 0.35, "3": 0.4, "4": 0.15 } };
+  let checked = false;
+  const review = await reviewWithScore("narrative-coherence", uncertain, "passed", (questions, state) => {
+    checked = true;
+    assert.match(questions["narrative-coherence"].instructions, /every.*platform|every.*adaptation/i);
+    assert.match(state.coherenceReviewPolicy, /missing.*premise|missing.*connection/i);
+    assert.match(state.coherenceReviewPolicy, /platform.*postIndex/i);
+    assert.match(state.coherenceReviewPolicy, /short X|single sentence/i);
+  }, criterion => criterion.id === "narrative-coherence" ? { ...criterion, score: 5, evidenceIds: [], draftSupport: [
+    { platform: "x", postIndex: 0, quote: content.variants[0].posts[0], reason: "The first sentence states the evaluation concern, and the second directly recommends testing that concern before scaling." },
+  ] } : criterion);
+  assert.equal(checked, true);
+  assert.equal(review.status, "passed");
+  await assert.rejects(reviewWithScore("narrative-coherence", uncertain, "passed", undefined, c => c.id === "narrative-coherence" ? { ...c, score: 5, evidenceIds: [], draftSupport: [] } : c), /every published platform|draft evidence/i);
+});
+
+test("a coherence failure retains the independent diagnosis and concrete revision direction even without model issues", async () => {
+  const failure = { type: "score", score: 1, confidence: 1, probabilities: { "0": 0, "1": 1, "2": 0, "3": 0, "4": 0 } };
+  const diagnosis = "The opening promises a standard for personalization, but the body introduces evaluation layers without explaining which learning question makes those layers relevant.";
+  const review = await reviewWithScore("narrative-coherence", failure, "changes_requested", undefined,
+    c => c.id === "narrative-coherence" ? { ...c, score: 2, reason: diagnosis } : c);
+  assert.equal(review.status, "blocked");
+  const feedback = review.issues.find(issue => issue.code === "rubric_threshold" && issue.message.includes("narrative-coherence"))!;
+  assert.ok(feedback.message.includes(diagnosis));
+  assert.match(feedback.message, /smallest|specific.*connection/i);
+  assert.match(feedback.message, /invent|unsupported/i);
+});

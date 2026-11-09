@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DraftContent, PostPlatform } from "./types";
 
 export type PublishingCapability = {
@@ -42,6 +43,16 @@ export function getPublishingCapability(owner: string): PublishingCapability {
     platforms: configured ? Object.keys(configured.integrations) as PostPlatform[] : [],
     notice: configured ? null : CONNECTION_NOTICE,
   };
+}
+
+/** Non-secret destination summary for exact-target confirmation by external clients. */
+export function getPublishingDestinations(owner: string, platforms: PostPlatform[]) {
+  const configured = configuration(owner);
+  if (!configured || platforms.some(platform => !configured.integrations[platform])) return null;
+  const channels = [...platforms].sort().map(platform => ({ platform, integrationId: configured.integrations[platform]! }));
+  // Bind confirmation to credentials as well as channel IDs, without exposing the key.
+  const fingerprint = createHash("sha256").update(JSON.stringify({ owner, base: configured.base, channels, key: configured.key })).digest("hex");
+  return { provider: "postiz" as const, apiBase: configured.base, channels, fingerprint };
 }
 
 /**

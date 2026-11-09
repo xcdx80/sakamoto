@@ -12,7 +12,8 @@
     "budget:reconcile": "node --env-file-if-exists=.env.local --import tsx scripts/reconcile-paid.ts",
     "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
     "test:reader": "node --import tsx --test tests/reader-markdown.test.ts",
-    "frameworks:validate": "node --import tsx scripts/validate-frameworks.ts"
+    "frameworks:validate": "node --import tsx scripts/validate-frameworks.ts",
+    "eval:post-coherence": "node --import tsx scripts/eval-post-coherence.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",
@@ -26,13 +27,14 @@
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
     "micromark-util-decode-string": "^2.0.1",
-    "next": "^16.4.0",
+    "next": "16.4.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sql.js": "1.14.1",
     "zustand": "^5.0.15",
     "ajv": "8.20.0",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "ajv-formats": "3.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

@@ -1,3 +1,4 @@
+import { POST_TOOLS, POST_WORKFLOW_INSTRUCTIONS, callPostTool, isPostTool, postToolFailure } from "./post-production/mcp";
 /**
  * The Sakamoto MCP server: a reader's agent saves articles (by link, or as text it
  * has read itself) to their library and looks through it. Streamable HTTP, stateless: every request is one JSON-RPC
@@ -61,6 +62,7 @@ const POST_SCHEMA = {
 };
 
 const TOOLS = [
+  ...POST_TOOLS,
   {name:"read_saved_source",title:"Read an exact saved post source",description:"Read the complete stored structured X post/context record for source comparison: fullText, attribution, IDs/URLs/relationships and agent-reported completeness. Optional revision pins retained text of an active item. Owner-scoped, no annotations or credentials; missing/deleted items are not_found. Nonpost sources are unsupported; oversized legacy records return too_large without truncation. Max2MB serialized result; read one source per MCP request.",inputSchema:{type:"object",properties:{itemId:{type:"string",minLength:1,maxLength:200},revision:{type:"integer",minimum:1,maximum:2147483647}},required:["itemId"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_workflow",title:"Prepare the Grok bookmark workflow",description:"Read exact-schema sample, bounded backfill and daily routine instructions. Preparation does not connect Grok or enable a routine. Requires a reachable public HTTPS origin and the owner’s authenticated X access.",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
   {name:"bookmark_delivery_status",title:"Bookmark delivery and backfill progress",description:"Verified saved-source and receipt counts, last delivery/contact, bounded delivery history and current processing totals. Source coverage stays agent-reported. Optional runId/batchId retrieves compact per-item receipts for a lost response.",inputSchema:{type:"object",properties:{runId:{type:"string",maxLength:100},batchId:{type:"string",maxLength:100},after:{type:"string"},limit:{type:"integer",minimum:1,maximum:25}},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
@@ -209,6 +211,11 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
   // running any tools, preventing JSON-RPC fanout from exceeding the hosted response limit.
   if (batch && msgs.length > 1 && msgs.some(m => m.method === "tools/call" && m.params?.name === "read_saved_source")) return fail(first.id,-32600,"Read one saved source per MCP request to stay within response limits.",400);
 
+  // Writing stages are sequential/versioned and may dispatch paid work. A mixed batch
+  // must not create parallel work or combine draft approval with publication.
+  if (batch && msgs.length > 1 && msgs.some(m => m.method === "tools/call" && isPostTool(String(m.params?.name ?? ""))))
+    return fail(first.id, -32600, "Send one writing tool call per MCP request; use its returned version for the next step.", 400);
+
   // Notifications get no answer; with nothing to answer, the reply is an empty 202.
   const answers = (await Promise.all(msgs.map((m) => answer(m, userId, label, req.signal)))).filter((a) => a !== null);
   if (!answers.length) return new Response(null, { status: 202, headers: CORS });
@@ -225,8 +232,8 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       return ok({
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "sakamoto", title: "Sakamoto library", version: "1.0.0", websiteUrl: SITE },
-        instructions: INSTRUCTIONS,
+        serverInfo: { name: "sakamoto", title: "Sakamoto", version: "1.1.0", websiteUrl: SITE },
+        instructions: `${INSTRUCTIONS}\n\n${POST_WORKFLOW_INSTRUCTIONS}`,
       });
     }
     case "ping":
@@ -237,6 +244,18 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       try {
+        if (isPostTool(name)) {
+          try {
+            const result = await callPostTool(userId, name, args, signal);
+            const response = ok(toolResult("Sakamoto writing journey.", result));
+            if (Buffer.byteLength(JSON.stringify(response), "utf8") > 4_000_000)
+              return ok(toolResult("Saved post exceeds the MCP response limit. Open it in Sakamoto; no draft text was truncated.", {
+                status: "too_large", url: result.url, production: result.production,
+                notice: "The saved result is retained. Do not repeat a mutation; open the Sakamoto link to inspect it.",
+              }));
+            return response;
+          } catch (error) { return ok(postToolFailure(error)); }
+        }
         if (name === "read_saved_source") {
           const source = await readSavedSource(userId, args);
           const response = ok(toolResult("Exact saved source comparison.", source));

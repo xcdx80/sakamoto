@@ -71,3 +71,44 @@ test("saving a manual draft after preparing sources keeps framework selection av
   assert.equal(chosen.production.latestRevisionId, saved.production.latestRevisionId);
   assert.deepEqual(chosen.revisions[0].content, content);
 });
+
+test("generate a new version prepares the same production and retains the saved draft until replacement", async () => {
+  const owner = "write-http-new-version";
+  const created = await (await writeHttp(request({ action: "create", brief }), owner)).json();
+  const content = { variants: [{ platform: "x", delivery: "single", posts: ["Check the original evidence."] }], hooks: [], claimSources: [] };
+  const saved = await (await writeHttp(request({ action: "save", id: created.production.id, expectedVersion: created.production.version, content }), owner)).json();
+  const parameters = { brief: { ...brief, notes: "A changed author observation" }, frameworkId: null, hookPatternId: null, sourceMode: "automatic", evidenceIds: [] };
+  const response = await writeHttp(request({ action: "regenerate", id: created.production.id, expectedVersion: saved.production.version, parameters }), owner);
+  assert.equal(response.status, 200);
+  const prepared = await response.json();
+  assert.equal(prepared.production.id, created.production.id);
+  assert.equal(prepared.production.stage, "context");
+  assert.equal(prepared.production.checkpoint.pendingGeneration, true);
+  assert.equal(prepared.production.latestRevisionId, saved.production.latestRevisionId);
+  assert.deepEqual(prepared.revisions[0].content, content);
+  assert.equal(prepared.revisions[0].generationContext, null);
+  assert.equal(prepared.review, null);
+  assert.equal(prepared.production.approvedRevisionId, null);
+});
+
+test("HTTP accepts the shared context-only brief and rejects unsafe or ambiguous context before saving", async () => {
+  const owner = "write-http-context";
+  const agentContext = [{ id: "source", title: "Supplied material", text: "A proposed lesson, not an observed outcome.", kind: "reference",
+    provenance: { label: "Pasted by the author", url: "https://example.com/source" } }];
+  const input = { ...brief, sourcePolicy: { library: false, web: false }, agentContext };
+  const created = await writeHttp(request({ action: "create", brief: input }), owner);
+  assert.equal(created.status, 200);
+  const detail = await created.json();
+  assert.deepEqual(detail.production.brief, input);
+  const prepared = await (await writeHttp(request({ action: "advance", id: detail.production.id, expectedVersion: detail.production.version }), owner)).json();
+  assert.deepEqual(prepared.production.checkpoint.research, { library: "disabled", web: "disabled", notice: null });
+  assert.equal(prepared.production.checkpoint.evidence.find((e: any) => e.id === "AGENT_source").excerpt, agentContext[0].text);
+  for (const invalid of [
+    { ...input, sourcePolicy: { library: "false", web: false } },
+    { ...input, sourceIds: ["forbidden-pin"] },
+    { ...input, agentContext: [...agentContext, ...agentContext] },
+    { ...input, agentContext: [{ ...agentContext[0], provenance: { label: "Unsafe", url: "javascript:alert(1)" } }] },
+    { ...input, agentContext: [{ ...agentContext[0], text: "💡".repeat(6001) }] },
+    { ...input, agentContext: [{ ...agentContext[0], text: "💡".repeat(6000) }, { ...agentContext[0], id: "extra", text: "x" }] },
+  ]) assert.equal((await writeHttp(request({ action: "create", brief: invalid }), owner)).status, 400);
+});

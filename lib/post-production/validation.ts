@@ -2,7 +2,7 @@ import type { PostCatalog } from "./catalog";
 import type { BrandProfile, DraftContent, DraftReview, ProductionEvidence, ReviewIssue } from "./types";
 import { postCharacterLimit } from "./delivery";
 import { isNonfactualDraftSupport } from "./draft-support";
-import { isAuthorIdea } from "./intent";
+import { isNonfactualEvidence } from "./intent";
 import { coversDraftSpan } from "./proof-coverage";
 
 /** Mechanical editorial checks precede the rubric judge. Source prose is data, never a rule. */
@@ -40,7 +40,7 @@ export function validateDraft(
       if (support.claim.trim() && [...content.variants.flatMap(variant => variant.posts), ...content.hooks].some(text => text.includes(support.claim))
         && grounding.evidenceIds?.includes(support.evidenceId) && support.quote.trim() && evidenceById.get(support.evidenceId)?.excerpt.includes(support.quote)
         && (support.claimKind === "fact" || support.claimKind === undefined)
-        && !isAuthorIdea(evidenceById.get(support.evidenceId)!)
+        && !isNonfactualEvidence(evidenceById.get(support.evidenceId)!)
         && (review.factualAssessment.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim.claim) || claim.claim.includes(support.claim)))
           || review.hookFactualAssessment?.some(assessment => assessment.factualClaims.some(claim => support.claim.includes(claim) || claim.includes(support.claim))))) {
         claims.push({ claim: support.claim, evidenceIds: [support.evidenceId] });

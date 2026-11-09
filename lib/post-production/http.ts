@@ -7,7 +7,7 @@ import { proposeWeeklyIdeas } from "./planning";
 import { providerStatus } from "./providers";
 import { getPublishingCapability, PublishingError } from "./publishing";
 import * as repository from "./repository";
-import type { AuthorSignalAssessment, BrandProfile, DraftContent, ProductionBrief, ProductionDetail, WriteWorkspace } from "./types";
+import type { AuthorSignalAssessment, BrandProfile, DraftContent, GenerationParameters, ProductionBrief, ProductionDetail, WriteWorkspace } from "./types";
 
 const headers = { "Cache-Control": "private, no-store" };
 class InputError extends Error {}
@@ -100,9 +100,12 @@ export async function writeHttp(req: Request, owner: string | null): Promise<Res
       const content = object(body.content);
       if (!Array.isArray(content.variants) || !Array.isArray(content.hooks) || !Array.isArray(content.claimSources)) throw new InputError("A complete draft is required.");
       value = await repository.saveRevision(owner, id, content as DraftContent, "author", expectedVersion);
-    } else if (["advance", "choose", "approve", "assess_signals", "revise", "publish"].includes(action)) {
+    } else if (["advance", "choose", "approve", "assess_signals", "revise", "regenerate", "publish"].includes(action)) {
       const workflow = await import("./production");
-      if (action === "revise") {
+      if (action === "regenerate") {
+        fields(body, ["id", "expectedVersion", "parameters"]);
+        value = await workflow.regenerateProduction(owner,id,expectedVersion,object(body.parameters) as GenerationParameters);
+      } else if (action === "revise") {
         fields(body, ["id", "expectedVersion", "instruction"]);
         value = await workflow.requestProductionRevision(owner,id,expectedVersion,text(body.instruction,3000));
       } else if (action === "publish") {

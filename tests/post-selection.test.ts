@@ -157,3 +157,16 @@ test("retaining an intended form obeys tighter shortlist and family caps without
   for (const frameworkId of ["story-lesson", "case-study-long", "outcome-first", "how-to-step-by-step"])
     assert.match(intentOnly.rejected.find(candidate => candidate.frameworkId === frameworkId)!.reasons.join(" "), /Missing essential evidence signal/);
 });
+
+test("an author-selected eligible framework survives the shortlist while unsupported essentials still reject it", () => {
+  const catalog = loadCatalog();
+  const signals: EvidenceSignal[] = catalog.signals.map(signal => ({ signal: signal.id,strength: 2,evidenceIds: ["AUTHOR_NOTE"] }));
+  const defaultChoices = evaluateFrameworks(catalog,brief,signals,[]).recommendations;
+  const preferred = catalog.frameworks.find(framework => !defaultChoices.some(choice => choice.frameworkId === framework.id))!;
+  const requested = evaluateFrameworks(catalog,brief,signals,[],{ frameworkId: preferred.id,hookPatternId: null });
+  assert.ok(requested.recommendations.some(choice => choice.frameworkId === preferred.id));
+  assert.equal(requested.recommendations.length,3);
+  const unsupported = evaluateFrameworks(catalog,brief,[{ signal: "single_sharp_idea",strength: 2,evidenceIds: ["AUTHOR_IDEA"] }],[],{ frameworkId: "case-study-long",hookPatternId: null });
+  assert.equal(unsupported.recommendations.some(choice => choice.frameworkId === "case-study-long"),false);
+  assert.ok(unsupported.rejected.find(choice => choice.frameworkId === "case-study-long")!.reasons.some(reason => reason.includes("Missing essential")));
+});

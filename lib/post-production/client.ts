@@ -1,4 +1,4 @@
-import type { AuthorSignalAssessment, BrandProfile, DraftContent, Production, ProductionBrief, ProductionDetail, ProductionEvidence, WeeklyIdea, WriteWorkspace } from "./types";
+import type { AuthorSignalAssessment, BrandProfile, DraftContent, GenerationParameters, Production, ProductionBrief, ProductionDetail, ProductionEvidence, WeeklyIdea, WriteWorkspace } from "./types";
 import { deliveryForPlatform } from "./delivery";
 import { isAuthorIdea } from "./intent";
 
@@ -107,6 +107,7 @@ export function createWriteClient(ownerId: string, signal?: AbortSignal) {
     progress,
     choose: (id: string, expectedVersion: number, frameworkId: string, hookPatternId?: string) => production("choose", id, { expectedVersion, frameworkId, ...(hookPatternId ? { hookPatternId } : {}) }),
     save: (id: string, expectedVersion: number, content: DraftContent) => production("save", id, { expectedVersion, content }),
+    regenerate: (id: string, expectedVersion: number, parameters: GenerationParameters) => production("regenerate", id, { expectedVersion, parameters }),
     revise: (id: string, expectedVersion: number, instruction: string) => production("revise", id, { expectedVersion, instruction }),
     approve: (id: string, expectedVersion: number, revisionId: string) => production("approve", id, { expectedVersion, revisionId }),
     plan: (id: string, expectedVersion: number, plannedAt: string) => production("plan", id, { expectedVersion, plannedAt }),
@@ -119,3 +120,34 @@ export function createWriteClient(ownerId: string, signal?: AbortSignal) {
   };
 }
 export type WriteClient = ReturnType<typeof createWriteClient>;
+
+const pastedContext = (item: NonNullable<ProductionBrief["agentContext"]>[number]) => /^pasted-context(?:-[2-9][0-9]*)?$/.test(item.id)
+  && item.title === "Pasted context" && item.kind === "reference" && item.provenance.label === "Pasted by the author"
+  && !item.provenance.url && !item.provenance.author && !item.provenance.capturedAt;
+
+/** Edit only this form's pasted material; imported context keeps its provenance intact. */
+export function pastedContextText(brief: ProductionBrief): string {
+  return brief.agentContext?.find(pastedContext)?.text ?? "";
+}
+export function withPastedContext(brief: ProductionBrief, text: string): ProductionBrief {
+  const existing = brief.agentContext ?? [];
+  const owned = existing.find(pastedContext);
+  if (owned) return { ...brief, agentContext: existing.flatMap(item => item === owned ? text.trim() ? [{ ...item, text }] : [] : [item]) };
+  if (!text.trim()) return brief;
+  // An imported item may use our usual identifier. Never overwrite it.
+  let id = "pasted-context";
+  for (let suffix = 2; existing.some(item => item.id === id); suffix++) id = `pasted-context-${suffix}`;
+  return { ...brief, agentContext: [...existing, { id, title: "Pasted context", text, kind: "reference", provenance: { label: "Pasted by the author" } }] };
+}
+export function contextInputError(brief: ProductionBrief): string | null {
+  const items = brief.agentContext ?? [];
+  if (items.length > 8) return "Use at most 8 context items.";
+  if (items.some(item => item.text.length > 12000)) return "Each context item can contain at most 12,000 characters.";
+  if (items.reduce((bytes, item) => bytes + new TextEncoder().encode(item.text).length, 0) > 24000) return "Context can contain at most 24,000 UTF-8 bytes in total. Shorten the pasted material.";
+  return null;
+}
+
+export function withSourcePolicy(brief: ProductionBrief, source: "library" | "web", enabled: boolean): ProductionBrief {
+  const sourcePolicy = { library: true, web: true, ...brief.sourcePolicy, [source]: enabled };
+  return { ...brief, sourcePolicy, sourceIds: sourcePolicy.library ? brief.sourceIds : [] };
+}
