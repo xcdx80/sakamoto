@@ -172,6 +172,7 @@ function ReaderInner({ article }: { article: Article }) {
 
   const wide = useMedia("(min-width: 1080px)", true);
   const withRail = useMedia("(min-width: 1260px)", true);
+  const mapFits = useMedia("(min-width: 720px)", true);
 
   // Reset per-article UI when the article changes.
   useEffect(() => {
@@ -530,7 +531,7 @@ function ReaderInner({ article }: { article: Article }) {
         <main className="relative z-[1] px-4 pb-10 pt-[calc(var(--topbar-h)+64px)] sm:px-6">
           <div className="reader-grid">
             <div className="rg-rail relative">
-              <div className="sticky top-[calc(var(--topbar-h)+28px)] h-[calc(100dvh-var(--topbar-h)-64px)]">{withRail && showRail && <Rail articleEl={articleEl} />}</div>
+              <div className="sticky top-[calc(var(--topbar-h)+28px)] h-[calc(100dvh-var(--topbar-h)-64px)]">{mapFits && showRail && <Rail articleEl={articleEl} />}</div>
             </div>
             <div className="rg-numgap" aria-hidden />
 
@@ -545,9 +546,8 @@ function ReaderInner({ article }: { article: Article }) {
                   </p>
                 )}
                 {kicker && (
-                  <p className="sk-eyebrow focus-hide rise mb-5 flex items-center gap-2">
-                    <span aria-hidden className="size-[5px] shrink-0 rounded-full bg-[var(--rubric)]" />
-                    <span className="truncate">{kicker}</span>
+                  <p className="focus-hide rise mb-6">
+                    <span className="reader-stamp">{kicker}</span>
                   </p>
                 )}
                 <h1 className={`font-serif font-[360] tracking-[-0.026em] text-ink text-balance [font-variation-settings:'opsz'_72] ${titleClass(readingTitle)}`}>
@@ -560,32 +560,17 @@ function ReaderInner({ article }: { article: Article }) {
                   </p>
                 )}
 
-                <motion.span
-                  aria-hidden
-                  className="focus-hide mt-9 block h-px origin-left bg-[var(--rubric-line)]"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ duration: 0.95, ease: ease.ink, delay: 0.26 }}
-                />
-
-                {/* Byline: who and when on one line, how long underneath, the original on the right. */}
-                <div className="focus-hide rise mt-5 flex items-center gap-4" style={{ animationDelay: "320ms" }}>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14.5px] leading-snug text-ink">
-                      {article.author ? <span className="font-medium">{article.author}</span> : <span className="font-medium">{kicker ?? "Untitled source"}</span>}
-                      {article.published && <span className="text-ink-3">{`  \u00b7  ${article.published}`}</span>}
-                    </p>
-                    <p className="sk-eyebrow mt-1.5">
-                      {readingMinutes(ix.words)} min read <span className="text-ink-4">{"\u00b7"}</span> {paraCount} paragraphs
-                    </p>
-                  </div>
+                {/* A catalogue card for the text: who, when, how long, and where it came from. */}
+                <div className="reader-catalog focus-hide rise" style={{ animationDelay: "300ms" }}>
+                  <motion.span aria-hidden className="reader-catalog-rule" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.95, ease: ease.ink, delay: 0.26 }} />
+                  <dl>
+                    <div className="is-wide"><dt>{article.author ? "Author" : "Source"}</dt><dd>{article.author || kicker || "Untitled source"}</dd></div>
+                    {article.published && <div><dt>Year</dt><dd>{article.published}</dd></div>}
+                    <div><dt>Reading</dt><dd>{readingMinutes(ix.words)} min</dd></div>
+                    <div><dt>Length</dt><dd>{paraCount} ¶</dd></div>
+                  </dl>
                   {article.sourceUrl && (
-                    <a
-                      href={article.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="sk-btn sk-btn-ghost !min-h-[34px] shrink-0 !px-3.5 !text-[13px]"
-                    >
+                    <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="reader-catalog-source">
                       Original <ArrowUpRight size={14} strokeWidth={2} />
                     </a>
                   )}
@@ -679,7 +664,7 @@ function ReaderInner({ article }: { article: Article }) {
           </Toast>
         )}
         {toast?.kind === "hint" && (
-          <Toast onClose={dismissHint}>
+          <Toast variant="note" onClose={dismissHint}>
             {window.matchMedia("(pointer: coarse)").matches ? (
               <span>Select any passage to ask about it, explain it or highlight it.</span>
             ) : (

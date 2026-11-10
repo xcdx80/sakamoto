@@ -46,7 +46,7 @@ export const Composer = forwardRef<ComposerHandle, { currentBlock: () => string 
                 variants={{ hidden: { opacity: 0, y: 10 }, shown: { opacity: 1, y: 0, transition: spring.snap } }}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => ask(s)}
-                className="rounded-full border border-rule bg-raised px-3 py-1.5 text-[12.5px] text-ink-2 shadow-card transition-colors hover:border-rule-strong hover:text-ink"
+                className="reader-ask-starter"
               >
                 {s}
               </motion.button>
@@ -62,7 +62,7 @@ export const Composer = forwardRef<ComposerHandle, { currentBlock: () => string 
         initial={false}
         animate={{ maxWidth: focused || q ? 600 : 400 }}
         transition={reduced ? { duration: 0 } : spring.snap}
-        className={`pointer-events-auto mx-auto flex items-center gap-2 rounded-full border bg-raised py-1 pl-5 pr-1 shadow-pop transition-colors duration-200 ${focused ? "border-rule-strong" : "border-rule"}`}
+        className={`reader-ask pointer-events-auto mx-auto flex items-center gap-2 border bg-raised py-1.5 pl-4 pr-1.5 shadow-pop transition-colors duration-200 ${focused ? "border-rule-strong" : "border-rule"}`}
       >
         <input
           ref={inputRef}
@@ -76,7 +76,7 @@ export const Composer = forwardRef<ComposerHandle, { currentBlock: () => string 
               inputRef.current?.blur();
             }
           }}
-          placeholder="Ask about the whole text"
+          placeholder="Ask this text anything…"
           aria-label="Ask anything about the whole text"
           className="h-9 min-w-0 flex-1 bg-transparent text-[14.5px] text-ink outline-none focus-visible:outline-none placeholder:text-ink-3"
         />
@@ -88,7 +88,7 @@ export const Composer = forwardRef<ComposerHandle, { currentBlock: () => string 
           aria-label="Ask"
           data-tip="Ask"
           data-tip-kbd={"\u21b5"}
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-bg transition-[opacity,transform] duration-200 active:scale-90 disabled:opacity-20"
+          className="reader-ask-send grid size-9 shrink-0 place-items-center text-[#fffaf1] transition-[opacity,transform] duration-200 active:scale-90 disabled:opacity-30"
         >
           <ArrowUp size={17} strokeWidth={2.3} />
         </button>
