@@ -81,6 +81,7 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
   })();
 
   return (
+    <>
     <header
       className={`fixed inset-x-0 top-0 z-40 h-[var(--topbar-h)] transition-[transform,background-color,border-color] duration-500 ease-[var(--ease-out)] ${
         tucked ? "-translate-y-full" : ""
@@ -144,7 +145,14 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
           <Account />
         </nav>
       </div>
-      <span ref={barRef} aria-hidden className="absolute inset-x-0 -bottom-px h-px origin-left bg-[var(--rubric)]" style={{ transform: "scaleX(0)" }} />
     </header>
+    {/* Progress stays pinned: under the bar while it shows, on the top edge once it tucks away. */}
+    <div
+      aria-hidden
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[41] transition-transform duration-500 ease-[var(--ease-out)] ${tucked ? "" : "translate-y-[calc(var(--topbar-h)-1px)]"}`}
+    >
+      <span ref={barRef} className={`block origin-left bg-[var(--rubric)] transition-[height] duration-300 ${tucked ? "h-[2px]" : "h-px"}`} style={{ transform: "scaleX(0)" }} />
+    </div>
+    </>
   );
 }

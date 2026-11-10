@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useId, useState, type MouseEvent, type ReactNode } from "react";
+import { motion } from "motion/react";
+import { spring } from "@/components/motion/tokens";
 import { flushSync } from "react-dom";
 import { AlignJustify, AlignLeft, Focus, Headphones, Map as MapIcon, Minus, Pilcrow, Plus, RotateCcw } from "lucide-react";
 import { MODELS, type ModelKey } from "@/lib/models";
@@ -9,19 +11,13 @@ import { useStore } from "@/lib/store";
 import { Popover, barBtn } from "./Popover";
 
 function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { key: T; label: ReactNode }[]; onChange: (v: T) => void; label: string }) {
+  const id = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="grid rounded-[10px] bg-sunk p-[3px]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div role="radiogroup" aria-label={label} className="sk-seg" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          role="radio"
-          aria-checked={value === o.key}
-          onClick={() => onChange(o.key)}
-          className={`inline-flex h-7 items-center justify-center gap-1.5 rounded-[8px] text-[12.5px] font-medium transition-colors ${value === o.key ? "bg-pill text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]" : "text-ink-3 hover:text-ink"}`}
-        >
-          {/* Optically centred: the pill's shadow weighs its bottom edge, so the label sits a pixel lower. */}
-          <span className="inline-flex translate-y-px items-center gap-1.5">{o.label}</span>
+        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} className="sk-seg-option">
+          <span className="relative inline-flex items-center gap-1.5">{o.label}</span>
+          {value === o.key && <motion.span layoutId={id} className="sk-seg-ink" transition={spring.snap} />}
         </button>
       ))}
     </div>
@@ -39,53 +35,43 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function Chip({ on, onChange, label, icon }: { on: boolean; onChange: (v: boolean) => void; label: string; icon: ReactNode }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      className={`flex h-9 items-center justify-center gap-1.5 rounded-[10px] border text-[12.5px] font-medium transition-colors ${
-        on ? "border-transparent bg-rubric-wash text-rubric-text" : "border-rule text-ink-3 hover:border-rule-strong hover:text-ink"
-      }`}
-    >
-      {icon}
-      {label}
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} className="sk-switch-row">
+      <span className="sk-switch-label">{icon}{label}</span>
+      <span className="sk-switch" aria-hidden><motion.span className="sk-switch-knob" animate={{ x: on ? 14 : 0 }} transition={spring.snap} /></span>
     </button>
   );
 }
 
-/** A tiny page in each theme: its paper, its ink, and the pen's underline. */
-function Swatch({ theme, on }: { theme: (typeof THEMES)[number]; on: boolean }) {
-  const pen = (dark: boolean) => (dark ? "var(--pen-d)" : "var(--pen-l)");
-  const face = "font-serif text-[15px] leading-none [font-variation-settings:'opsz'_36]";
+const STOCK: Record<Settings["theme"], string> = {
+  auto: "Follows your system, day and night",
+  paper: "Warm paper, the house stock",
+  sepia: "Old library stock, softer on the eyes",
+  snow: "Bright and crisp, like new paper",
+  night: "A dark desk with warm ink",
+  ink: "Blue-black, for late reading",
+};
+
+/** A sheet of each paper stock: its ground, three lines of its ink, a highlighter stroke and the pen's tick. */
+function Sheet({ theme }: { theme: (typeof THEMES)[number] }) {
+  const ground = theme.key === "auto" ? "linear-gradient(135deg,#faf7f0 0 50%,#151412 50% 100%)" : theme.bg;
+  const ink = theme.key === "auto" ? "#7d766a" : theme.fg;
   return (
-    <span
-      className={`relative flex h-[42px] w-full overflow-hidden rounded-[3px] shadow-[inset_0_0_0_1px_rgb(128_128_128/0.28),0_2px_5px_-2px_rgb(40_30_20/0.3)] transition-transform duration-300 ease-[var(--ease-spring)] ${
-        on ? "-translate-y-1 -rotate-3" : "group-hover:-translate-y-0.5 group-hover:rotate-2"
-      }`}
-    >
-      {theme.key === "auto" ? (
-        <>
-          <span className="flex flex-1 items-center justify-end" style={{ background: "#faf7f0", color: "#1a1814" }}>
-            <span className={`${face} relative`}>
-              A<span className="absolute -bottom-[5px] left-0 right-0 h-[2px] rounded-full" style={{ background: pen(false) }} />
-            </span>
-          </span>
-          <span className="flex flex-1 items-center justify-start" style={{ background: "#151412", color: "#e9e3d6" }}>
-            <span className={`${face} relative`}>
-              a<span className="absolute -bottom-[5px] left-0 right-0 h-[2px] rounded-full" style={{ background: pen(true) }} />
-            </span>
-          </span>
-        </>
-      ) : (
-        <span className="flex flex-1 items-center justify-center" style={{ background: theme.bg, color: theme.fg }}>
-          <span className={`${face} relative`}>
-            Aa
-            <span className="absolute -bottom-[5px] left-0 right-0 h-[2px] rounded-full" style={{ background: pen(theme.dark) }} />
-          </span>
-        </span>
-      )}
+    <span className="sk-sheet-face" style={{ background: ground }}>
+      <span className="sk-sheet-line" style={{ background: ink, width: "78%" }} />
+      <span className="sk-sheet-line is-marked" style={{ background: ink, width: "64%" }} />
+      <span className="sk-sheet-line" style={{ background: ink, width: "70%" }} />
+      <span className="sk-sheet-line" style={{ background: ink, width: "42%" }} />
+      <span className="sk-sheet-tick" style={{ background: theme.dark ? "var(--pen-d)" : "var(--pen-l)" }} />
     </span>
+  );
+}
+
+/** A short line of ink, the way each pen writes. */
+function InkStroke({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 36 14" className="h-[14px] w-9" aria-hidden>
+      <path d="M2 9c4-6 7-6 9-1s5 5 8 0 6-5 8-1 4 3 7-1" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -177,40 +163,40 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
           {(compact || tab === "look") && (
             <div className="space-y-3.5">
               <div>
-                <p className="sk-eyebrow mb-3">Theme</p>
-                <div className="grid grid-cols-6 gap-2">
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={(e) => pickTheme(t.key, e)}
-                      aria-pressed={settings.theme === t.key}
-                      data-tip={t.key === "auto" ? "Follows your system" : undefined}
-                      className="group flex flex-col items-center gap-1.5 rounded-[12px] focus-visible:outline-offset-4"
-                    >
-                      <Swatch theme={t} on={settings.theme === t.key} />
-                      <span className={`mt-0.5 text-[11px] leading-none transition-colors ${settings.theme === t.key ? "font-medium text-ink" : "text-ink-3 group-hover:text-ink-2"}`}>{t.label}</span>
-                    </button>
-                  ))}
+                <p className="sk-eyebrow mb-1">Paper</p>
+                <div className="sk-fan" role="group" aria-label="Theme">
+                  {THEMES.map((t, i) => {
+                    const on = settings.theme === t.key;
+                    return (
+                      <motion.button
+                        key={t.key}
+                        type="button"
+                        onClick={(e) => pickTheme(t.key, e)}
+                        aria-pressed={on}
+                        aria-label={`${t.label} theme`}
+                        className="sk-sheet"
+                        style={{ zIndex: on ? 10 : i }}
+                        initial={false}
+                        animate={{ y: on ? -12 : 0, rotate: on ? 0 : (i - (THEMES.length - 1) / 2) * 5 }}
+                        whileHover={on ? undefined : { y: -6 }}
+                        transition={spring.bouncy}
+                      >
+                        <Sheet theme={t} />
+                        <span className="sk-sheet-name">{t.label}</span>
+                      </motion.button>
+                    );
+                  })}
                 </div>
+                <p className="sk-fan-caption"><b>{THEMES.find((t) => t.key === settings.theme)?.label}</b> {STOCK[settings.theme]}</p>
               </div>
 
               <Row label="Pen">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {PENS.map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => set({ pen: p.key })}
-                      aria-pressed={settings.pen === p.key}
-                      aria-label={`${p.label} pen`}
-                      data-tip={p.label}
-                      className={`grid size-7 place-items-center rounded-full transition-[box-shadow,transform] duration-300 ease-[var(--ease-spring)] hover:-translate-y-0.5 active:scale-90 ${settings.pen === p.key ? "shadow-[0_0_0_2px_var(--bg-raised),0_0_0_3.5px_var(--ink-3)]" : ""}`}
-                    >
-                      <span className="size-5 rounded-full" style={{ background: dark ? p.dark : p.light }} />
+                    <button key={p.key} type="button" onClick={() => set({ pen: p.key })} aria-pressed={settings.pen === p.key} aria-label={`${p.label} pen`} data-tip={p.label} className="sk-ink-choice">
+                      <InkStroke color={dark ? p.dark : p.light} />
                     </button>
                   ))}
-                  <span className="ml-1 text-[12px] text-ink-3">{PENS.find((p) => p.key === settings.pen)?.label}</span>
                 </div>
               </Row>
 
@@ -226,19 +212,18 @@ export function SettingsMenu({ compact = false }: { compact?: boolean }) {
                           aria-pressed={settings.marker === m.key}
                           aria-label={`${m.label} highlighter`}
                           data-tip={m.label}
-                          className={`grid size-7 place-items-center rounded-full transition-[box-shadow,transform] active:scale-90 ${settings.marker === m.key ? "shadow-[0_0_0_2px_var(--bg-raised),0_0_0_3.5px_var(--ink-3)]" : ""}`}
+                          className="sk-ink-choice"
                         >
-                          <span className="h-3 w-5 -rotate-12 rounded-[3px] opacity-80" style={{ background: m.color }} />
+                          <span className="h-[11px] w-8 -rotate-3 rounded-[2px] opacity-80" style={{ background: m.color }} />
                         </button>
                       ))}
-                      <span className="ml-1 text-[12px] text-ink-3">{MARKERS.find((m) => m.key === settings.marker)?.label}</span>
                     </div>
                   </Row>
-                  <div className="grid grid-cols-2 gap-1.5 border-t border-rule pt-3.5">
-                    <Chip label="Numbers" icon={<Pilcrow size={14} />} on={settings.numbers} onChange={(v) => set({ numbers: v })} />
-                    <Chip label="Map" icon={<MapIcon size={14} />} on={settings.rail} onChange={(v) => set({ rail: v })} />
-                    <Chip label="Focus" icon={<Focus size={14} />} on={focusMode} onChange={(v) => setUI({ focusMode: v })} />
-                    <span className="px-3 py-2 text-[12px] text-ink-3" title="Reading aloud is unavailable. Saved text remains readable.">Listen unavailable</span>
+                  <div className="sk-switches">
+                    <Chip label="Paragraph numbers" icon={<Pilcrow size={14} />} on={settings.numbers} onChange={(v) => set({ numbers: v })} />
+                    <Chip label="Reading map" icon={<MapIcon size={14} />} on={settings.rail} onChange={(v) => set({ rail: v })} />
+                    <Chip label="Focus mode" icon={<Focus size={14} />} on={focusMode} onChange={(v) => setUI({ focusMode: v })} />
+                    <p className="sk-switch-note" title="Reading aloud is unavailable. Saved text remains readable.">Reading aloud is unavailable for now.</p>
                   </div>
                 </>
               )}

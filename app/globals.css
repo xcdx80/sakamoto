@@ -330,18 +330,20 @@ kbd,
   visibility: hidden;
 }
 
+/* The reading map shows from tablet width up: it is how you see the whole text at once. */
 @media (min-width: 720px) {
   .reader-grid {
-    grid-template-columns: 52px minmax(0, var(--m));
+    grid-template-columns: 28px 56px minmax(0, var(--m));
   }
-  .reader-grid > .rg-numgap {
+  .reader-grid > .rg-numgap,
+  .reader-grid > .rg-rail {
     display: block;
   }
 }
 
 @media (min-width: 1080px) {
   .reader-grid {
-    grid-template-columns: 56px minmax(0, var(--m)) 52px 300px;
+    grid-template-columns: 28px 56px minmax(0, var(--m)) 52px 300px;
   }
   .reader-grid > .rg-gutter,
   .reader-grid > .rg-margin {
@@ -352,9 +354,6 @@ kbd,
 @media (min-width: 1260px) {
   .reader-grid {
     grid-template-columns: 28px 76px minmax(0, var(--m)) 64px 340px;
-  }
-  .reader-grid > .rg-rail {
-    display: block;
   }
 }
 
@@ -512,28 +511,12 @@ kbd,
   text-decoration-thickness: 1px;
 }
 
-/* A rubricated initial: the coloured capital of a manuscript, two lines deep. */
-.prose-read .blk.is-first .blk-text::first-letter {
-  float: left;
-  font-size: 3.45em;
-  line-height: 0.84;
-  padding: 0.07em 0.05em 0 0;
-  color: var(--rubric);
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-variation-settings: "opsz" 72;
-}
-
-@supports (initial-letter: 2) or (-webkit-initial-letter: 2) {
-  .prose-read .blk.is-first .blk-text::first-letter {
-    float: none;
-    font-size: inherit;
-    line-height: inherit;
-    padding: 0;
-    -webkit-initial-letter: 2;
-    initial-letter: 2;
-    margin-right: 0.12em;
-  }
+/* The opening line set in small capitals, the way a printed book starts a chapter.
+   Pseudo-element styling only: the text and its offsets are untouched. */
+.prose-read .blk.is-first .blk-text::first-line {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.055em;
+  color: var(--ink);
 }
 
 /* ---------- paragraph numbers: the shared address system ---------- */
@@ -2325,7 +2308,7 @@ a.reading-connection-card:hover { border-color: var(--rule-strong); transform: t
 .prose-read .reader-markdown [role="row"] { display: table-row; }
 .prose-read .reader-markdown :is([role="cell"], [role="columnheader"]) { display: table-cell; padding: .5em .7em; border: 1px solid var(--rule); }
 .prose-read .reader-markdown [role="columnheader"] { font-weight: 650; background: var(--bg-sunk); }
-.prose-read .blk.is-first .reader-markdown::first-letter { all: unset; }
+.prose-read .blk.is-first .reader-markdown::first-line { font-variant-caps: normal; letter-spacing: normal; }
 
 .reader-thread-heading { margin: 18px 0 16px; font-family: var(--font-mono); font-size: 11px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 
@@ -2337,3 +2320,28 @@ a.reading-connection-card:hover { border-color: var(--rule-strong); transform: t
   .content-window { --library-columns: 1; }
   .content-window-row { padding-bottom: 13px; }
 }
+
+/* ---------- reader identity: a stamped source, a catalogue card, a seal to ask ---------- */
+.reader-stamp { display: inline-block; max-width: 100%; overflow: hidden; padding: 4px 9px 3px; border: 1.5px solid var(--rubric-line); border-radius: 3px; color: var(--rubric-text); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; line-height: 1.4; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; transform: rotate(-1.5deg); }
+.reader-catalog { position: relative; display: flex; align-items: stretch; gap: 16px; margin-top: 36px; padding: 16px 0 14px; border-bottom: 1px solid var(--rule); }
+.reader-catalog-rule { position: absolute; top: 0; left: 0; right: 0; height: 1px; transform-origin: left; background: var(--rubric-line); }
+.reader-catalog dl { display: flex; flex: 1; flex-wrap: wrap; gap: 10px 0; min-width: 0; margin: 0; }
+.reader-catalog dl > div { min-width: 0; padding: 0 18px; border-left: 1px solid var(--rule); }
+.reader-catalog dl > div:first-child { padding-left: 0; border-left: 0; }
+.reader-catalog dl > div.is-wide { flex: 0 1 auto; max-width: 46%; }
+.reader-catalog dt { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.reader-catalog dd { overflow: hidden; margin: 3px 0 0; color: var(--ink); font-family: var(--font-serif); font-size: 16.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; font-variation-settings: "opsz" 24; }
+.reader-catalog-source { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; align-self: center; padding: 6px 2px; color: var(--ink-2); font-size: 13px; font-weight: 500; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 4px; transition: color .16s, text-decoration-color .16s; }
+.reader-catalog-source:hover { color: var(--rubric-text); text-decoration-color: currentColor; }
+@media (max-width: 600px) {
+  .reader-catalog { flex-direction: column; gap: 10px; }
+  .reader-catalog dl > div { padding: 0 12px; }
+  .reader-catalog dl > div.is-wide { flex-basis: 100%; max-width: none; padding-left: 0; }
+  .reader-catalog dl > div.is-wide + div { padding-left: 0; border-left: 0; }
+  .reader-catalog-source { align-self: flex-start; }
+}
+.reader-ask { border-radius: 14px; }
+.reader-ask-send { border-radius: 9px; background: var(--rubric); box-shadow: inset 0 -2px 0 rgb(0 0 0 / .12); }
+.reader-ask-send:not(:disabled):hover { transform: rotate(-4deg); }
+.reader-ask-starter { padding: 6px 11px; border: 1px solid var(--rule); border-radius: 8px; background: var(--bg-raised); color: var(--ink-2); font-size: 12.5px; box-shadow: var(--shadow-card); transition: border-color .16s, color .16s, transform .24s var(--ease-spring); }
+.reader-ask-starter:hover { border-color: var(--rule-strong); color: var(--ink); transform: translateY(-1px) rotate(-.6deg); }

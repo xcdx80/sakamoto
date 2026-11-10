@@ -2,16 +2,27 @@
 
 import { motion } from "motion/react";
 import Link from "next/link";
-import { spring } from "@/components/motion/tokens";
+import { MARK } from "./mark";
 
-/** Lines of text with a note in the margin: the whole idea in 24px. */
+/** The seal: a vermilion hanko, an open book resting on a slope. 坂本, slope and book. */
 export function SakamotoMark({ className = "size-6" }: { className?: string }) {
+  const { seal, tilt, pages, slope, paper } = MARK;
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
-      <path d="M3 6.5h10.5M3 11.5h10.5M3 16.5h6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M18.5 3v18" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" opacity="0.32" />
-      <motion.circle cx="18.5" cy="11.5" r="2.9" fill="var(--rubric)" variants={{ rest: { y: 0 }, hop: { y: [0, -6, 0, -2, 0] } }} transition={{ ...spring.bouncy, type: "tween", duration: 0.55 }} />
-    </svg>
+    <motion.svg
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+      className={className}
+      style={{ transformOrigin: "50% 60%" }}
+      variants={{ rest: { scale: 1, rotate: 0 }, hop: { scale: [1, 0.84, 1.06, 1], rotate: [0, -5, 2, 0] } }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <rect x={seal.x} y={seal.y} width={seal.size} height={seal.size} rx={seal.radius} fill="var(--rubric)" />
+      <g transform={tilt} fill={paper}>
+        {pages.map((d) => <path key={d} d={d} />)}
+      </g>
+      <path d={slope} stroke={paper} strokeWidth="1.35" strokeLinecap="round" />
+    </motion.svg>
   );
 }
 
