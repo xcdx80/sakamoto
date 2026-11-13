@@ -8,3 +8,6 @@ next-env.d.ts
 .DS_Store
 .claude/
 .clerk/
+
+# Local verification evidence and scratch runtime state.
+.local/

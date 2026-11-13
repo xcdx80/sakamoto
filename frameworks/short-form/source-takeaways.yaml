@@ -4,7 +4,7 @@ name: Takeaways from a source
 form: short
 family: curation
 summary: Quote or link one saved post or article and give your numbered takeaways from it. The source carries the
-  proof; your takeaways carry the point of view. Native to a knowledge library like Sakamoto.
+  proof; your takeaways carry the point of view. Native to a knowledge library like InView.
 when_to_use:
   source_signals:
   - signal: quotable_source_post

@@ -159,7 +159,7 @@ const plain = (md: string) =>
     .join("")
     .trim();
 
-/** One LiteParse block as a Sakamoto block, or nothing for rules, pictures and the shards of diagrams. */
+/** One LiteParse block as a InView block, or nothing for rules, pictures and the shards of diagrams. */
 function toBlock(b: LayoutBlock): Block | null {
   const runs = (t: string) => inlineMd(undash(t.replace(/\s+/g, " ").trim()));
   switch (b.kind) {

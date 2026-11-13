@@ -53,7 +53,7 @@ async function fromFile(file: File, onProgress?: (p: number, label?: string) => 
       a.source = file.name;
       return { ok: true, article: a };
     }
-    return { ok: false, error: "Sakamoto reads PDF, .txt and .md files." };
+    return { ok: false, error: "InView reads PDF, .txt and .md files." };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not read that file." };
   }

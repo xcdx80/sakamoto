@@ -14,6 +14,7 @@ export function Account() {
         </SignInButton>
       </Show>
       <Show when="signed-in">
+        <a href="/settings/providers" className="sk-btn !text-[13px]">API keys</a>
         <span className="grid size-9 place-items-center">
           <UserButton appearance={{ elements: { avatarBox: "size-7" } }} />
         </span>

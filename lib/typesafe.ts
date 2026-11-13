@@ -1,15 +1,15 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, type ProviderConnection } from "./provider-connections";
 /** TypeSafe Choice transport; never treats Jev as a text generator. */
 import { TOPICS, isTopic, type TopicKey } from "./library";
 import { PaidWorkError, usageMicros } from "./paid-work";
 export const TAXONOMY = "topics-v1";
 export function jevRequest(state: string) {
   if (
-    !process.env.TYPESAFE_API_KEY?.trim() ||
     (process.env.TYPESAFE_MODEL && process.env.TYPESAFE_MODEL !== "jev-latest")
   )
     throw new PaidWorkError(
       "configuration",
-      "Classification paused: configure the server TypeSafe key and jev-latest model.",
+      "Classification paused: configure the jev-latest model.",
     );
   const body = {
     model: "jev-latest",
@@ -38,22 +38,19 @@ export function jevRequest(state: string) {
   return body;
 }
 export async function decideCategory(
+  connection: ProviderConnection,
   body: ReturnType<typeof jevRequest>,
   signal: AbortSignal,
   received: (id: string | null) => Promise<void>,
 ) {
   let r: Response;
   try {
-    r = await fetch("https://api.typesafe.ai/v1/systemone", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer " + process.env.TYPESAFE_API_KEY!.trim(),
-        "content-type": "application/json",
-      },
+    r = await executeProviderRequest(connection, "typesafe-systemone", {
       body: JSON.stringify(body),
       signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderRequestNotSent) throw error;
     throw new PaidWorkError(
       "provider_error",
       "TypeSafe connection interrupted; potentially billed usage remains reserved.",
@@ -100,7 +97,8 @@ export async function decideCategory(
   let data: any;
   try {
     data = JSON.parse(bytes);
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderRequestNotSent) throw error;
     throw new PaidWorkError(
       "invalid_response",
       "TypeSafe returned an invalid decision.",

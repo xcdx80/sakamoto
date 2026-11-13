@@ -1,7 +1,7 @@
 import { POST_TOOLS, POST_WORKFLOW_INSTRUCTIONS, callPostTool, isPostTool, postToolFailure } from "./post-production/mcp";
 import { BOOKMARK_ORDER_SCHEMA } from "./bookmark-order-input";
 /**
- * The Sakamoto MCP server: a reader's agent saves articles (by link, or as text it
+ * The InView MCP server: a reader's agent saves articles (by link, or as text it
  * has read itself) to their library and looks through it. Streamable HTTP, stateless: every request is one JSON-RPC
  * message answered with JSON, no session and no event stream.
  *
@@ -39,7 +39,7 @@ const MAX_TEXT = 400_000;
 const PER_DAY = 1000;
 const SITE = SITE_URL;
 
-const INSTRUCTIONS = `Sakamoto is the reader's private library. Save full X bookmarked posts with save_bookmarks: one post ID, original URL, full text and author per source. Preserve individual parent/quote identities in optional contextPosts. Completeness is an agent-reported claim, never independent X verification. Intake makes no paid model call; classification and indexing may remain pending. Use bounded batches of at most 25 posts and 2 MB, keep every receipt and resume with the next batch. Up to 60 MCP requests/minute; after a rate-limit response, wait a minute and replay the unacknowledged batch. A receipt confirms only that delivery, never the complete bookmark history. Removed posts stay removed until restore_bookmarks is explicitly requested by the reader. Absence or unbookmarking never removes a Sakamoto item.
+const INSTRUCTIONS = `InView is the reader's private library. Save full X bookmarked posts with save_bookmarks: one post ID, original URL, full text and author per source. Preserve individual parent/quote identities in optional contextPosts. Completeness is an agent-reported claim, never independent X verification. Intake makes no paid model call; classification and indexing may remain pending. Use bounded batches of at most 25 posts and 2 MB, keep every receipt and resume with the next batch. Up to 60 MCP requests/minute; after a rate-limit response, wait a minute and replay the unacknowledged batch. A receipt confirms only that delivery, never the complete bookmark history. Removed posts stay removed until restore_bookmarks is explicitly requested by the reader. Absence or unbookmarking never removes an InView item.
 Call bookmark_workflow for exact source, sample, backfill and routine instructions; bookmark_delivery_status gives durable receipts and verified counts, separate from agent-reported source totals. Optional save_bookmarks delivery identifies a resumable run/batch. report_bookmark_run records no-data or blocked checks. Direct links in accepted posts are processed automatically; do not separately call save_articles for those discoveries. Use save_articles for separately requested web articles. Legacy save_text remains available for text, transcripts and sources you read yourself.`;
 
 const POST_SCHEMA = {
@@ -95,7 +95,7 @@ const TOOLS = [
   {
     name: "save_articles",
     title: "Save articles to the library",
-    description: `Save web articles, essays, blog posts or papers to the reader's Sakamoto library. Sakamoto fetches each page, keeps its full text and sorts it onto a topic. Up to ${PER_CALL} URLs per call. Send the article's own URL, not a link to a post on X or another social site. Links already in the library are skipped. Returns what happened to each URL.`,
+    description: `Save web articles, essays, blog posts or papers to the reader's InView library. InView fetches each page, keeps its full text and sorts it onto a topic. Up to ${PER_CALL} URLs per call. Send the article's own URL, not a link to a post on X or another social site. Links already in the library are skipped. Returns what happened to each URL.`,
     inputSchema: {
       type: "object",
       properties: { urls: { type: "array", items: { type: "string" }, minItems: 1, maxItems: PER_CALL, description: "Article URLs to save." } },
@@ -107,7 +107,7 @@ const TOOLS = [
   {
     name: "save_text",
     title: "Save a text to the library",
-    description: "Save a text you have read yourself to the reader's Sakamoto library, for what Sakamoto can't fetch from a link: an X Article, a long post or a thread on X, a video's transcript, a page behind a login. Send the whole text as Markdown (blank lines between paragraphs, # for headings), word for word, not a summary. Give the original URL so the reader can open the source and the text isn't saved twice. One text per call.",
+    description: "Save a text you have read yourself to the reader's InView library, for what InView can't fetch from a link: an X Article, a long post or a thread on X, a video's transcript, a page behind a login. Send the whole text as Markdown (blank lines between paragraphs, # for headings), word for word, not a summary. Give the original URL so the reader can open the source and the text isn't saved twice. One text per call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -127,7 +127,7 @@ const TOOLS = [
   {
     name: "search_library",
     title: "Search the library",
-    description: "Find texts in the reader's Sakamoto library by words in the title, author, source or tags, by topic, or by reading status. With no arguments, lists the most recently added.",
+    description: "Find texts in the reader's InView library by words in the title, author, source or tags, by topic, or by reading status. With no arguments, lists the most recently added.",
     inputSchema: {
       type: "object",
       properties: {
@@ -197,14 +197,14 @@ export async function handle(req: Request, pathToken?: string): Promise<Response
 
   const header = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   const token = looksLikeToken(header) ? header : looksLikeToken(pathToken) ? pathToken : null;
-  if (!process.env.DATABASE_URL) return fail(first.id, -32000, "The Sakamoto library is not available on this server.", 503);
+  if (!process.env.DATABASE_URL) return fail(first.id, -32000, "The InView library is not available on this server.", 503);
   let who: { userId: string; label: string } | null = null;
   try {
     who = token ? await tokenUser(hashToken(token)) : null;
   } catch {
-    return fail(first.id, -32000, "The Sakamoto library is not reachable right now. Try again in a minute.", 503);
+    return fail(first.id, -32000, "The InView library is not reachable right now. Try again in a minute.", 503);
   }
-  if (!who) return fail(first.id, -32001, `Missing or revoked Sakamoto token. Make one in your library at ${SITE}/library, under Connect an agent.`, 401);
+  if (!who) return fail(first.id, -32001, `Missing or revoked InView token. Make one in your library at ${SITE}/library, under Connect an agent.`, 401);
   const { userId, label } = who;
   if (!allow(`mcp:${userId}`, 60, 60_000)) return fail(first.id, -32002, "Too many requests. Wait a minute, then try again.", 429);
 
@@ -233,7 +233,7 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
       return ok({
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "sakamoto", title: "Sakamoto", version: "1.1.0", websiteUrl: SITE },
+        serverInfo: { name: "sakamoto", title: "InView", version: "1.1.0", websiteUrl: SITE },
         instructions: `${INSTRUCTIONS}\n\n${POST_WORKFLOW_INSTRUCTIONS}`,
       });
     }
@@ -248,11 +248,11 @@ async function answer(msg: Rpc, userId: string, label: string, signal: AbortSign
         if (isPostTool(name)) {
           try {
             const result = await callPostTool(userId, name, args, signal);
-            const response = ok(toolResult("Sakamoto writing journey.", result));
+            const response = ok(toolResult("InView writing journey.", result));
             if (Buffer.byteLength(JSON.stringify(response), "utf8") > 4_000_000)
-              return ok(toolResult("Saved post exceeds the MCP response limit. Open it in Sakamoto; no draft text was truncated.", {
+              return ok(toolResult("Saved post exceeds the MCP response limit. Open it in InView; no draft text was truncated.", {
                 status: "too_large", url: result.url, production: result.production,
-                notice: "The saved result is retained. Do not repeat a mutation; open the Sakamoto link to inspect it.",
+                notice: "The saved result is retained. Do not repeat a mutation; open the InView link to inspect it.",
               }));
             return response;
           } catch (error) { return ok(postToolFailure(error)); }
@@ -319,7 +319,7 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
   const one = async ({ url, key }: { url: string; key: string }): Promise<Saved> => {
     const kind = notAnArticle(url);
     if (kind === "social") return { url, status: "failed", reason: "This is a social post, not an article. Send the link the post points to, or, if the post is the piece, read it and send the full post with save_bookmarks (or legacy save_text)." };
-    if (kind === "video") return { url, status: "failed", reason: "This is a video, not an article. Sakamoto reads text: send its transcript with save_text." };
+    if (kind === "video") return { url, status: "failed", reason: "This is a video, not an article. InView reads text: send its transcript with save_text." };
     const known = have.get(key);
     if (known) return { url, status: "already_saved", title: String(known.data.title ?? ""), topic: TOPIC[isTopic(known.data.topic) ? known.data.topic : "unsorted"].name };
     if (budget <= 0) return { url, status: "failed", reason: `The daily limit of ${PER_DAY} saves is reached. Try again tomorrow.` };
@@ -330,7 +330,7 @@ async function saveArticles(userId: string, args: Record<string, unknown>, via: 
     let r = html ? await fetchArticle(html) : null;
     if (!r?.ok) r = await fetchArticle(url, { pdf: true });
     if (!r.ok) return { url, status: "failed", reason: r.error };
-    if ("pdf" in r) return { url, status: "failed", reason: "This link is a PDF. Agents can't save PDFs yet; open it in Sakamoto to read it." };
+    if ("pdf" in r) return { url, status: "failed", reason: "This link is a PDF. Agents can't save PDFs yet; open it in InView to read it." };
     const a = r.article;
     if (have.has(normalizeUrl(a.sourceUrl ?? ""))) {
       const k = have.get(normalizeUrl(a.sourceUrl ?? ""))!;
@@ -390,7 +390,7 @@ async function saveText(userId: string, args: Record<string, unknown>, via: stri
     const result = await importBookmarks(userId, { posts: [{ postId: identity.postId, url, text: args.text, title: str(args.title), author: { name: str(args.author) ?? identity.handle, handle: identity.handle }, observedAt: new Date().toISOString(), ...(published && Number.isFinite(Date.parse(published)) ? { publishedAt: new Date(published).toISOString() } : {}), completeness: { status: "unknown", reason: "Legacy save_text did not report completeness." } }] }, via);
     const r = result.results[0];
     if (r.status === "rejected") return toolError(r.reason ?? "Unable to save this text.");
-    return toolResult(r.status === "removed" ? "This post was removed in Sakamoto. Restore it deliberately with restore_bookmarks." : r.status === "duplicate" ? "Already in the library." : "Saved to the library; classification and indexing are pending.", {
+    return toolResult(r.status === "removed" ? "This post was removed in InView. Restore it deliberately with restore_bookmarks." : r.status === "duplicate" ? "Already in the library." : "Saved to the library; classification and indexing are pending.", {
       status: r.status === "duplicate" ? "already_saved" : r.status === "removed" ? "removed" : "saved", title: r.title ?? str(args.title) ?? text.trim().slice(0, 100), topic: "Unsorted", words: r.words ?? text.split(/\s+/).filter(Boolean).length, itemId: r.itemId, receiptId: r.receiptId, readInSakamoto: `${SITE}/read/${r.itemId}`, readInGloss: `${SITE}/read/${r.itemId}`,
     });
   }

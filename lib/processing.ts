@@ -47,8 +47,8 @@ export async function processingStatus(
     [owner, /^\d+$/.test(args.after ?? "") ? args.after : "0", limit + 1, args.sourceId ?? null],
   );
   registerLibraryProcessingHandlers(registerProcessingHandler);
-  const budget = await processingBudget();
-  const installedKinds = ["link", ...handlers.keys()];
+  const budget = await processingBudget(owner);
+  const installedKinds = ["link", ...handlers.keys()].filter(budget.configured);
   const allowedKinds = installedKinds.filter(kind => budget.allows(kind));
   const readSummary = (localLinks:string) => db().query(`with local_links as materialized (${localLinks}) select
     count(*) filter(where j.state in ('pending','retryable','running','blocked') or j.id in(select job_id from local_links))::int as pending,
@@ -64,7 +64,7 @@ export async function processingStatus(
     count(*) filter(where j.state='blocked' or (j.kind in ('classification','indexing') and not(j.kind=any($3::text[])) and (j.state in ('pending','retryable','terminal') or (j.kind='classification' and j.state='complete' and a.data#>>'{processing,classification}' in ('failed','paused')))))::int as blocked,
     $5::boolean as budget_paused
     from processing_jobs j join articles a on a.user_id=j.user_id and a.id=j.source_id and a.source_revision=j.source_revision
-    where j.user_id=$1 and not a.deleted`,[owner,new Date(clock()).toISOString(),allowedKinds,installedKinds,!budget.allows('classification') && !budget.allows('indexing')]);
+    where j.user_id=$1 and not a.deleted`,[owner,new Date(clock()).toISOString(),allowedKinds,installedKinds,!budget.budgetAllows('classification') && !budget.budgetAllows('indexing')]);
   let summaries:Record<string,any>[];
   try{summaries=await readSummary('select job_id from saved_post_link_targets($1)');}
   catch(error){
@@ -208,7 +208,7 @@ export async function processLibrary(
   let processed = 0;
   let finished = 0;
   let succeeded = 0, failed = 0, blocked = 0;
-  const budget = await processingBudget();
+  const budget = await processingBudget(owner);
   const allowedKinds = ["link", ...handlers.keys()].filter(kind => budget.allows(kind));
   let claimedSlots = 0;
   const work = async () => {

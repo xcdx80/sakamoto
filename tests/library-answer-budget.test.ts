@@ -1,3 +1,5 @@
+import { connectFixtureProviders } from "./provider-fixtures";
+import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,6 +21,7 @@ before(async () => {
     identity.hash,
     "Budget answer fixture",
   );
+  await connectFixtureProviders("budget-answer");
   await shelveForUser(
     "budget-answer",
     { id: "budget-source", title: "Telescope" },
@@ -75,3 +78,5 @@ test("interrupted answer framing retains the shared durable reservation and the 
   assert.equal(calls, 1);
   assert.match(paused.notice, /budget|paused/i);
 });
+
+beforeEach(async()=>{await connectFixtureProviders("budget-answer");});

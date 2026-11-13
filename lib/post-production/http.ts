@@ -53,7 +53,7 @@ export async function writeHttp(req: Request, owner: string | null): Promise<Res
       ]);
       const workspace: WriteWorkspace = { profile, xProfile,
         productions: productions.map(production => ({ ...production, checkpoint: { frameworkId: production.checkpoint.frameworkId, hookPatternId: production.checkpoint.hookPatternId } })),
-        history, sources, catalog: summarizeCatalog(loadCatalog()), providers: providerStatus(), publishing: getPublishingCapability(owner) };
+        history, sources, catalog: summarizeCatalog(loadCatalog()), providers: await providerStatus(owner), publishing: getPublishingCapability(owner) };
       return response(workspace);
     }
     const body = await boundedJson(req, 250000);

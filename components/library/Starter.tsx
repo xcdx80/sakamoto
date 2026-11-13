@@ -119,7 +119,7 @@ export function Starter({ count, signedIn, onAdd }: { count: number; signedIn: b
         <LinkSlip />
         <span className="starter-way">
           <span className="starter-title">Save your own links</span>
-          <span className="starter-body">Paste one or many. Sakamoto reads each one in and sorts it onto a topic.</span>
+          <span className="starter-body">Paste one or many. InView reads each one in and sorts it onto a topic.</span>
         </span>
         <ArrowRight size={16} className="starter-go" aria-hidden />
       </button>

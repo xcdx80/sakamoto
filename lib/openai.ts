@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, type ProviderConnection } from "./provider-connections";
 /** Validated OpenAI transport. Billing orchestration stays above this adapter. */
 import type { ChatMessage } from "./models";
 import type { StreamEvent, Usage } from "./models";
@@ -9,11 +10,6 @@ export class ProviderRejected extends PaidWorkError {
   }
 }
 export function openAIConfiguration() {
-  if (!process.env.OPENAI_API_KEY?.trim())
-    throw new PaidWorkError(
-      "configuration",
-      "Answers are paused: the server OpenAI key is missing. Saved reading remains available.",
-    );
   if (
     process.env.OPENAI_ANSWER_MODEL &&
     process.env.OPENAI_ANSWER_MODEL !== LUNA_MODEL
@@ -77,22 +73,19 @@ function usageFrom(raw: any, maxOutput: number): Usage {
   };
 }
 export async function* streamLuna(
+  connection: ProviderConnection,
   body: ReturnType<typeof lunaRequest>,
   signal: AbortSignal,
   received?: (requestId: string | null) => Promise<void>,
 ): AsyncGenerator<StreamEvent> {
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer " + process.env.OPENAI_API_KEY!.trim(),
-      },
+    response = await executeProviderRequest(connection, "openai-chat", {
       body: JSON.stringify(body),
       signal: AbortSignal.any([signal, AbortSignal.timeout(110000)]),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderRequestNotSent) throw error;
     throw new PaidWorkError(
       "provider_error",
       "OpenAI connection interrupted. Potentially billed usage remains reserved; check processing budget before retrying.",
@@ -103,7 +96,7 @@ export async function* streamLuna(
     // Do not echo upstream messages: they can contain submitted text or credentials.
     const msg =
       response.status === 401 || response.status === 403
-        ? "OpenAI rejected the server credentials or model access."
+        ? "OpenAI rejected your credentials or model access."
         : response.status === 429
           ? "OpenAI is rate limited or has no available credit. Check account limits before retrying."
           : "OpenAI could not complete this request.";

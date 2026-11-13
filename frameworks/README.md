@@ -1,6 +1,6 @@
-# Sakamoto post frameworks
+# InView post frameworks
 
-This folder holds data for Sakamoto's post engine: writing frameworks, the rubrics used to score drafts, notes on
+This folder holds data for InView's post engine: writing frameworks, the rubrics used to score drafts, notes on
 each platform, and hook patterns. The engine treats all of it as data. Adding or changing a framework means editing
 YAML, not code.
 

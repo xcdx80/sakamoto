@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#faf7f0"/>
+  <g transform="translate(80 79)"><svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24"><path d="M3 3H21L3 21Z" fill="#252525"/><path d="M8 17.5L14.5 11V17.5Z" fill="#ab8139"/></svg></g>
+  <g font-family="Georgia, serif" fill="#252525">
+    <text x="160" y="124" font-size="42">InView</text>
+    <text x="80" y="295" font-size="76">Bring what you’ve read</text>
+    <text x="80" y="385" font-size="76">back into view.</text>
+  </g>
+  <text x="80" y="490" font-family="Arial, sans-serif" font-size="24" fill="#686258">Your library. Your notes. Answers with sources.</text>
+</svg>

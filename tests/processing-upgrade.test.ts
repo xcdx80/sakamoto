@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -184,6 +185,7 @@ test("a populated pre-processing library upgrades atomically, reindexes, and reu
   // Public migration runner must upgrade populated rows and record006 in its normal atomic transaction.
   await applyMigrations(migrations);
   await applyMigrations(migrations);
+  await connectFixtureProviders(owner);
   // PostgreSQL index builds restrict search_path, independently of the caller's schema setup.
   await connection.query("reindex index articles_source_identity");
   configureProcessing({

@@ -22,7 +22,7 @@ const SHEET = { type: "spring", stiffness: 240, damping: 32, mass: 0.9 } as cons
 
 /**
  * Adding to the library: paste links (one or many), or connect an agent that
- * saves to it through the Sakamoto MCP server.
+ * saves to it through the InView MCP server.
  */
 export function AddPanel({ tab, onTab, onClose, signedIn }: { tab: AddTab; onTab: (t: AddTab) => void; onClose: () => void; signedIn: boolean }) {
   const account = useStore(s => s.scope);
@@ -165,7 +165,7 @@ function Links() {
     <div>
       <p className="add-heading">Save links to your library</p>
       <p className="add-lede">
-        One or many, a line each. Sakamoto reads each page in and sorts it onto a topic. PDFs work too. Leaving Pocket, Instapaper or Raindrop?{" "}
+        One or many, a line each. InView reads each page in and sorts it onto a topic. PDFs work too. Leaving Pocket, Instapaper or Raindrop?{" "}
         <button type="button" onClick={() => fileRef.current?.click()} className="text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink">
           Drop its export here
         </button>
@@ -246,7 +246,7 @@ function Links() {
 }
 
 /**
- * Bookmarklets: one click on any page opens it in Sakamoto, in a new tab, to read now
+ * Bookmarklets: one click on any page opens it in InView, in a new tab, to read now
  * or to shelve for later (`/?url=` and `/?save=` on the home page).
  */
 function Bookmarklets() {
@@ -267,16 +267,16 @@ function Bookmarklets() {
       <p className="mt-1 text-[13px] text-ink-3">Drag one to your bookmarks bar, then click it on any article.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <a ref={readRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookOpen size={14} strokeWidth={1.6} /> Read in Sakamoto
+          <BookOpen size={14} strokeWidth={1.6} /> Read in InView
         </a>
         <a ref={saveRef} onClick={(e) => e.preventDefault()} data-tip="Drag me to your bookmarks bar" className={pill}>
-          <BookmarkPlus size={14} strokeWidth={1.6} /> Save to Sakamoto
+          <BookmarkPlus size={14} strokeWidth={1.6} /> Save to InView
         </a>
       </div>
       <details className="mt-3 text-[12.5px] text-ink-3">
         <summary className="cursor-pointer select-none hover:text-ink-2">On a phone</summary>
         <div className="mt-2">
-          <CopyBlock title="Bookmark any page, then edit the bookmark" body="Paste this as its address and name it Save to Sakamoto." text={code("save")} />
+          <CopyBlock title="Bookmark any page, then edit the bookmark" body="Paste this as its address and name it Save to InView." text={code("save")} />
         </div>
       </details>
     </div>
@@ -395,7 +395,7 @@ function AgentIntro() {
       <div>
         <p className="add-heading">Let your agent shelve for you</p>
         <p className="add-lede">
-          Connect Sakamoto to your agent to save full bookmarked posts, their available author-thread context, and directly linked articles or PDFs. Grok Bot needs its own authenticated X connection. Accepted sources stay saved while paid categorization and indexing process separately.
+          Connect InView to your agent to save full bookmarked posts, their available author-thread context, and directly linked articles or PDFs. Grok Bot needs its own authenticated X connection. Accepted sources stay saved while paid categorization and indexing process separately.
         </p>
       </div>
     </div>
@@ -412,12 +412,12 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
   const steps: { title: string; body: string; copy: string }[] =
     label === "Grok Bot" || label === "Grok"
       ? [
-          { title: "Grok Bot: custom MCP, Remote HTTPS", body: "In Connect apps, add Sakamoto as a custom Remote HTTPS server when available. Supply this endpoint; ask Grok to guide the connection if its controls differ.", copy: prepared.endpoint ?? "Deploy an approved public HTTPS Sakamoto origin first." },
+          { title: "Grok Bot: custom MCP, Remote HTTPS", body: "In Connect apps, add InView as a custom Remote HTTPS server when available. Supply this endpoint; ask Grok to guide the connection if its controls differ.", copy: prepared.endpoint ?? "Deploy an approved public HTTPS InView origin first." },
           { title: "Authentication header", body: "Put this in the connector’s protected header/secret field. Keep it out of chat, prompts and receipts. Complete X plugin sign-in separately using secure handoff.", copy: prepared.remoteReady ? `Authorization: Bearer ${token}` : "Cloud connection unavailable from this local origin." },
         ]
       : label === "Claude"
         ? [
-            { title: "Claude Code: run this", body: "Then ask Claude to save something to your Sakamoto library.", copy: `claude mcp add --transport http sakamoto ${url} --header "Authorization: Bearer ${token}"` },
+            { title: "Claude Code: run this", body: "Then ask Claude to save something to your InView library.", copy: `claude mcp add --transport http inview ${url} --header "Authorization: Bearer ${token}"` },
             { title: "Or claude.ai: Settings, Connectors, Add custom connector", body: "This link carries your token, so keep it private.", copy: `${url}/${token}` },
           ]
         : [
@@ -436,9 +436,9 @@ function Setup({ token, label, origin }: { token: string; label: string; origin:
         <summary className="text-[13px]">Prepare the daily Grok routine</summary>
         <label className="mt-2 block text-[12px]">Daily time <input aria-label="Grok routine daily time" type="time" value={time} onChange={e=>setTime(e.target.value)} className="rounded border border-rule p-1" /></label>
         <label className="mt-2 block text-[12px]">Time zone <select aria-label="Grok routine time zone" value={timeZone} onChange={e=>setTimeZone(e.target.value)} className="rounded border border-rule p-1"><option>Europe/Lisbon</option><option>UTC</option><option>America/New_York</option><option>America/Los_Angeles</option></select></label>
-        <CopyBlock title="Prepared routine — not enabled" body="After the sample passes, enable only within your authorized routine/account scope; existing authorization applies. Inspect its Test run, next run and history; Grok allowance is separate from Sakamoto’s budget." text={prepared.routine} />
+        <CopyBlock title="Prepared routine — not enabled" body="After the sample passes, enable only within your authorized routine/account scope; existing authorization applies. Inspect its Test run, next run and history; Grok allowance is separate from InView’s budget." text={prepared.routine} />
       </details>
-      <p className="text-[12px] text-ink-3">Official Grok Bot guidance: {prepared.sources.map(source=><a key={source.url} className="mr-2 underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}. An unavailable account, expired X login or missing routine feature needs attention in Grok; Sakamoto cannot schedule source fetching.</p>
+      <p className="text-[12px] text-ink-3">Official Grok Bot guidance: {prepared.sources.map(source=><a key={source.url} className="mr-2 underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}. An unavailable account, expired X login or missing routine feature needs attention in Grok; InView cannot schedule source fetching.</p>
     </div>
   );
 }

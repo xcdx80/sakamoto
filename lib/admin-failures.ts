@@ -42,7 +42,7 @@ async function lossProtectionReady(): Promise<boolean> {
 
 export async function readAdminFailures(owner: string): Promise<AdminFailures> {
   if (!owner) throw new Error("A reader is required.");
-  const allowedKinds = await eligiblePaidKinds();
+  const allowedKinds = await eligiblePaidKinds(owner);
   const rows = await db().query(`${FAILURE_ROWS}
     select key,kind,reason,lost,unrecoverable,blocked,count(*)::int as count from failures
     group by key,kind,reason,lost,unrecoverable,blocked order by lost,count(*) desc,kind,reason`, [owner, PERMANENT_LINK_FAILURE,null,null,allowedKinds,INDEX_CONTRACT]);
@@ -55,9 +55,9 @@ export async function readAdminFailures(owner: string): Promise<AdminFailures> {
   return { summary, groups, canMarkLost: await lossProtectionReady() };
 }
 
-async function eligiblePaidKinds() {
-  const budget=await processingBudget();
-  return ['classification','indexing'].filter(kind=>budget.allows(kind) && Boolean(process.env[kind==='classification'?'TYPESAFE_API_KEY':'GOOGLE_API_KEY']));
+async function eligiblePaidKinds(owner: string) {
+  const budget=await processingBudget(owner);
+  return ['classification','indexing'].filter(kind=>budget.allows(kind));
 }
 
 export type FailureAction = { action: "retry-all" } | { action: "lose-unrecoverable" } | { action: "lose-group"; key: string; reason: string };
@@ -67,7 +67,7 @@ export async function manageAdminFailures(owner: string, command: FailureAction)
   if (!["retry-all", "lose-unrecoverable", "lose-group"].includes(command.action)) throw new Error("Invalid failure action.");
   if (command.action === "lose-group" && (!/^[a-f0-9]{32}$/.test(command.key) || !command.reason?.trim() || command.reason.length > 2000))
     throw new Error("Choose a failure group and a reason of up to 2,000 characters.");
-  const allowedKinds = await eligiblePaidKinds();
+  const allowedKinds = await eligiblePaidKinds(owner);
   if (command.action === "retry-all") {
     const [result] = await db().query(`${FAILURE_ROWS}, changed as (
       update processing_jobs j set state='pending',max_attempts=j.attempts+4,error=null,

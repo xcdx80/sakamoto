@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pool,setupPostgres} from './postgres';
@@ -9,6 +10,7 @@ before(setupPostgres);after(()=>pool.end());
 
 test('queue status exposes failed classification outcomes, isolates owners and reports the shared budget pause',async()=>{
  const owner='status-reader',token=makeToken();await createToken(owner,token.id,token.hash,'Status fixture');
+  await connectFixtureProviders(owner);
  const headers={authorization:'Bearer '+token.token};
  for(const [id,classification] of [['failed','failed'],['paused','paused'],['complete','complete']]){
   await shelveForUser(owner,{id,title:id},{id,title:id,blocks:[{id:'b1',type:'p',runs:[{text:'Saved status fixture.'}]}]});
@@ -36,8 +38,9 @@ test('queue status exposes failed classification outcomes, isolates owners and r
 
 test('processing reports completed queue departures separately from retryable attempts',async()=>{
  const owner='retry-status-reader',token=makeToken();await createToken(owner,token.id,token.hash,'Retry status fixture');
+  await connectFixtureProviders(owner);
  await shelveForUser(owner,{id:'retry',title:'Retry'},{id:'retry',title:'Retry',blocks:[{id:'b1',type:'p',runs:[{text:'Index this saved source.'}]}]});
- process.env.GOOGLE_API_KEY='fixture-google';const original=globalThis.fetch;
+ process.env.GOOGLE_API_KEY='fixture-google';await connectFixtureProviders(owner);const original=globalThis.fetch;
  try{
   globalThis.fetch=async()=>new Response(null,{status:429});
   const request=()=>new Request('http://localhost/api/processing',{method:'POST',headers:{authorization:'Bearer '+token.token,'Content-Type':'application/json'},body:JSON.stringify({limit:1})});

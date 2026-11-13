@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
@@ -36,6 +37,7 @@ test("browser receives server imports, rebases only its pending manual edits, an
   const owner = "sync-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Sync fixture");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return init?.method === "POST" ? POST(req) : GET(req);
@@ -67,6 +69,7 @@ test("an account switch during source-cache invalidation cannot delete the next 
     nextOwner = "next-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Invalidation fixture");
+  await connectFixtureProviders(owner);
   for (const id of ["first", "second"]) await shelveForUser(owner, { id, title: "A " + id }, { id, title: "A " + id, blocks: [] });
   useStore.getState().activateAccount(nextOwner);
   for (const id of ["first", "second"]) await saveDoc({ id, title: "B " + id, blocks: [] });
@@ -103,6 +106,7 @@ test("an offline source edit survives a metadata-only remote update and is uploa
   const owner = "offline-compatible-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Offline fixture");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return init?.method === "POST" ? POST(req) : GET(req);
@@ -139,6 +143,7 @@ test("conflicting offline text is retained as a separate document before adoptin
   const owner = "offline-conflict-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Conflict fixture");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return init?.method === "POST" ? POST(req) : GET(req);
@@ -191,6 +196,7 @@ test("failed offline-copy storage pauses sync and keeps the only local source te
   const owner = "recovery-failure-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Recovery failure");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return init?.method === "POST" ? POST(req) : GET(req);
@@ -234,6 +240,7 @@ test("unknown-baseline ID collisions retain differing local text without merging
   const owner = "unknown-baseline-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Unknown baseline");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return String(url).startsWith("/api/articles/")
@@ -274,6 +281,7 @@ test("recovery library-index failure retains the original document and discovera
   const owner = "metadata-failure-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Metadata failure");
+  await connectFixtureProviders(owner);
   globalThis.fetch = async (url, init) => {
     const req = new Request("http://localhost" + url, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token.token } });
     return String(url).startsWith("/api/articles/")
@@ -318,6 +326,7 @@ test("a successful edited-source acknowledgement updates only its matching cache
   const owner = "ack-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Acknowledgement fixture");
+  await connectFixtureProviders(owner);
   const id = "ack-source";
   globalThis.fetch = async (url, init = {}) => {
     const req = new Request("http://localhost" + url, {
@@ -558,6 +567,7 @@ test("a delayed source receipt cannot overwrite or stamp a newer pending body", 
     token = makeToken(),
     id = "race-source";
   await createToken(owner, token.id, token.hash, "Receipt race");
+  await connectFixtureProviders(owner);
   let release!: () => void, delivered!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve)),
     sent = new Promise<void>((resolve) => (delivered = resolve));
@@ -769,6 +779,7 @@ test("edited structured posts publish the visible body as a derived document and
   const owner = "edited-post-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Edited post");
+  await connectFixtureProviders(owner);
   const request = (path: string, body?: unknown) =>
     new Request("http://localhost" + path, {
       headers: {
@@ -944,6 +955,7 @@ test("edited structured posts publish the visible body as a derived document and
       "Original cobalt source",
     );
     process.env.OPENAI_API_KEY = "fixture-openai";
+    await connectFixtureProviders(owner);
     const browserFetch = globalThis.fetch;
     globalThis.fetch = async (url, init) => {
       if (String(url) !== "https://api.openai.com/v1/chat/completions")
@@ -1190,6 +1202,7 @@ test("actual PDF offline recovery removes extraction and physical-page claims fr
   const owner = "edited-pdf-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Edited PDF");
+  await connectFixtureProviders(owner);
   const request = (path: string, body?: unknown) =>
     new Request("http://localhost" + path, {
       headers: {

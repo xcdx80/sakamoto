@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sakamoto.local/frameworks/schema.json",
-  "title": "Sakamoto post framework",
+  "title": "InView post framework",
   "description": "Root: one post framework (short-form/*.yaml, long-form/*.yaml). Other files validate against $defs: hooks_file, shared_rubric_file, selection_file, platform_file, sources_file.",
   "type": "object",
   "additionalProperties": false,

@@ -1,3 +1,6 @@
+import { connectedOwner } from "./provider-fixtures";
+import { connectFixtureProviders } from "./provider-fixtures";
+import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,7 +33,7 @@ test("unknown Google usage retains its reservation, caps paid queries and leaves
   };
   await save("unknown", "Unknown usage source remains searchable.");
   assert.equal(
-    (await processLibrary("budget-search", { limit: 1 })).jobs.find(
+    (await processLibrary(await connectedOwner("budget-search"), { limit: 1 })).jobs.find(
       (job: any) => job.kind === "indexing",
     )!.state,
     "complete",
@@ -38,7 +41,7 @@ test("unknown Google usage retains its reservation, caps paid queries and leaves
   const budget = await budgetStatus("budget-search");
   assert.equal(budget.reservedUsd, 0.001639);
   assert.equal(budget.attempts[0].status, "uncertain");
-  const result = await searchEvidence("budget-search", { query: "searchable" });
+  const result = await searchEvidence(await connectedOwner("budget-search"), { query: "searchable" });
   assert.equal(result.mode, "lexical");
   assert.equal(result.semanticStatus, "paused");
   assert.equal(result.results[0].itemId, "unknown");
@@ -60,14 +63,16 @@ test("credible over-bound Google usage durably halts all paid work while preserv
     });
   };
   await save("overbound", "Overbound source is retained in the library.");
-  const result = await processLibrary("budget-search", { limit: 1 });
+  const result = await processLibrary(await connectedOwner("budget-search"), { limit: 1 });
   assert.equal(
     result.jobs.find((j) => j.sourceId === "overbound" && j.kind === "indexing")?.state,
     "retryable",
   );
   assert.equal((await budgetStatus("budget-search")).halted, true);
-  const found = await searchEvidence("budget-search", { query: "Overbound" });
+  const found = await searchEvidence(await connectedOwner("budget-search"), { query: "Overbound" });
   assert.equal(found.mode, "lexical");
   assert.equal(found.results[0].itemId, "overbound");
   assert.equal(calls, 1);
 });
+
+beforeEach(async()=>{await connectFixtureProviders("budget-search");});

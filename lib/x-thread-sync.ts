@@ -1,4 +1,4 @@
-/** Sakamoto's durable adapter for the Birdclaw historical thread collector. */
+/** InView's durable adapter for the Birdclaw historical thread collector. */
 import {createHash} from 'node:crypto';
 import {db} from './db';
 import {persistCollectedThreadContext,validateCollectedThreadContext} from './bookmarks';

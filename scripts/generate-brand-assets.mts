@@ -1,15 +1,15 @@
-/** Regenerates the seal icons from components/brand/mark.ts. Uses sharp, which ships with Next.js: node --import tsx scripts/generate-brand-assets.mts */
+/** Regenerates the InView icons from components/brand/mark.ts. Uses sharp, which ships with Next.js: node --import tsx scripts/generate-brand-assets.mts */
 import sharp from "sharp";
 import { writeFileSync } from "node:fs";
 import { markSvg, MARK } from "../components/brand/mark.ts";
+import { BRAND } from "../lib/brand.ts";
 const app = new URL("../app/", import.meta.url).pathname;
-writeFileSync(app + "icon.svg", markSvg(32) + "\n");
+writeFileSync(app + "icon.svg", markSvg(32, { background: true }) + "\n");
 const png = (size: number, svg: string) => sharp(Buffer.from(svg)).resize(size, size).png().toBuffer();
-// Apple masks its own corners: a full-bleed seal colour with the book centred.
-const apple = markSvg(180).replace(`<rect x="2.25" y="2.25" width="19.5" height="19.5" rx="5.25"`, `<rect x="0" y="0" width="24" height="24" rx="0"`);
-writeFileSync(app + "apple-icon.png", await png(180, apple));
+// The paper background keeps the mark readable on any launcher or browser chrome.
+writeFileSync(app + "apple-icon.png", await png(180, markSvg(180, { background: true })));
 const sizes = [16, 32, 48];
-const images = await Promise.all(sizes.map(size => png(size, markSvg(size))));
+const images = await Promise.all(sizes.map(size => png(size, markSvg(size, { background: true }))));
 const header = Buffer.alloc(6 + 16 * sizes.length);
 header.writeUInt16LE(0, 0); header.writeUInt16LE(1, 2); header.writeUInt16LE(sizes.length, 4);
 let offset = header.length;
@@ -19,7 +19,24 @@ sizes.forEach((size, i) => {
   header.writeUInt32LE(images[i].length, at + 8); header.writeUInt32LE(offset, at + 12); offset += images[i].length;
 });
 writeFileSync(app + "favicon.ico", Buffer.concat([header, ...images]));
-console.log("icons written", MARK.ink);
+console.log("InView icons written");
+
+const publicDir = new URL("../public/", import.meta.url);
+const card = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="${MARK.paper}"/>
+  <g transform="translate(80 79)">${markSvg(60)}</g>
+  <g font-family="Georgia, serif" fill="${MARK.front.fill}">
+    <text x="160" y="124" font-size="42">${BRAND.name}</text>
+    <text x="80" y="295" font-size="76">Bring what you’ve read</text>
+    <text x="80" y="385" font-size="76">back into view.</text>
+  </g>
+  <text x="80" y="490" font-family="Arial, sans-serif" font-size="24" fill="#686258">Your library. Your notes. Answers with sources.</text>
+</svg>`;
+writeFileSync(new URL("inview.svg", publicDir), card + "\n");
+await sharp(Buffer.from(card)).png().toFile(new URL("og.png", publicDir).pathname);
+await sharp(Buffer.from(card)).jpeg({ quality: 92 }).toFile(new URL("og.jpg", publicDir).pathname);
+
+if (process.argv.includes("--brand-only")) process.exit(0);
 
 /* ---------- covers: flat risograph-style prints, one idea per essay ---------- */
 const W = 600, H = 900;

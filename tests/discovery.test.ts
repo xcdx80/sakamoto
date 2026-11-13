@@ -1,3 +1,4 @@
+import { connectedOwner } from "./provider-fixtures";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { pool, setupPostgres } from "./postgres";
@@ -23,7 +24,7 @@ test("a natural-language topic query discovers relevant reading before semantic 
   await save("discovery-reader", "generic-ui", "Web interface", [
     "Building a UI with browser elements and CSS.",
   ]);
-  const result = await searchEvidence("discovery-reader", {
+  const result = await searchEvidence(await connectedOwner("discovery-reader"), {
     query: "building UI with Expo", semantic: false,
   }, undefined, "discovery");
   assert.ok(result.results.some(source => source.itemId === "expo-controls"));
@@ -34,7 +35,7 @@ test("source titles describe passages even when the paragraph uses different wor
   await save("title-reader", "evaluation-guide", "Eval design for assistants", [
     "Define failure classes, label representative examples, and reserve a held-out set.",
   ]);
-  const result = await searchEvidence("title-reader", { query: "eval design", semantic: false }, undefined, "discovery");
+  const result = await searchEvidence(await connectedOwner("title-reader"), { query: "eval design", semantic: false }, undefined, "discovery");
   assert.equal(result.results[0]?.itemId, "evaluation-guide");
 });
 
@@ -44,7 +45,7 @@ test("topic results leave room for different sources instead of filling the answ
   await save("diverse-reader", "second-guide", "Recovery", [
     "Agentic workflows need design that makes retries visible and reversible.",
   ]);
-  const result = await searchEvidence("diverse-reader", {
+  const result = await searchEvidence(await connectedOwner("diverse-reader"), {
     query: "agentic design best practices", semantic: false, limit: 4,
   }, undefined, "discovery");
   assert.ok(result.results.some(source => source.itemId === "second-guide"));
@@ -61,18 +62,18 @@ test("a matching saved post brings its linked article into discovery without byp
     id: "linked-controls", title: "Control catalogue", contentType: "article", sourceUrl: "https://example.com/controls",
     blocks: [{ id: "buttons", type: "p", runs: [{ text: "Use SwiftUI buttons and menus. Configure control state through bindings." }] }],
   } }) });
-  try { await processLibrary("linked-reader", { limit: 1 }); }
+  try { await processLibrary(await connectedOwner("linked-reader"), { limit: 1 }); }
   finally { configureProcessing({}); }
-  const found = await searchEvidence("linked-reader", { query: "Expo", semantic: false }, undefined, "discovery");
+  const found = await searchEvidence(await connectedOwner("linked-reader"), { query: "Expo", semantic: false }, undefined, "discovery");
   assert.ok(found.results.some(source => source.itemId === "linked-controls"));
-  const posts = await searchEvidence("linked-reader", { query: "Expo", contentType: "post", semantic: false }, undefined, "discovery");
+  const posts = await searchEvidence(await connectedOwner("linked-reader"), { query: "Expo", contentType: "post", semantic: false }, undefined, "discovery");
   assert.ok(posts.results.every(source => source.contentType === "post"));
 });
 
 test("covering the question's concepts ranks ahead of repeating one generic word", async () => {
   await save("coverage-reader", "a-generic", "Expert advice advice advice advice advice", ["Advice advice advice advice advice advice advice advice."]);
   await save("coverage-reader", "z-career", "Career advice", ["Choose roles with scope for mentorship and growth."]);
-  const result = await searchEvidence("coverage-reader", { query: "career advice", semantic: false }, undefined, "discovery");
+  const result = await searchEvidence(await connectedOwner("coverage-reader"), { query: "career advice", semantic: false }, undefined, "discovery");
   assert.equal(result.results[0]?.itemId, "z-career");
 });
 
@@ -88,8 +89,8 @@ test("a matching post promotes its linked article even when a weak semantic matc
     return Response.json({ embedding: { values: [...vector, ...Array(766).fill(0)] }, usageMetadata: { promptTokenCount: 20 } });
   };
   try {
-    await processLibrary("linked-reader", { limit: 12 });
-    const found = await searchEvidence("linked-reader", { query: "Expo", limit: 3 }, undefined, "discovery");
+    await processLibrary(await connectedOwner("linked-reader"), { limit: 12 });
+    const found = await searchEvidence(await connectedOwner("linked-reader"), { query: "Expo", limit: 3 }, undefined, "discovery");
     assert.equal(found.mode, "hybrid");
     assert.ok(found.results.some(source => source.itemId === "linked-controls"));
   } finally {
@@ -99,7 +100,7 @@ test("a matching post promotes its linked article even when a weak semantic matc
 });
 
 test("quoted wording search does not expand into linked text without the requested phrase", async () => {
-  const found = await searchEvidence("linked-reader", { query: '"Expo iOS"', semantic: false }, undefined, "discovery");
+  const found = await searchEvidence(await connectedOwner("linked-reader"), { query: '"Expo iOS"', semantic: false }, undefined, "discovery");
   assert.ok(found.results.length > 0);
   assert.ok(found.results.every(source => source.excerpt.includes("Expo iOS") || source.title.includes("Expo iOS")));
 });

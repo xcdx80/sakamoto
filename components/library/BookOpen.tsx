@@ -275,7 +275,7 @@ export function BookOpen({
                         <Glyph k="agent" size={15} /> Shelved by your agent
                       </span>
                     )}
-                    {book.sample && <span className="is-word">a sample from Sakamoto</span>}
+                    {book.sample && <span className="is-word">a sample from InView</span>}
                     {book.tags.map((x) => (
                       <span key={x} className="is-word">
                         {x}

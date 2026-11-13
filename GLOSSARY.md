@@ -1,6 +1,6 @@
-# Sakamoto
+# InView
 
-Sakamoto is a personal knowledge library of saved articles, documents and X posts. Readers can read their saved material and ask questions answered with citations to that material.
+InView is a personal knowledge library of saved articles, documents and X posts. Readers can read their saved material and ask questions answered with citations to that material.
 
 ## Language
 

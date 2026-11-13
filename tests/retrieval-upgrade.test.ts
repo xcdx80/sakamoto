@@ -1,3 +1,4 @@
+import { connectedOwner } from "./provider-fixtures";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -114,7 +115,7 @@ test("populated pre009 libraries upgrade and backfill lexical and durable semant
   );
   await applyMigrations(migrations);
   await applyMigrations(migrations);
-  const lexical = await searchEvidence("upgrade-reader", {
+  const lexical = await searchEvidence(await connectedOwner("upgrade-reader"), {
     query: "Astronomy",
     semantic: false,
   });
@@ -138,14 +139,14 @@ test("populated pre009 libraries upgrade and backfill lexical and durable semant
       embedding: { values: [1, ...Array(767).fill(0)] },
       usageMetadata: { promptTokenCount: 20 },
     });
-  const processed = await processLibrary("upgrade-reader", { limit: 4 });
+  const processed = await processLibrary(await connectedOwner("upgrade-reader"), { limit: 4 });
   assert.equal(
     processed.jobs.filter(
       (j) => j.kind === "indexing" && j.state === "complete",
     ).length,
     2,
   );
-  const semantic = await searchEvidence("upgrade-reader", {
+  const semantic = await searchEvidence(await connectedOwner("upgrade-reader"), {
     query: "observations of far away stars",
   });
   assert.equal(semantic.mode, "hybrid");

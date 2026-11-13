@@ -1,3 +1,4 @@
+import { connectedOwner, connectFixtureProviders } from "./provider-fixtures";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { Pool } from "pg";
@@ -25,12 +26,19 @@ before(async () => {
       unique(user_id,source_id,source_revision,kind,target));
     create table saved_passages(user_id text,source_id text,source_revision int,content_fingerprint text);
     create table passage_embeddings(user_id text,contract text,content_fingerprint text);
-    create table paid_attempts(owner_id text,operation_id text,status text);
+    create table paid_attempts(owner_id text,operation_id text,status text,actual_micros bigint,reserved_micros bigint);
+    create table provider_connections(owner_id text,provider text,id uuid unique,key_id text,ciphertext text,expires_at text,updated_at timestamptz default now(),primary key(owner_id,provider));
+    create table provider_budgets(owner_id text primary key,cap_micros bigint);
+    create table deleted_credential_owners(owner_id text primary key);
+    create table credential_audit(sequence bigserial,owner_id text,provider text,action text);
     create table paid_budget(id boolean primary key,halted boolean,settled_micros bigint,reserved_micros bigint,cap_micros bigint);
     create table x_bookmark_runs(user_id text,state text,mode text,completion_reason text,pages int,received int,updated_at timestamptz,retry_at timestamptz);
     create table x_bookmark_checkpoints(user_id text,x_user_id text,updated_at timestamptz);
     create table x_connections(user_id text,x_user_id text);`);
   configureDatabase({ query: async (sql, params) => (await pool.query(sql, params)).rows });
+  const credentialsMigration=readFileSync(new URL("../db/migrations/026-provider-connections.sql",import.meta.url),"utf8");
+  for(const name of ['save_provider_connection','disconnect_provider']) await pool.query(credentialsMigration.match(new RegExp('create function '+name+'[\\s\\S]*?end \\$\\$;'))![0]);
+
   await pool.query(readFileSync(new URL("../db/migrations/017-processing-classification-capacity.sql", import.meta.url), "utf8"));
   const processingMigration = readFileSync(new URL("../db/migrations/006-linked-processing.sql", import.meta.url), "utf8");
   await pool.query(processingMigration.match(/create function complete_processing\([\s\S]*?end \$\$;/)![0]);
@@ -68,6 +76,7 @@ test("bookmark and expanded context counts stay distinct and exclude other reade
 });
 
 async function source(owner: string, id: string, data: Record<string, unknown>, deleted = false) {
+  await connectFixtureProviders(owner);
   await pool.query("insert into articles(user_id,id,data,doc,deleted) values($1,$2,$3,'{}',$4)", [owner, id, data, deleted]);
 }
 
@@ -136,6 +145,7 @@ test("signed-out loading never reads the database and database failure never bec
     await assert.rejects(readAdminStats(""), /reader is required/);
   } finally {
     configureDatabase({ query: async (sql, params) => (await pool.query(sql, params)).rows });
+
   }
 });
 
@@ -236,7 +246,7 @@ test("retry all requeues eligible failures without resetting attempt identities,
   let fetched = 0;
   configureProcessing({ fetchArticle: async () => { fetched++; return { ok: false, error: "Fixture rate limit", status: 429, retryable: true }; } });
   try {
-    await processLibrary("retry-reader", { limit: 1 });
+    await processLibrary(await connectedOwner("retry-reader"), { limit: 1 });
     assert.equal(fetched, 1);
     const retried = (await processingStatus("retry-reader")).jobs.find(job => job.target === "https://timeout")!;
     assert.equal(retried.attempts, 5);
@@ -276,7 +286,7 @@ test("restoring a source cannot revive lost work or dispatch its external reques
   let fetched = 0;
   configureProcessing({ fetchArticle: async () => { fetched++; throw new Error("Lost tasks must not dispatch"); } });
   try {
-    assert.equal((await processLibrary("restore-reader", { limit: 1 })).processed, 0);
+    assert.equal((await processLibrary(await connectedOwner("restore-reader"), { limit: 1 })).processed, 0);
     assert.equal(fetched, 0);
     assert.equal((await readAdminFailures("restore-reader")).summary.lost, 1);
   } finally { configureProcessing({}); }
@@ -304,7 +314,7 @@ test("index scheduling and checkpoint replacement also preserve the original los
   await pool.query("update processing_jobs set state='pending',checkpoint='{}' where user_id='index-restore-reader'");
   assert.equal((await processingStatus("index-restore-reader")).jobs[0].state, "cancelled");
   assert.equal((await readAdminFailures("index-restore-reader")).groups[0].reason, "No usable source text");
-  assert.equal((await processLibrary("index-restore-reader", { limit: 1 })).processed, 0);
+  assert.equal((await processLibrary(await connectedOwner("index-restore-reader"), { limit: 1 })).processed, 0);
 });
 
 test("deleted posts are unrecoverable while access failures, rate limits, offline errors and server errors remain retryable", async () => {

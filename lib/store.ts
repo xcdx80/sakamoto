@@ -98,7 +98,7 @@ export type LibraryItem = {
   favorite?: boolean;
   /** When it was first read to the end. */
   finishedAt?: number;
-  /** Saved by an agent, through the Sakamoto MCP server. */
+  /** Saved by an agent, through the InView MCP server. */
   addedBy?: "agent";
   /** Which connection an agent saved it through, by the name the reader gave it. */
   addedVia?: string;

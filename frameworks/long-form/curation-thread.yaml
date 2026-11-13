@@ -4,7 +4,7 @@ name: Curation thread
 form: long
 family: curation
 summary: '''I did all this work, so you don''t have to.'' A niched-down collection of the best resources, tools,
-  books or examples on one topic, each with one line on why it made the cut. Sakamoto''s library is the raw material.'
+  books or examples on one topic, each with one line on why it made the cut. InView''s library is the raw material.'
 when_to_use:
   source_signals:
   - signal: multiple_sources_same_topic

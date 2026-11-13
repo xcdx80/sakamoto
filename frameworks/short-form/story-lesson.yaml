@@ -18,7 +18,7 @@ when_to_use:
     reach: 2
     trust: 3
     convert: 1
-  notes: Best trust-builder. For Sakamoto, stories must come from the user's own notes or from a cited source; never
+  notes: Best trust-builder. For InView, stories must come from the user's own notes or from a cited source; never
     fabricate a personal anecdote.
 avoid_when:
 - condition: There is no real story in the user's notes or sources. Do not invent one.

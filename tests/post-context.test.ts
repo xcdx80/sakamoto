@@ -1,3 +1,4 @@
+import { connectedOwner } from "./provider-fixtures";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { pool, setupPostgres } from "./postgres";
@@ -89,7 +90,7 @@ test("oversized pinned-source selections are rejected before any web request or 
   try {
     for (const count of [14, 20]) {
       const oversized = { ...brief, sourceIds: Array.from({ length: count }, (_, index) => `pin-${index}`) };
-      await assert.rejects(collectProductionContext("context-limit-owner", oversized, `post:oversized-${count}`), /13.*pinned|pinned.*13/i);
+      await assert.rejects(collectProductionContext(await connectedOwner("context-limit-owner"), oversized, `post:oversized-${count}`), /13.*pinned|pinned.*13/i);
       await assert.rejects(createProduction("context-limit-owner", oversized), /13.*pinned|pinned.*13/i);
     }
     assert.equal(requests, 0);
@@ -140,7 +141,7 @@ test("thirteen short pinned sources leave room for five web sources and both aut
     });
   };
   try {
-    const result = await collectProductionContext(owner, { ...brief, idea: "Bounded context protocol", sourceIds }, "post:bounded-context");
+    const result = await collectProductionContext(await connectedOwner(owner), { ...brief, idea: "Bounded context protocol", sourceIds }, "post:bounded-context");
     assert.equal(result.evidence.length, 20);
     assert.deepEqual(result.evidence.filter(source => source.kind === "saved_source").map(source => source.itemId).sort(), sourceIds.sort());
     assert.equal(result.evidence.filter(source => source.kind === "web_source").length, 5);
@@ -163,7 +164,7 @@ test("context-only generation retains attributed agent material without library 
     const created = await createProduction("write-context-owner", input);
     assert.deepEqual(created.brief.sourcePolicy, input.sourcePolicy);
     assert.deepEqual(created.brief.agentContext, input.agentContext);
-    const result = await collectProductionContext("write-context-owner", created.brief, `post:${created.id}:context`);
+    const result = await collectProductionContext(await connectedOwner("write-context-owner"), created.brief, `post:${created.id}:context`);
     assert.deepEqual(result.research, { library: "disabled", web: "disabled", notice: null });
     assert.equal(result.evidence.some(e => e.kind === "saved_source" || e.kind === "web_source"), false);
     const supplied = result.evidence.find(e => e.id === "AGENT_discussion")!;
@@ -197,7 +198,7 @@ test("library and web switches act independently and omitted switches retain aut
   try {
     for (const sourcePolicy of [undefined, { library: true, web: false }, { library: false, web: true }, { library: false, web: false }]) {
       const start = requests;
-      const result = await collectProductionContext("write-context-owner", { ...brief, idea: "Quokka evaluation", sourceIds: [], sourcePolicy }, `post:${crypto.randomUUID()}:context`);
+      const result = await collectProductionContext(await connectedOwner("write-context-owner"), { ...brief, idea: "Quokka evaluation", sourceIds: [], sourcePolicy }, `post:${crypto.randomUUID()}:context`);
       const library = sourcePolicy?.library ?? true, web = sourcePolicy?.web ?? true;
       assert.equal(result.evidence.some(e => e.itemId === "dated-launch"), library);
       assert.equal(result.evidence.some(e => e.kind === "web_source"), web);

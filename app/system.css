@@ -1,6 +1,14 @@
-/* Sakamoto's shared parts. Tokens are in globals.css; see docs/design/redesign-brief.md. */
+/* InView's shared parts. Tokens are in globals.css; see docs/design/redesign-brief.md. */
 
 @layer components {
+  :is([data-theme="night"], [data-theme="ink"]) .inview-mark-front {
+    fill: var(--ink);
+  }
+
+  :is([data-theme="night"], [data-theme="ink"]) .inview-mark-flap {
+    fill: #d5ad66;
+  }
+
   .sk-display {
     font-family: var(--font-serif);
     font-weight: 340;

@@ -1,8 +1,8 @@
-# Sakamoto redesign brief
+# InView redesign brief
 
 ## The idea
 
-**The Desk.** Everything you ever saved is a mess of paper on a desk. Sakamoto gathers it, marks it up, answers from it, and helps you write from it. The app is an annotator's desk: paper, ink, a yellow highlighter, a vermilion pen, and a few delightful objects that behave like real things.
+**The Desk.** Everything you ever saved is a mess of paper on a desk. InView gathers it, marks it up, answers from it, and helps you write from it. The app is an annotator's desk: paper, ink, a yellow highlighter, a vermilion pen, and a few delightful objects that behave like real things.
 
 Quality bar: top 1% of the web. Primary reference is v7labs.com (vast white space, large light serif, hairlines, particles gathering into meaning, patience). Playfulness reference is feather.computer (tactile paper objects, dot-grid desk, stamps, sticky notes, file tabs, mono annotations). Take the spirit only. Copy no layouts, assets or text from either.
 

@@ -6,7 +6,7 @@ import { editorialPresentation } from "@/lib/post-production/editorial-presentat
 import { sourceLink } from "@/lib/post-production/client";
 import { Field } from "./WritingForms";
 
-/** Sakamoto's choices in reading order: the opening a reader meets, then the shape behind it. */
+/** InView's choices in reading order: the opening a reader meets, then the shape behind it. */
 export function DecisionsPanel({ value, onChange, context, workspace, busy, availableEvidence, opening, alternateHooks, canUseHook, onUseHook }: {
   value: GenerationParameters;
   onChange: (parameters: GenerationParameters) => void;
@@ -26,7 +26,7 @@ export function DecisionsPanel({ value, onChange, context, workspace, busy, avai
   const candidates = availableEvidence.filter(item => (item.kind === "saved_source" && value.brief.sourcePolicy?.library !== false) || (item.kind === "web_source" && value.brief.sourcePolicy?.web !== false));
 
   return <>
-    <div className="write-panel-intro"><h3>Why it reads this way</h3><p>The opening and structure Sakamoto chose for this version, and why.</p></div>
+    <div className="write-panel-intro"><h3>Why it reads this way</h3><p>The opening and structure InView chose for this version, and why.</p></div>
     {!context ? <p className="write-decision-missing">Generation settings were not recorded for this older version.</p> : <div className="write-decision-audit">
       <article className="write-decision-card" aria-label="Hook reasoning">
         <header className="write-decision-heading"><span className="write-eyebrow">The hook</span><h4>{hook?.name || "Not selected"}</h4></header>

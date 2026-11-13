@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +12,8 @@ async function account() {
   const owner = "classify-" + crypto.randomUUID(),
     token = makeToken();
   await createToken(owner, token.id, token.hash, "Fixture");
+  await connectFixtureProviders(owner);
+  await connectFixtureProviders(owner);
   process.env.DATABASE_URL = "test-adapter-only";
   return {
     owner,
@@ -483,6 +486,8 @@ test("the canonical migration upgrades populated earlier sources and schedules t
     });
     const token = makeToken();
     await createToken("upgrade-owner", token.id, token.hash, "Upgrade fixture");
+  await connectFixtureProviders("upgrade-owner");
+    await connectFixtureProviders("upgrade-owner");
     const response = await handle(
       new Request("http://localhost/mcp", {
         method: "POST",

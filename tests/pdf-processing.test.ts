@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pool, setupPostgres } from './postgres';
@@ -10,6 +11,7 @@ before(setupPostgres);
 after(() => pool.end());
 async function account() {
   const owner='pdf-'+crypto.randomUUID(),token = makeToken(); await createToken(owner, token.id, token.hash, 'PDF fixture');
+  await connectFixtureProviders(owner);
   process.env.DATABASE_URL = 'test-adapter-only';
   const request = (path: string, body?: unknown) => new Request('http://localhost' + path, { headers: {authorization: 'Bearer ' + token.token, 'content-type': 'application/json'}, ...(body === undefined ? {} : {method: 'POST', body: JSON.stringify(body)}) });
   const call = async (name: string, args: unknown = {}) => {

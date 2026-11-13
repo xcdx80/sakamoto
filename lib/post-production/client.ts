@@ -42,7 +42,7 @@ export function projectClaimSources({ content, evidence, review, revisionId, has
 export async function copyDraft(text: string) { await navigator.clipboard.writeText(text); }
 export function downloadDraft(content: DraftContent) {
   const url = URL.createObjectURL(new Blob([draftText(content)], { type: "text/plain;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url; link.download = "sakamoto-draft.txt"; link.click(); URL.revokeObjectURL(url);
+  const link = document.createElement("a"); link.href = url; link.download = "inview-draft.txt"; link.click(); URL.revokeObjectURL(url);
 }
 export function sourceLink(value?: string) { return value && (/^https?:\/\//i.test(value) || /^\/read\//.test(value)) ? value : undefined; }
 

@@ -21,7 +21,7 @@ when_to_use:
     reach: 2
     trust: 3
     convert: 3
-  notes: The conversion format. Bush's template was written for business owners showing client results; for Sakamoto
+  notes: The conversion format. Bush's template was written for business owners showing client results; for InView
     it also fits a saved case study told in your words with a citation.
 avoid_when:
 - condition: The before state is not documented in the source; do not imagine one.

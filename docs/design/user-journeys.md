@@ -1,4 +1,4 @@
-# Sakamoto user journeys
+# InView user journeys
 
 Mapped from the code on 2026-11-09. Each journey lists its entry point and owning component. The redesign changes how these look and move, not what they do.
 

@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { CalendarDays, Library, PenLine, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Account } from "@/components/account/Account";
-import { Lockup } from "@/components/brand/Sakamoto";
+import { Lockup } from "@/components/brand/InView";
 import { spring } from "@/components/motion/tokens";
 import { KeyMenu } from "@/components/ui/KeyMenu";
 import { SettingsMenu } from "@/components/ui/SettingsMenu";

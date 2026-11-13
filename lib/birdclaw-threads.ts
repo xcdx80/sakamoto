@@ -1,5 +1,5 @@
 /** Port of the locally validated Birdclaw 0.16.0 thread extension (MIT, Peter Steinberger).
- * Collection rules stay here; Sakamoto supplies authenticated transport and storage.
+ * Collection rules stay here; InView supplies authenticated transport and storage.
  * License: ./vendor/birdclaw/LICENSE. Source fingerprints are retained with task evidence.
  */
 import type { WirePost } from './bookmark-normalize';

@@ -133,7 +133,7 @@ export function Highlighter() {
       <rect x="2" y="5" width="96" height="24" rx="5" fill="var(--ink)" />
       <rect x="96" y="7" width="24" height="20" fill="var(--toy-marigold)" />
       <path d="M120 9l24 3v10l-24 3z" fill="var(--toy-marigold)" />
-      <text x="16" y="21" fontFamily="var(--font-mono)" fontSize="10" fill="var(--bg-raised)" letterSpacing="1">SAKAMOTO</text>
+      <text x="16" y="21" fontFamily="var(--font-mono)" fontSize="10" fill="var(--bg-raised)" letterSpacing="1">INVIEW</text>
     </svg>
   );
 }

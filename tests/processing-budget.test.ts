@@ -1,3 +1,4 @@
+import { connectedOwner } from "./provider-fixtures";
 import {after,before,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pool,setupPostgres} from './postgres';
@@ -11,10 +12,11 @@ test('an unaffordable processing envelope pauses before claiming and does not bu
  await save('budget-reader');
  await pool.query('insert into paid_budget values(true,1000,550,0,false)');
  let calls=0;globalThis.fetch=async()=>{calls++;throw new Error('No dispatch expected');};
+ await connectedOwner('budget-reader');
  const before=await processingStatus('budget-reader');
  assert.equal(before.summary.budget_paused,true);
  assert.equal(before.summary.ready,0);
- const result=await processLibrary('budget-reader',{limit:4});
+ const result=await processLibrary(await connectedOwner('budget-reader'),{limit:4});
  assert.equal(result.processed,0);assert.equal(calls,0);
  assert.ok(result.jobs.every(j=>j.attempts===0));
 });
@@ -23,11 +25,11 @@ test('budget exhaustion between passages blocks without consuming attempts and r
  await pool.query('update paid_budget set cap_micros=2000,settled_micros=0,reserved_micros=0,halted=false');
  await shelveForUser(owner,{id:'source',title:'Source'},{id:'source',title:'Source',blocks:[{id:'b1',type:'p',runs:[{text:'Retained passage. '.repeat(80)}]}]});
  let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({embedding:{values:[1,...Array(767).fill(0)]},usageMetadata:{promptTokenCount:8192}});};
- const paused=await processLibrary(owner,{limit:1});
+ const paused=await processLibrary(await connectedOwner(owner),{limit:1});
  const job=paused.jobs.find(j=>j.kind==='indexing')!;
  assert.equal(job.state,'blocked');assert.equal(job.attempts,0);assert.equal(paused.finished,0);assert.equal(paused.blocked,1);
  assert.equal(calls,1);
- const again=await processLibrary(owner,{limit:1});assert.equal(again.processed,0);assert.equal(calls,1);
+ const again=await processLibrary(await connectedOwner(owner),{limit:1});assert.equal(again.processed,0);assert.equal(calls,1);
 });
 
 test('unresolved Google attempts block another paid dispatch and retry-all excludes them',async()=>{
@@ -37,7 +39,7 @@ test('unresolved Google attempts block another paid dispatch and retry-all exclu
  await save('uncertain-reader');
  await pool.query("update processing_jobs set state='cancelled' where user_id='uncertain-reader' and kind='classification'");
  let calls=0;globalThis.fetch=async()=>{calls++;throw new TypeError('Fixture network timeout');};
- const first=await processLibrary('uncertain-reader',{limit:1});
+ const first=await processLibrary(await connectedOwner('uncertain-reader'),{limit:1});
  const job=first.jobs.find(j=>j.kind==='indexing')!;
  assert.equal(job.state,'retryable');assert.equal(first.failed,1);
  await assert.rejects(embedText('uncertain-reader','Saved text.',`index:source:${(await pool.query("select content_fingerprint from saved_passages where user_id='uncertain-reader' limit 1")).rows[0].content_fingerprint}`),/unresolved paid attempt/);
@@ -56,7 +58,7 @@ test('blocked budget work resumes after authority is restored without fetching c
  configureProcessing({now:()=>Date.now()+120000});
  try{
   await pool.query("update processing_jobs set state='cancelled' where user_id='mid-job-reader' and kind='classification'");
-  const completed=await processLibrary('mid-job-reader',{limit:1});
+  const completed=await processLibrary(await connectedOwner('mid-job-reader'),{limit:1});
   const job=completed.jobs.find(j=>j.kind==='indexing')!;
   assert.equal(job.state,'complete');assert.equal(job.attempts,1);assert.equal(completed.succeeded,1);
   assert.ok(calls>0);assert.equal(job.checkpoint.completed,calls+1,'the already paid first passage is reused');
@@ -67,10 +69,10 @@ test('a repaired provider configuration can resume through the existing explicit
  await save('config-reader');await pool.query("update processing_jobs set state='cancelled' where user_id='config-reader' and kind='classification'");
  process.env.GOOGLE_EMBEDDING_DIMENSIONS='12';
  let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({embedding:{values:[1,...Array(767).fill(0)]},usageMetadata:{promptTokenCount:10}});};
- const paused=await processLibrary('config-reader',{limit:1});const job=paused.jobs.find(j=>j.kind==='indexing')!;
+ const paused=await processLibrary(await connectedOwner('config-reader'),{limit:1});const job=paused.jobs.find(j=>j.kind==='indexing')!;
  assert.equal(job.state,'blocked');assert.equal(job.attempts,0);assert.equal(calls,0);
  delete process.env.GOOGLE_EMBEDDING_DIMENSIONS;
- const fixed=await processLibrary('config-reader',{limit:1,retryJobId:job.id});
+ const fixed=await processLibrary(await connectedOwner('config-reader'),{limit:1,retryJobId:job.id});
  assert.equal(fixed.jobs.find(j=>j.id===job.id)!.state,'complete');assert.equal(fixed.succeeded,1);assert.equal(calls,1);
 });
 
@@ -90,7 +92,7 @@ test('repeated pre-dispatch deferrals preserve retries and create no paid attemp
  configureDatabase({query:async(sql,params)=>{const rows=(await pool.query(sql,params)).rows;if(sql.includes('select p.*,e.embedding'))now+=10_000;return rows;}});
  try{
   for(let n=0;n<10;n++){
-   const result=await processLibrary('deferred-reader',{limit:1});const job=result.jobs.find(j=>j.kind==='indexing')!;
+   const result=await processLibrary(await connectedOwner('deferred-reader'),{limit:1});const job=result.jobs.find(j=>j.kind==='indexing')!;
    assert.equal(job.state,'blocked');assert.equal(job.attempts,0);assert.equal(result.finished,0);now=Math.max(now,Date.parse(job.nextAttemptAt)+1);
   }
   assert.equal(calls,0);
@@ -104,11 +106,12 @@ test('expiry during checkpoint or reservation I/O refunds only known undispatche
  AbortSignal.timeout=()=>{controller=new AbortController();return controller.signal;};
  let calls=0;globalThis.fetch=async()=>{calls++;throw new Error('No dispatch expected');};
  try{
-  for(const stage of ['checkpoint','reserve']){
+  for(const stage of ['checkpoint','reserve','credential']){
    const owner='barrier-'+stage;await save(owner);await pool.query("update processing_jobs set state='cancelled' where user_id=$1 and kind='classification'",[owner]);
-   configureDatabase({query:async(sql,params)=>{const rows=(await pool.query(sql,params)).rows;if(stage==='checkpoint'?sql.includes('set checkpoint='):sql.includes('select reserve_paid_attempt('))controller.abort(new DOMException('Planned deadline','TimeoutError'));return rows;}});
-   const result=await processLibrary(owner,{limit:1});const job=result.jobs.find(j=>j.kind==='indexing')!;
+   configureDatabase({query:async(sql,params)=>{const rows=(await pool.query(sql,params)).rows;if(stage==='checkpoint'?sql.includes('set checkpoint='):stage==='reserve'?sql.includes('select reserve_paid_attempt('):sql.includes('select * from authorize_provider_request'))controller.abort(new DOMException('Planned deadline','TimeoutError'));return rows;}});
+   const result=await processLibrary(await connectedOwner(owner),{limit:1});const job=result.jobs.find(j=>j.kind==='indexing')!;
    assert.equal(job.state,'blocked');assert.equal(job.attempts,0);assert.equal(result.finished,0);
+   assert.equal((job.checkpoint as any).processingBlock.code,'dispatch_deferred');
    const budget=await budgetStatus(owner);assert.ok(budget.attempts.every(a=>a.status==='released'));
    configureDatabase({query:async(sql,params)=>(await pool.query(sql,params)).rows});
   }

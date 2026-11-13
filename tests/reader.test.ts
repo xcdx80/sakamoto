@@ -1,3 +1,5 @@
+import { connectFixtureProviders } from "./provider-fixtures";
+import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +14,9 @@ before(async () => {
   const t = makeToken();
   token = t.token;
   await createToken("reader", t.id, t.hash, "Reader");
+  await connectFixtureProviders("reader");
   process.env.OPENAI_API_KEY = "fixture-server-secret";
+  await connectFixtureProviders("reader");
   process.env.SAKAMOTO_BUDGET_USD = "0.034";
 });
 after(async () => {
@@ -225,12 +229,14 @@ test("missing keys, unknown prices, and oversized whole Unicode conversations fa
     throw new Error("Invalid configuration must not dispatch.");
   };
   delete process.env.OPENAI_API_KEY;
+  await connectFixtureProviders("reader");
   const missing = await ask(
     request("/api/ask", { doc, thread: { action: "ask" }, search: false }),
   );
-  assert.equal(missing.status, 503);
-  assert.match((await missing.json()).error, /key is missing/);
+  assert.equal(missing.status, 409);
+  assert.match((await missing.json()).error, /Connect your OpenAI/);
   process.env.OPENAI_API_KEY = "fixture-server-secret";
+  await connectFixtureProviders("reader");
   process.env.SAKAMOTO_PRICE_VERSION = "unknown-price";
   assert.equal(
     (
@@ -316,6 +322,7 @@ test("budget exhaustion still permits saved reading and does not expose another 
   assert.match(await saved.text(), /Saved text stays available/);
   const other = makeToken();
   await createToken("other-reader", other.id, other.hash, "Other");
+  await connectFixtureProviders("other-reader");
   const status = await GET(
     new Request("http://localhost/api/budget", {
       headers: { authorization: "Bearer " + other.token },
@@ -375,6 +382,7 @@ test("a reader tool lookup and its second Luna pass each reserve against the sam
   const { GET } = await import("../app/api/budget/route");
   process.env.SAKAMOTO_BUDGET_USD = "1";
   process.env.EXA_API_KEY = "fixture-exa-secret";
+  await connectFixtureProviders("reader");
   process.env.SAKAMOTO_EXA_MAX_USD = "0.004";
   let calls = 0;
   globalThis.fetch = async (url, init) => {
@@ -615,3 +623,5 @@ test("malformed reader JSON is rejected as an input error without authorizing pa
     assert.equal(response.status, 400);
   }
 });
+
+beforeEach(async()=>{await connectFixtureProviders("reader");});

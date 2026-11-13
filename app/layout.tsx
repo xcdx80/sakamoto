@@ -8,7 +8,7 @@ import { PageCurtain } from "@/components/motion/PageCurtain";
 import { Tooltips } from "@/components/ui/Tooltips";
 import { ClerkProvider } from "@clerk/nextjs";
 import { AccountLibrary } from "@/components/account/SyncAgent";
-import { OG_IMAGE, SITE_URL } from "@/lib/brand";
+import { BRAND, OG_IMAGE, SITE_URL } from "@/lib/brand";
 
 const serif = Newsreader({
   subsets: ["latin", "latin-ext"],
@@ -51,11 +51,11 @@ const DESCRIPTION = "Ask your knowledge base. Find answers in your saved posts, 
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Sakamoto", template: "%s" },
+  title: { default: BRAND.name, template: "%s" },
   description: DESCRIPTION,
-  applicationName: "Sakamoto",
-  openGraph: { type: "website", siteName: "Sakamoto", title: "Sakamoto", description: DESCRIPTION, url: "/", images: [OG_IMAGE] },
-  twitter: { card: "summary_large_image", title: "Sakamoto", description: DESCRIPTION, images: [OG_IMAGE.url] },
+  applicationName: BRAND.name,
+  openGraph: { type: "website", siteName: BRAND.name, title: BRAND.name, description: DESCRIPTION, url: "/", images: [OG_IMAGE] },
+  twitter: { card: "summary_large_image", title: BRAND.name, description: DESCRIPTION, images: [OG_IMAGE.url] },
 };
 
 export const viewport: Viewport = {

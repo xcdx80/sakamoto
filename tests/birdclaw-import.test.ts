@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pool, setupPostgres } from './postgres';
@@ -19,6 +20,7 @@ test('cached X order repairs existing bookmarks without moving manual saves or c
  database.run('insert into sync_cache values(?,?,?)',['bookmarks:xurl:a:100:all:20',JSON.stringify({data:[{id:'101'},{id:'103'},{id:'102'}]}),'2026-10-17T01:00:00Z']);
  const archive=await extractBirdclaw(database.export(),'a',new Uint8Array(await readFile('public/vendor/sql.js/sql-wasm-browser.wasm')));database.close();
  const owner='repair-order-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);
  const call=(body:unknown)=>POST(new Request('http://localhost/api/bookmark-import',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify(body)}));
  const {shelveForUser,pushRows,pullRows}=await import('../lib/db');
  await shelveForUser(owner,{id:'manual',title:'Manual',words:10,origin:'paste',addedAt:Date.parse('2026-10-17T02:00:00Z')},{id:'manual',blocks:[]});
@@ -47,6 +49,7 @@ test('a Birdclaw database imports only selected-account bookmarks, exact stored 
  assert.equal(archive.posts.length,1);assert.equal(archive.posts[0].text,text);assert.deepEqual(archive.posts[0].links,['https://example.com/article']);
  assert.equal(archive.posts[0].contextPosts?.[0].postId,'102');assert.equal(archive.posts[0].completeness.status,'unknown');
  const owner='bird-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);
  const call=()=>POST(new Request('http://localhost/api/bookmark-import',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify({posts:archive.posts,delivery:{runId:'birdclaw-fixture',batchId:'batch-1',status:'source_exhausted'}})}));
  const response=await call();assert.equal(response.status,200);const saved=await response.json();
  assert.equal(saved.delivery.safeToAdvance,true);assert.equal(saved.results[0].status,'incomplete');
@@ -58,6 +61,7 @@ test('a Birdclaw database imports only selected-account bookmarks, exact stored 
 test('imported bookmarks enter the existing category, index and linked-article queue, visible through processing status',async()=>{
  const {GET}=await import('../app/api/processing/route');
  const owner='queue-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);
  const headers={authorization:'Bearer '+token.token,'content-type':'application/json'};
  const saved=await POST(new Request('http://localhost/api/bookmark-import',{method:'POST',headers,body:JSON.stringify({posts:[{postId:'199',url:'https://x.com/author/status/199',text:'Useful knowledge',author:{name:'Author',handle:'author'},observedAt:'2026-10-17T01:00:00Z',links:['https://example.com/reading']}],delivery:{runId:'queue-fixture',batchId:'1',status:'source_exhausted'}})}));assert.equal(saved.status,200);
  const status=await(await GET(new Request('http://localhost/api/processing',{headers}))).json();
@@ -67,6 +71,7 @@ test('imported bookmarks enter the existing category, index and linked-article q
 
 test('an emoji at the generated title boundary preserves readable post text and a valid title',async()=>{
  const owner='emoji-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);
  const text='a'.repeat(99)+'🐈 keeps the entire source intact';
  const response=await POST(new Request('http://localhost/api/bookmark-import',{method:'POST',headers:{authorization:'Bearer '+token.token,'content-type':'application/json'},body:JSON.stringify({posts:[{postId:'299',url:'https://x.com/author/status/299',text,author:{name:'Author',handle:'author'},observedAt:'2026-10-17T01:00:00Z'}],delivery:{runId:'emoji-boundary',batchId:'1',status:'source_exhausted'}})}));
  const receipt=await response.json();assert.equal(receipt.delivery.safeToAdvance,true);assert.equal((await articleDoc(owner,receipt.results[0].itemId) as any).post.fullText,text);assert.equal((await shelfOf(owner))[0].data.title,'a'.repeat(99)+'🐈');
@@ -74,7 +79,8 @@ test('an emoji at the generated title boundary preserves readable post text and 
 
 test('a file-import retry recovers an immutable rejected receipt without duplicating accepted bookmarks',async()=>{
  const {useStore}=await import('../lib/store');const {selectAccount}=await import('../lib/account-scope');const {importBirdclaw}=await import('../lib/bookmark-import-client');
- const owner='retry-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');selectAccount(owner);useStore.setState({scope:owner});
+ const owner='retry-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);selectAccount(owner);useStore.setState({scope:owner});
  await pool.query(`create function reject_fixture_import() returns trigger language plpgsql as $$ begin if new.doc#>>'{post,fullText}'='Transient import fixture' then raise exception 'Fixture persistence unavailable'; end if; return new; end $$; create trigger reject_fixture_import before insert on articles for each row execute function reject_fixture_import()`);
  const originalFetch=globalThis.fetch;let calls=0;
  globalThis.fetch=async(input,init)=>{calls++;const result=await POST(new Request('http://localhost'+input,{...init,headers:{authorization:'Bearer '+token.token,'content-type':'application/json'}}));if(calls===1)await pool.query('drop trigger reject_fixture_import on articles');return result;};

@@ -1,3 +1,4 @@
+import { connectedOwner, connectFixtureProviders } from "./provider-fixtures";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ before(async () => {
   const t = makeToken();
   token = t.token;
   await createToken("retrieval-reader", t.id, t.hash, "Fixture");
+  await connectFixtureProviders("retrieval-reader");
 });
 after(() => pool.end());
 const request = (body: unknown) =>
@@ -76,8 +78,8 @@ test("passage evidence search does not reuse unchanged titles or tags after its 
     id: "current-body", title: "Cobalt source", blocks: [{ id: "body", type: "p", runs: [{ text: "Replacement evidence without the old claim." }] }],
   });
   for (const query of ["cobalt", "Supernova alignment"])
-    assert.deepEqual((await searchEvidence(owner, { query, semantic: false })).results, [], query);
-  const current = await searchEvidence(owner, { query: "Replacement evidence", semantic: false });
+    assert.deepEqual((await searchEvidence(await connectedOwner(owner), { query, semantic: false })).results, [], query);
+  const current = await searchEvidence(await connectedOwner(owner), { query: "Replacement evidence", semantic: false });
   assert.equal(current.results[0].sourceRevision, 2);
   assert.equal(current.results[0].excerpt, "Replacement evidence without the old claim.");
 });
@@ -99,7 +101,7 @@ test("multiword prefix search ranks distinct term coverage above repetition and 
       id: "unrelated-" + index, type: "p", runs: [{ text: "Orchids bloom beside the river under the winter sun." }],
     })),
   });
-  const result = await searchEvidence(owner, { query: "autonom evalu deploy", semantic: false, limit: 8 }, undefined, "discovery");
+  const result = await searchEvidence(await connectedOwner(owner), { query: "autonom evalu deploy", semantic: false, limit: 8 }, undefined, "discovery");
   assert.deepEqual(result.results.map(item => item.itemId), ["all-terms", "two-terms", "one-term"]);
   assert.ok(result.results.every(item => item.lexical && !item.semantic && item.sourceRevision === 1));
   assert.equal(result.semanticStatus, "disabled");
@@ -285,8 +287,8 @@ test("the shared durable processing operation indexes curated passages and ranks
           blocks: [{ id: "support", type: "p", runs: [{ text: f.text }] }],
         },
       );
-    await processLibrary("ranking-reader", { limit: 4 });
-    const outcome = await processLibrary("ranking-reader", { limit: 1 });
+    await processLibrary(await connectedOwner("ranking-reader"), { limit: 4 });
+    const outcome = await processLibrary(await connectedOwner("ranking-reader"), { limit: 1 });
     assert.equal(
       outcome.jobs.filter(
         (j) => j.kind === "indexing" && j.state === "complete",
@@ -296,7 +298,7 @@ test("the shared durable processing operation indexes curated passages and ranks
     const { searchEvidence } = await import("../lib/retrieval");
     for (const f of retrievalFixtures)
       for (const query of f.queries) {
-        const result = await searchEvidence("ranking-reader", {
+        const result = await searchEvidence(await connectedOwner("ranking-reader"), {
           query,
           limit: 4,
         });
@@ -306,7 +308,7 @@ test("the shared durable processing operation indexes curated passages and ranks
       }
     assert.deepEqual(
       (
-        await searchEvidence("ranking-reader", {
+        await searchEvidence(await connectedOwner("ranking-reader"), {
           query: "How can a salamander restore injured nerve cells?",
           semantic: false,
         })
@@ -314,7 +316,7 @@ test("the shared durable processing operation indexes curated passages and ranks
       [],
       "lexical retrieval cannot supply synonyms absent from the saved text",
     );
-    const filtered = await searchEvidence("ranking-reader", {
+    const filtered = await searchEvidence(await connectedOwner("ranking-reader"), {
       query: "How can houses use sunlight after sunset?",
       contentType: "post",
       topic: "climate",
@@ -361,7 +363,7 @@ test("duplicate passages, metadata edits and layout-only source revisions reuse 
       },
       doc,
     );
-    await processLibrary("cache-reader", { limit: 1 });
+    await processLibrary(await connectedOwner("cache-reader"), { limit: 1 });
     assert.equal(paid, 1, "identical text is billed once");
     const current = (await pullRows("cache-reader")).changes.articles.at(-1)!;
     await pushRows("cache-reader", {
@@ -452,7 +454,7 @@ test("long structured documents bound every actual Google request and retain exa
         ],
       },
     );
-    const processed = await processLibrary("long-reader", { limit: 1 });
+    const processed = await processLibrary(await connectedOwner("long-reader"), { limit: 1 });
     assert.equal(
       processed.jobs.find((j) => j.kind === "indexing")?.state,
       "complete",
@@ -460,7 +462,7 @@ test("long structured documents bound every actual Google request and retain exa
     );
     assert.ok(inputs.length > 5);
     assert.ok(inputs.every((t) => t.startsWith("title: ")));
-    const found = await searchEvidence("long-reader", {
+    const found = await searchEvidence(await connectedOwner("long-reader"), {
       query: '"Final observatory record"',
       semantic: false,
     });
@@ -473,7 +475,7 @@ test("long structured documents bound every actual Google request and retain exa
         .slice(evidence.address.start, evidence.address.end)
         .join(""),
     );
-    const table = await searchEvidence("long-reader", {
+    const table = await searchEvidence(await connectedOwner("long-reader"), {
       query: '"deep field observation"',
       semantic: false,
     });
@@ -524,15 +526,15 @@ test("interrupted indexing reuses cached vectors and waits for reconciliation be
         ],
       },
     );
-    const first = await processLibrary("retry-reader", { limit: 1 });
+    const first = await processLibrary(await connectedOwner("retry-reader"), { limit: 1 });
     const job = first.jobs.find((job: any) => job.kind === "indexing")!;
     assert.equal(job.state, "retryable");
     assert.equal(
-      (await searchEvidence("retry-reader", { query: "durable" })).mode,
+      (await searchEvidence(await connectedOwner("retry-reader"), { query: "durable" })).mode,
       "lexical",
     );
     assert.equal(calls, 2, "unpublished vectors must not enable a paid query");
-    const retried = await processLibrary("retry-reader", {
+    const retried = await processLibrary(await connectedOwner("retry-reader"), {
       limit: 1,
       retryJobId: job.id,
     });
@@ -579,13 +581,13 @@ test("source changes during paid indexing and deletions during paid query embedd
     });
   };
   try {
-    const first = await processLibrary("race-reader", { limit: 1 });
+    const first = await processLibrary(await connectedOwner("race-reader"), { limit: 1 });
     assert.equal(
       first.jobs.find((j) => j.sourceRevision === 1)?.state,
       "cancelled",
     );
     assert.deepEqual(
-      (await searchEvidence("race-reader", { query: "lighthouse" })).results,
+      (await searchEvidence(await connectedOwner("race-reader"), { query: "lighthouse" })).results,
       [],
     );
     globalThis.fetch = async () =>
@@ -593,7 +595,7 @@ test("source changes during paid indexing and deletions during paid query embedd
         embedding: { values: [1, ...Array(767).fill(0)] },
         usageMetadata: { promptTokenCount: 20 },
       });
-    await processLibrary("race-reader", { limit: 1 });
+    await processLibrary(await connectedOwner("race-reader"), { limit: 1 });
     globalThis.fetch = async () => {
       const row = (await pullRows("race-reader")).changes.articles.at(-1)!;
       await pushRows("race-reader", {
@@ -613,7 +615,7 @@ test("source changes during paid indexing and deletions during paid query embedd
       });
     };
     assert.deepEqual(
-      (await searchEvidence("race-reader", { query: "observatory" })).results,
+      (await searchEvidence(await connectedOwner("race-reader"), { query: "observatory" })).results,
       [],
     );
   } finally {
@@ -658,7 +660,7 @@ test("a resumable rebuild ignores incompatible persisted vectors and publishes o
     await pool.query(
       `insert into passage_indexes select user_id,id,source_revision,'obsolete-space',md5(doc::text),now() from articles where user_id='rebuild-reader'`,
     );
-    const old = await searchEvidence("rebuild-reader", { query: "starlight" });
+    const old = await searchEvidence(await connectedOwner("rebuild-reader"), { query: "starlight" });
     assert.equal(old.mode, "lexical");
     assert.equal(calls, 0);
     const page = await scheduleSearchRebuild("rebuild-reader", { limit: 1 });
@@ -667,8 +669,8 @@ test("a resumable rebuild ignores incompatible persisted vectors and publishes o
       ["old-space"],
     );
     assert.equal(page.next, null);
-    await processLibrary("rebuild-reader", { limit: 1 });
-    const fresh = await searchEvidence("rebuild-reader", {
+    await processLibrary(await connectedOwner("rebuild-reader"), { limit: 1 });
+    const fresh = await searchEvidence(await connectedOwner("rebuild-reader"), {
       query: "far away light",
     });
     assert.equal(fresh.mode, "hybrid");
@@ -779,7 +781,7 @@ test("healthy bounded indexing continues beyond eight windows without consuming 
     let state = "pending";
     let windows = 0;
     while (state !== "complete" && windows < 24) {
-      const result = await processLibrary("continuation-reader", { limit: 1 });
+      const result = await processLibrary(await connectedOwner("continuation-reader"), { limit: 1 });
       state = result.jobs.find((job: any) => job.kind === "indexing")!.state;
       now = Math.max(
         now,
@@ -798,7 +800,7 @@ test("healthy bounded indexing continues beyond eight windows without consuming 
     assert.equal(state, "complete");
     assert.ok(windows > 8);
     assert.equal(calls, 20);
-    const found = await searchEvidence("continuation-reader", {
+    const found = await searchEvidence(await connectedOwner("continuation-reader"), {
       query: "astronomical observations",
     });
     assert.equal(found.mode, "hybrid");
@@ -818,6 +820,7 @@ test("a metadata-only item receives its first indexing job when source text arri
   const identity = makeToken();
   const owner = "first-text-reader";
   await createToken(owner, identity.id, identity.hash, "First text fixture");
+  await connectFixtureProviders(owner);
   const push = (row: unknown) =>
     sync(
       new Request("http://localhost/api/sync", {
@@ -882,9 +885,9 @@ test("a metadata-only item receives its first indexing job when source text arri
     });
   };
   try {
-    await processLibrary(owner, { limit: 1 });
+    await processLibrary(await connectedOwner(owner), { limit: 1 });
     assert.equal(
-      (await searchEvidence(owner, { query: "star measurements" })).mode,
+      (await searchEvidence(await connectedOwner(owner), { query: "star measurements" })).mode,
       "hybrid",
     );
     const row = (await pullRows(owner)).changes.articles.at(-1)!;
@@ -957,7 +960,7 @@ test("indexing yields before a paid call cannot fit its window and preserves pro
     let state = "pending",
       windows = 0;
     while (state !== "complete" && windows < 20) {
-      const result = await processLibrary("inflight-reader", { limit: 1 });
+      const result = await processLibrary(await connectedOwner("inflight-reader"), { limit: 1 });
       const job = result.jobs.find((j) => j.kind === "indexing")!;
       state = job.state;
       assert.notEqual(
@@ -978,7 +981,7 @@ test("indexing yields before a paid call cannot fit its window and preserves pro
       interrupted * 1639,
       "yielding before dispatch does not create uncertain reservations",
     );
-    const result = await searchEvidence("inflight-reader", {
+    const result = await searchEvidence(await connectedOwner("inflight-reader"), {
       query: "astronomical measurements",
     });
     assert.equal(result.mode, "hybrid");
@@ -1034,17 +1037,17 @@ test("zero-progress embedding timeouts block paid replay while retaining saved l
     // Scheduling uses the database clock; another fixture may hold its publication lock.
     const queued = await processingStatus("zero-progress-reader");
     now = Math.max(now, Date.parse(queued.jobs.find((j) => j.kind === "indexing")!.nextAttemptAt) + 1);
-    const first = await processLibrary("zero-progress-reader", {limit:1});
+    const first = await processLibrary(await connectedOwner("zero-progress-reader"), {limit:1});
     let job=first.jobs.find(j=>j.kind==='indexing')!;
     assert.equal(job.state,'retryable');assert.equal(job.attempts,1);
     now=Math.max(now,Date.parse(job.nextAttemptAt)+1);
-    const next=await processLibrary("zero-progress-reader",{limit:1});
+    const next=await processLibrary(await connectedOwner("zero-progress-reader"),{limit:1});
     job=next.jobs.find(j=>j.kind==='indexing')!;
     assert.equal(job.state,'blocked');assert.equal(job.attempts,1);
     assert.equal(next.finished,0);assert.equal(calls,1);
     now=Math.max(now,Date.parse(job.nextAttemptAt)+1);
-    assert.equal((await processLibrary("zero-progress-reader",{limit:1})).processed,0);
-    const found = await searchEvidence("zero-progress-reader", {
+    assert.equal((await processLibrary(await connectedOwner("zero-progress-reader"),{limit:1})).processed,0);
+    const found = await searchEvidence(await connectedOwner("zero-progress-reader"), {
       query: "survives",
       semantic: false,
     });

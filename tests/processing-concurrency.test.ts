@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pool,setupPostgres} from './postgres';
@@ -10,6 +11,7 @@ after(()=>pool.end());
 const decision=()=>Response.json({model:'jev-1.14.0',answers:{category:{type:'choice',choice:'ai-engineering',confidence:0.96,probabilities:Object.fromEntries(TOPICS.map(t=>[t.key,t.key==='ai-engineering'?0.96:0.04/26]))}},usage:{input_tokens:100,output_tokens:0}});
 async function reader(owner:string,count:number){
  const token=makeToken();await createToken(owner,token.id,token.hash,'Concurrency fixture');
+  await connectFixtureProviders(owner);
  for(let n=0;n<count;n++)await shelveForUser(owner,{id:'source-'+n,title:'Source '+n},{id:'source-'+n,title:'Source '+n,blocks:[{id:'b1',type:'p',runs:[{text:'A saved source about AI engineering.'}]}]});
  return ()=>new Request('http://localhost/api/processing',{method:'POST',headers:{authorization:'Bearer '+token.token,'Content-Type':'application/json'},body:JSON.stringify({limit:48})});
 }

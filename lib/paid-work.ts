@@ -123,16 +123,27 @@ async function durableBudget() {
   }
   return budget;
 }
-export async function processingBudget() {
+export async function processingBudget(owner?: string) {
   const budget=await durableBudget();
-  const remaining=Number(budget.cap_micros)-Number(budget.settled_micros)-Number(budget.reserved_micros);
-  return {
-    allows(kind:string) {
-      if (!['classification','indexing'].includes(kind)) return true;
-      try { return !budget.halted && remaining >= processingReservationMicros(kind); }
-      catch { return false; }
-    },
+  let remaining=Number(budget.cap_micros)-Number(budget.settled_micros)-Number(budget.reserved_micros);
+  let connected: Record<string,any>[] = [];
+  try {
+    connected = owner ? await db().query("select provider from provider_connections where owner_id=$1 and (expires_at is null or expires_at::timestamptz>now())", [owner]) : [];
+    if (owner) {
+      const [own] = await db().query(`select coalesce((select cap_micros from provider_budgets where owner_id=$1),10000000)-coalesce(sum(case when status='settled' then actual_micros when status in ('reserved','uncertain') then reserved_micros else 0 end),0) as remaining,
+        count(*) filter(where status in ('reserved','uncertain')) as active from paid_attempts where owner_id=$1`,[owner]);
+      remaining = Number(own.active) >= 16 ? 0 : Math.min(remaining, Number(own.remaining));
+    }
+  } catch (error) {
+    // Older installations remain inspectable; no paid work is available until migration.
+    if (!(error && typeof error === "object" && "code" in error && error.code === "42P01")) throw error;
+  }
+  const configured = (kind:string) => !owner || !['classification','indexing'].includes(kind) || connected.some(c => c.provider === (kind === "classification" ? "typesafe" : "google"));
+  const budgetAllows = (kind:string) => {
+    if (!['classification','indexing'].includes(kind)) return true;
+    try { return !budget.halted && remaining >= processingReservationMicros(kind); } catch { return false; }
   };
+  return { configured, budgetAllows, allows: (kind:string) => configured(kind) && budgetAllows(kind) };
 }
 export function isProcessingBlock(error: unknown): error is PaidWorkError {
   return error instanceof PaidWorkError && ['budget_paused','budget_unavailable','configuration','reconciliation_required','duplicate_attempt'].includes(error.code);

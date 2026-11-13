@@ -7,11 +7,11 @@ let indexingInstalled = false;
 export function registerLibraryProcessingHandlers(
   register: (kind: string, handler: ProcessingHandler) => void,
 ) {
-  if (!classificationInstalled && process.env.TYPESAFE_API_KEY) {
+  if (!classificationInstalled) {
     classificationInstalled = true;
     register("classification", classifySavedSource);
   }
-  if (!indexingInstalled && process.env.GOOGLE_API_KEY) {
+  if (!indexingInstalled) {
     indexingInstalled = true;
     register("indexing", indexSavedSource);
   }

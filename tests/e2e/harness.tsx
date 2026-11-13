@@ -1,3 +1,4 @@
+import { ProviderConnections } from "../../components/account/ProviderConnections";
 /// <reference types="next" />
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -52,7 +53,7 @@ function Harness() {
 
   return <main className="write-page write-shell">
     <WritingLink href="/calendar" writingState={{dirty,busy:Boolean(busy)}}>Calendar</WritingLink>
-    <p role="note">Synthetic fixture: actual Sakamoto editor, forms and HTTP client. Authentication, database and providers are not exercised.</p>
+    <p role="note">Synthetic fixture: actual InView editor, forms and HTTP client. Authentication, database and providers are not exercised.</p>
     {error && <p role="alert">{error}</p>}
     {detail ? <ProductionEditor key={detail.production.id} detail={detail} workspace={{...workspace,xProfile}} client={client} busy={busy} author={{name:"Clerk Author",imageUrl:"https://images.example/clerk.png"}} onXProfile={setXProfile}
       onAction={action} onProgress={setDetail} onProfile={() => {}} onDirty={setDirty} /> : <p>Loading fixture…</p>}
@@ -74,4 +75,4 @@ function CreationHarness() {
   const [result, setResult] = useState('');
   return <main className="write-page write-shell"><BriefForm profile={workspace.profile} sources={workspace.sources} sourceId={null} busy={busy} onSubmit={async brief => { setBusy(true); try { await client.create(brief); setResult('Brief submitted'); } finally { setBusy(false); } }} /><p role="status">{result}</p></main>;
 }
-createRoot(document.getElementById('root')!).render(new URLSearchParams(location.hash.slice(1)).has('create') ? <CreationHarness /> : location.pathname === '/calendar' ? <CalendarHarness /> : location.pathname === '/write' && !location.search ? <OverviewHarness /> : <Harness />);
+createRoot(document.getElementById('root')!).render(location.pathname === '/settings/providers' ? <ProviderConnections owner="fixture-owner" /> : new URLSearchParams(location.hash.slice(1)).has('create') ? <CreationHarness /> : location.pathname === '/calendar' ? <CalendarHarness /> : location.pathname === '/write' && !location.search ? <OverviewHarness /> : <Harness />);

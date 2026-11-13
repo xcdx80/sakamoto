@@ -1,3 +1,4 @@
+import { connectedContext } from "./provider-fixtures";
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 import Ajv2020 from "ajv/dist/2020";
@@ -45,7 +46,7 @@ test("a factual sentence's cited support covers independently identified factual
     })),
   };
   configurePostProviders({ reviewPost: async () => review });
-  assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed");
+  assert.equal((await reviewPost(await connectedContext(context), content, "gpt-6-luna")).status, "passed");
 });
 
 test("the writer wire schema rejects hook counts that the returned-draft contract rejects", async () => {
@@ -74,7 +75,7 @@ test("the writer wire schema rejects hook counts that the returned-draft contrac
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 100, completion_tokens: 100 } });
   };
   try {
-    await writePost(context, framework);
+    await writePost(await connectedContext(context), framework);
     assert.equal(acceptsSevenHooks, false, "The provider must see the same six-hook bound enforced after generation.");
   } finally {
     globalThis.fetch = originalFetch;
@@ -106,7 +107,7 @@ test("an author thread accepted by the public delivery rules remains reviewable"
       reason: "The thread proposes explicit inspection steps without asserting measured benefits or past experience.",
     })),
   }) });
-  assert.equal((await reviewPost(context, content, "author")).status, "passed");
+  assert.equal((await reviewPost(await connectedContext(context), content, "author")).status, "passed");
 });
 
 test("an explicit proposed test can count its own proposed conditions without a source claim", async () => {
@@ -202,24 +203,24 @@ test("independent provenance preserves exact source quotes and factual coverage 
     })),
   });
   configurePostProviders({ reviewPost: async (_ctx, _content, writer) => result(writer) });
-  const review = await reviewPost(context, content, "author");
+  const review = await reviewPost(await connectedContext(context), content, "author");
   assert.equal(review.status, "passed");
   assert.equal(validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review).some(issue => ["unsupported_number", "unsupported_quote"].includes(issue.code)), false);
-  assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed");
+  assert.equal((await reviewPost(await connectedContext(context), content, "gpt-6-luna")).status, "passed");
   for (const support of [[], [{ ...proof, quote: "An invented source quotation." }], [{ ...proof, claim: "The test used 2 prompts" }], [{ ...proof, claimKind: "interpretation" as "fact" }]]) {
     configurePostProviders({ reviewPost: async () => result("author", support) });
     if (!support.length || support[0].claim !== fact) {
-      const incomplete = await reviewPost(context, content, "author");
+      const incomplete = await reviewPost(await connectedContext(context), content, "author");
       assert.equal(incomplete.status, "blocked");
       assert.ok(incomplete.issues.some(issue => issue.code === "unregistered_fact" && issue.severity === "block"));
-    } else await assert.rejects(reviewPost(context, content, "author"), /exact source quote|factual|fact-kind/i);
+    } else await assert.rejects(reviewPost(await connectedContext(context), content, "author"), /exact source quote|factual|fact-kind/i);
   }
   configurePostProviders({ reviewPost: async () => ({ ...result("author"), factualAssessment: [{ platform: "x", hasFactualClaims: false, factualClaims: [], rationale: "The reviewer incorrectly calls this documented numeric result and reported quotation a mere proposal." }] }) });
-  await assert.rejects(reviewPost(context, content, "author"), /factual|fact-kind/i);
+  await assert.rejects(reviewPost(await connectedContext(context), content, "author"), /factual|fact-kind/i);
   const missingAssessment = result("author");
   delete missingAssessment.factualAssessment;
   configurePostProviders({ reviewPost: async () => missingAssessment });
-  await assert.rejects(reviewPost(context, content, "author"), /exact actual.*span/i);
+  await assert.rejects(reviewPost(await connectedContext(context), content, "author"), /exact actual.*span/i);
 });
 
 test("local proposal exceptions do not excuse reported results, mismatched counts or reported quotations", () => {
@@ -248,7 +249,7 @@ test("fresh writer citation anchors preserve actual paragraph whitespace without
   };
   const framework = { frameworkId: entry.id, name: entry.name, family: entry.family, score: 1, reasons: [], outline: entry.outline, hookPatternIds: entry.hookPatternIds, warnings: [] };
   configurePostProviders({ writePost: async () => ({ content, model: "gpt-6-luna", promptVersion: "post-production-v12" }) });
-  const written = await writePost(context, framework);
+  const written = await writePost(await connectedContext(context), framework);
   assert.equal(written.content.variants[0].posts[0], post);
   assert.deepEqual(written.content.claimSources, [{ claim: post, evidenceIds: ["AUTHOR_NOTE"] }]);
 });
@@ -279,7 +280,7 @@ test("author-only factual hook proof satisfies numeric provenance while the publ
       support: criterion.id === "grounded-in-sources" ? [{ claim: fact, claimKind: "fact", evidenceId: "source-finding", quote: fact, reason: "The supplied report states the exact prompt count asserted only in the alternate hook." }] : [],
     })),
   }) });
-  const review = await reviewPost(context, content, "author");
+  const review = await reviewPost(await connectedContext(context), content, "author");
   assert.equal(review.status, "passed");
   assert.equal(validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review).some(issue => issue.code === "unsupported_number"), false);
 });
@@ -295,12 +296,12 @@ test("writer citation hints never rewrite literal variants or invent cross-post 
   const framework = { frameworkId: entry.id, name: entry.name, family: entry.family, score: 1, reasons: [], outline: entry.outline, hookPatternIds: entry.hookPatternIds, warnings: [] };
   const content: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: [first + " " + second] }, { platform: "linkedin", delivery: "long", posts: [first + "\n\n" + second] }], hooks: [], claimSources: [{ claim: first + " " + second, evidenceIds: ["AUTHOR_NOTE"] }] };
   configurePostProviders({ writePost: async () => ({ content, model: "gpt-6-luna", promptVersion: "post-production-v13" }) });
-  const written = await writePost(context, framework);
+  const written = await writePost(await connectedContext(context), framework);
   assert.deepEqual(written.content.variants, content.variants);
   assert.deepEqual(written.content.claimSources.map(claim => claim.claim), [first + " " + second, first + "\n\n" + second]);
   for (const claim of [first + " I repaired the source mapping!", "Evaluation exposed no attribution problem.", "evaluation exposed missing attribution."]) {
     configurePostProviders({ writePost: async () => ({ content: { ...content, claimSources: [{ claim, evidenceIds: ["AUTHOR_NOTE"] }] }, model: "gpt-6-luna", promptVersion: "post-production-v13" }) });
-    const unmatched = await writePost(context, framework);
+    const unmatched = await writePost(await connectedContext(context), framework);
     assert.deepEqual(unmatched.content.variants, content.variants);
     assert.deepEqual(unmatched.content.claimSources, []);
   }
@@ -330,7 +331,7 @@ async function reviewProposedSpan(text: string, nonfactualSupport: unknown[], op
       support: criterion.id === "grounded-in-sources" && options.fact ? [{ claim: options.fact, claimKind: "fact", evidenceId: sourceId, quote: options.sourceQuote ?? options.fact, reason: "The supplied evaluation report explicitly documents this separately identified observation." }] : [],
     })),
   }) });
-  const review = await reviewPost(context, content, options.writerModel ?? "author");
+  const review = await reviewPost(await connectedContext(context), content, options.writerModel ?? "author");
   return { review, issues: validateDraft(catalog, content, context.evidence, defaultProfile(), entry.id, review) };
 }
 
@@ -415,7 +416,7 @@ test("author provenance mode reaches both independent grounding and unsupported-
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }], usage: { prompt_tokens: 100, completion_tokens: 100 } });
   };
   try {
-    assert.equal((await reviewPost(context, content, "author")).status, "passed");
+    assert.equal((await reviewPost(await connectedContext(context), content, "author")).status, "passed");
     assert.equal(origin, "author");
     assert.match(groundingInstructions, /claimRegistrationPolicy/);
     assert.match(groundingInstructions, /independently of writer annotation completeness/i);
@@ -448,7 +449,7 @@ test("independent review corrects a registered claim's known-source mapping and 
       ] : [],
     })),
   }) });
-  const review = await reviewPost(context, content, "gpt-6-luna");
+  const review = await reviewPost(await connectedContext(context), content, "gpt-6-luna");
   assert.equal(review.status, "passed");
   assert.deepEqual(content.claimSources, [{ claim: fact, evidenceIds: ["WEB3"] }]);
   assert.ok(review.criteria.find(criterion => criterion.id === "grounded-in-sources")?.support?.some(support => support.evidenceId === "WEB1"));
@@ -552,7 +553,7 @@ test("generated review wire schemas permit independent exact-span support with o
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }], usage: { prompt_tokens: 100, completion_tokens: 100 } });
   };
   try {
-    assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed");
+    assert.equal((await reviewPost(await connectedContext(context), content, "gpt-6-luna")).status, "passed");
     assert.equal(validFull, true);
     assert.equal(validClause, true, "The reviewer may prove an actual clause independently; runtime validation still requires complete exact source proof.");
     const proposal: DraftContent = { variants: [{ platform: "x", delivery: "single", posts: ["I would inspect the attribution before choosing a test."] }], hooks: [], claimSources: [] };
@@ -592,7 +593,7 @@ test("author intent supports proposed process signals without establishing obser
     ])), usage: { input_tokens: 100, output_tokens: 100 } });
   };
   try {
-    const signals = await decidePostSignals(context);
+    const signals = await decidePostSignals(await connectedContext(context));
     assert.equal(signals.find(signal => signal.signal === "process_steps")?.strength, 2);
     for (const signal of ["outcome_with_numbers", "before_after", "third_party_success", "data_or_stats", "case_with_timeline", "author_has_credibility", "personal_story", "multiple_sources_same_topic"])
       assert.equal(signals.find(entry => entry.signal === signal)?.strength, 0, signal);

@@ -1,3 +1,4 @@
+import { pruneCredentialStorage } from "@/lib/credential-lifecycle";
 import { timingSafeEqual } from "node:crypto";
 import { processScheduled } from "@/lib/processing";
 export const runtime = "nodejs";
@@ -12,5 +13,6 @@ export async function GET(req: Request) {
     !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
   )
     return Response.json({ error: "Unauthorized scheduler." }, { status: 401 });
+  await pruneCredentialStorage();
   return Response.json(await processScheduled());
 }

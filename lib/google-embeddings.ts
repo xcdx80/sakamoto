@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, type ProviderConnection } from "./provider-connections";
 import {
   PaidWorkError,
   reservePaidWork,
@@ -30,12 +31,7 @@ export async function embedText(
       "configuration",
       "Semantic search is paused: the configured model or dimensions require a compatible index migration.",
     );
-  const key = process.env.GOOGLE_API_KEY;
-  if (!key)
-    throw new PaidWorkError(
-      "configuration",
-      "Semantic search is paused: Google credentials are unavailable.",
-    );
+  const connection = await prepareProviderConnection(owner, "google");
   const body = JSON.stringify({
     content: { parts: [{ text }] },
     outputDimensionality: EMBEDDING_CONTRACT.dimensions,
@@ -58,11 +54,8 @@ export async function embedText(
     throw new PaidWorkError('dispatch_deferred','Indexing yielded before dispatch because its request window is ending.');
   }
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_CONTRACT.model}:embedContent`,
+    const res = await executeProviderRequest(connection, "google-embedding",
       {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": key },
         body,
         signal: signal
           ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
@@ -125,6 +118,7 @@ export async function embedText(
       );
     return vector;
   } catch (error) {
+    if (error instanceof ProviderRequestNotSent) { await releaseRejectedPaidWork(reservation); throw error; }
     if (error instanceof RejectedEmbedding)
       throw new PaidWorkError(
         "provider_rejected",

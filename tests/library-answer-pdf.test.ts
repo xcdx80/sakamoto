@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { pool, setupPostgres } from "./postgres";
@@ -13,6 +14,7 @@ before(async () => {
   delete process.env.GOOGLE_API_KEY;
   delete process.env.TYPESAFE_API_KEY;
   process.env.OPENAI_API_KEY = "fixture-openai";
+  await connectFixtureProviders("pdf-reader");
   process.env.DATABASE_URL = "test-adapter-only";
   const identity = makeToken();
   token = identity.token;
@@ -22,6 +24,7 @@ before(async () => {
     identity.hash,
     "PDF answer fixture",
   );
+  await connectFixtureProviders("pdf-answer");
 });
 after(async () => {
   configureArticleFetch({});

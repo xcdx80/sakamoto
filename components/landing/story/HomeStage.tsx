@@ -39,7 +39,7 @@ export function HomeStage({ story, children }: { story: boolean; children: React
   return (
     <>
       <div ref={track} className="story-track" style={{ height: `${(SCREENS + 1) * 100}svh` }}>
-        <section ref={stage} className="story-stage sk-desk" aria-label="How Sakamoto works">
+        <section ref={stage} className="story-stage sk-desk" aria-label="How InView works">
           {view && (
             <>
               <GatherCaption p={p} />

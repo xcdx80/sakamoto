@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pool,setupPostgres} from './postgres';
@@ -7,7 +8,8 @@ import {importBookmarks} from '../lib/bookmarks';
 import {configureProcessing} from '../lib/processing';
 import {POST,GET} from '../app/api/processing/route';
 before(setupPostgres);after(()=>pool.end());
-async function fixture(links:string[]){const owner='throughput-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');await importBookmarks(owner,{posts:[{postId:String(BigInt('9000000000000000000')+BigInt(Math.floor(Math.random()*10000000))),url:'',text:'A source for throughput verification.',author:{name:'Author',handle:'author'},observedAt:'2026-10-17T01:00:00Z',links}].map(p=>({...p,url:'https://x.com/author/status/'+p.postId}))},'Fixture');return {owner,headers:{authorization:'Bearer '+token.token,'Content-Type':'application/json'}};}
+async function fixture(links:string[]){const owner='throughput-'+crypto.randomUUID(),token=makeToken();await createToken(owner,token.id,token.hash,'Fixture');
+  await connectFixtureProviders(owner);await importBookmarks(owner,{posts:[{postId:String(BigInt('9000000000000000000')+BigInt(Math.floor(Math.random()*10000000))),url:'',text:'A source for throughput verification.',author:{name:'Author',handle:'author'},observedAt:'2026-10-17T01:00:00Z',links}].map(p=>({...p,url:'https://x.com/author/status/'+p.postId}))},'Fixture');return {owner,headers:{authorization:'Bearer '+token.token,'Content-Type':'application/json'}};}
 const request=(headers:Record<string,string>,body:unknown)=>new Request('http://localhost/api/processing',{method:'POST',headers,body:JSON.stringify(body)});
 test('a processing request fetches independent linked articles concurrently and publishes each once',async()=>{
  const a=await fixture(['https://one.example/a','https://two.example/b','https://three.example/c','https://four.example/d']);let active=0,peak=0;

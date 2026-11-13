@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, hasProviderConnection, type ProviderConnection } from "./provider-connections";
 /**
  * Web search with Exa, for answers that need the world beyond the text.
  * Fact-check always searches first; any other question offers the model a
@@ -10,7 +11,7 @@
 
 import type { Source } from "./models";
 
-const EXA_URL = "https://api.exa.ai/search";
+
 
 /** The tool the model is offered. Its description is what decides when it searches. */
 export const WEB_TOOL = {
@@ -34,7 +35,7 @@ export const WEB_TOOL = {
 } as const;
 const RESULTS = 5;
 
-export const searchEnabled = () => Boolean(process.env.EXA_API_KEY);
+export const searchEnabled = (owner: string) => hasProviderConnection(owner, "exa");
 
 export type WebResults = {
   sources: Source[];
@@ -45,15 +46,13 @@ export type WebResults = {
 
 /** Null when search is off, fails or times out: the answer goes ahead without it. */
 export async function webSearch(
+  connection: ProviderConnection,
   query: string,
   signal?: AbortSignal,
 ): Promise<WebResults | null> {
-  const key = process.env.EXA_API_KEY;
-  if (!key || !query.trim()) return null;
+  if (!query.trim()) return null;
   try {
-    const res = await fetch(EXA_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key },
+    const res = await executeProviderRequest(connection, "exa-search", {
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
         : AbortSignal.timeout(5000),
@@ -109,7 +108,8 @@ export async function webSearch(
       providerRequestId: res.headers.get("x-request-id"),
       billing,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderRequestNotSent) throw error;
     return null;
   }
 }

@@ -1,3 +1,4 @@
+import { prepareProviderConnection, ProviderRequestNotSent } from "@/lib/provider-connections";
 import { ACTIONS } from "@/lib/actions";
 import {
   buildMessages,
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
       );
     const history = body.history ?? [],
       operationId = req.headers.get("idempotency-key") || crypto.randomUUID();
-    const useSearch = searchEnabled() && body.search !== false,
+    const useSearch = (await searchEnabled(owner)) && body.search !== false,
       forced = thread.action === "check" && useSearch,
       offerTool = useSearch && !forced;
     if (useSearch && !process.env.SAKAMOTO_EXA_MAX_USD)
@@ -122,6 +123,7 @@ export async function POST(req: Request) {
         let initialStarted = false;
         const send = (event: StreamEvent) => controller.enqueue(encode(event));
         const search = async (query: string) => {
+          const connection = await prepareProviderConnection(owner!, "exa");
           const reservation = await reservePaidWork({
             owner: owner!,
             operationId,
@@ -132,7 +134,7 @@ export async function POST(req: Request) {
           });
           try {
             send({ type: "searching" });
-            const found = await webSearch(query, req.signal);
+            const found = await webSearch(connection, query, req.signal);
             if (!found) {
               await markPaidWorkUncertain(reservation);
               return null;
@@ -144,7 +146,8 @@ export async function POST(req: Request) {
             send({ type: "sources", sources: found.sources });
             return found;
           } catch (error) {
-            await markPaidWorkUncertain(reservation);
+            if (error instanceof ProviderRequestNotSent) await releaseRejectedPaidWork(reservation);
+            else await markPaidWorkUncertain(reservation);
             throw error;
           }
         };

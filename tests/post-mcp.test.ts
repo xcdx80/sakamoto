@@ -78,7 +78,7 @@ async function ready(a: Awaited<ReturnType<typeof account>>, initial?: any) {
   assert.equal(current.production.status, "ready");
   return current;
 }
-test("MCP runs Sakamoto generation and revision stages without approving or publishing", async () => {
+test("MCP runs InView generation and revision stages without approving or publishing", async () => {
   const a = await account();
   providers();
   const first = await ready(a);

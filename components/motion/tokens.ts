@@ -1,4 +1,4 @@
-/** Sakamoto's motion vocabulary. Paper settles, ink draws, stamps thud. */
+/** InView's motion vocabulary. Paper settles, ink draws, stamps thud. */
 export const ease = {
   out: [0.22, 1, 0.36, 1],
   inOut: [0.76, 0, 0.24, 1],

@@ -1,3 +1,4 @@
+import { connectedContext } from "./provider-fixtures";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -28,7 +29,7 @@ test("a failed Write connection retains safe transport diagnostics and its full 
     const exhaustedStage = { ...context, deadlineAt: performance.now() + 1000 };
     await assert.rejects(writePost(exhaustedStage, framework), /time|deadline/);
     assert.equal((await budgetStatus(context.owner)).attempts.length, 0, "An almost-expired stage must stop before reservation or paid dispatch.");
-    await assert.rejects(writePost(context, framework), /ECONNRESET/);
+    await assert.rejects(writePost(await connectedContext(context), framework), /ECONNRESET/);
     const [attempt] = (await budgetStatus(context.owner)).attempts;
     assert.equal(attempt.status, "uncertain");
     assert.equal(attempt.actualUsd, null);
@@ -74,7 +75,7 @@ test("a completed rubric request cannot consume the independent reviewer's reque
     }) } }], usage: { prompt_tokens: 500, completion_tokens: 200 } });
   };
   try {
-    const result = await reviewPost(context, { variants: [{ platform: "x", delivery: "long", posts: ["I would inspect failure cases before shipping."] }], hooks: [], claimSources: [] }, "gpt-6-luna");
+    const result = await reviewPost(await connectedContext(context), { variants: [{ platform: "x", delivery: "long", posts: ["I would inspect failure cases before shipping."] }], hooks: [], claimSources: [] }, "gpt-6-luna");
     assert.equal(result.status, "passed");
     assert.ok((await budgetStatus(context.owner)).attempts.every(attempt => attempt.status === "settled"));
   } finally {
@@ -99,7 +100,7 @@ test("a response-body timeout keeps the provider request ID and classifies the i
   };
   globalThis.fetch = async () => new Response(new ReadableStream({ start(controller) { controller.error(new DOMException("The operation was aborted due to timeout", "TimeoutError")); } }), { headers: { "x-request-id": "fixture-response-before-timeout" } });
   try {
-    await assert.rejects(writePost(context, framework), /TimeoutError, reading_response/);
+    await assert.rejects(writePost(await connectedContext(context), framework), /TimeoutError, reading_response/);
     const [attempt] = (await budgetStatus(context.owner)).attempts;
     assert.equal(attempt.providerRequestId, "fixture-response-before-timeout");
     assert.equal(attempt.status, "uncertain");
@@ -140,7 +141,7 @@ test("the writer wire contract requires each requested channel exactly once and 
     assert.match(packet.deliveryPolicy, /overrides.*framework/i);
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(wire) } }], usage: { prompt_tokens: 500, completion_tokens: 200 } });
   };
-  try { assert.deepEqual((await writePost(context, framework)).content.variants, variants); }
+  try { assert.deepEqual((await writePost(await connectedContext(context), framework)).content.variants, variants); }
   finally {
     globalThis.fetch = original;
     for (const [key, value] of [["OPENAI_API_KEY", previous.key], ["TYPESAFE_API_KEY", previous.typesafe], ["SAKAMOTO_POST_REVIEWER_MODEL", previous.reviewer]]) {
@@ -182,7 +183,7 @@ test("dual-channel long review keeps full excerpts and draft text inside every p
       criteria: [...catalog.shared.criteria, ...catalog.frameworks.find(item => item.id === entry.id)!.rubric.criteria].map(item => ({ id: item.id, score: 5, reason: "The draft explicitly proposes an inspection without asserting any externally checkable event or result.", evidenceIds: [], support: [], draftSupport: [] })),
     }) } }], usage: { prompt_tokens: 500, completion_tokens: 200 } });
   };
-  try { assert.equal((await reviewPost(context, content, "gpt-6-luna")).status, "passed"); assert.equal(calls, 2); }
+  try { assert.equal((await reviewPost(await connectedContext(context), content, "gpt-6-luna")).status, "passed"); assert.equal(calls, 2); }
   finally {
     globalThis.fetch = original;
     for (const [key, value] of [["OPENAI_API_KEY", previous.key], ["TYPESAFE_API_KEY", previous.typesafe], ["SAKAMOTO_POST_REVIEWER_MODEL", previous.reviewer]]) {

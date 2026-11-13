@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Sakamoto frameworks library.
+"""Validate the InView frameworks library.
 
 Usage: python tools/validate.py [--root frameworks/] [--raw path/to/raw]
 --raw points at the fetched data (posts_index.json, web_posts.json, web/*.txt). When it is given (or found at

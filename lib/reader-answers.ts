@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, type ProviderConnection } from "./provider-connections";
 /** Reader application module: authentication is handled by the caller; paid attempts are durable. */
 import type { ChatMessage } from "./models";
 import type { StreamEvent } from "./models";
@@ -24,6 +25,7 @@ export async function prepareReaderAttempt(
   maxTokens: number,
   extra: LunaOptions = {},
 ) {
+  const connection = await prepareProviderConnection(owner, "openai");
   const body = lunaRequest(messages, maxTokens, extra);
   const reservation = await reservePaidWork({
     owner,
@@ -33,7 +35,7 @@ export async function prepareReaderAttempt(
     serializedInput: JSON.stringify(body),
     maxOutputTokens: maxTokens,
   });
-  return { body, reservation };
+  return { body, reservation, connection };
 }
 export async function* runReaderAttempt(
   prepared: Awaited<ReturnType<typeof prepareReaderAttempt>>,
@@ -47,7 +49,7 @@ export async function* runReaderAttempt(
   let finalized = false;
   try {
     let receipt: Extract<StreamEvent, { type: "usage" }> | undefined;
-    for await (const event of streamLuna(prepared.body, signal, (requestId) =>
+    for await (const event of streamLuna(prepared.connection, prepared.body, signal, (requestId) =>
       recordPaidResponse(prepared.reservation, requestId),
     )) {
       if (event.type === "usage") receipt = event;
@@ -63,11 +65,11 @@ export async function* runReaderAttempt(
       } else yield event;
     }
   } catch (error) {
-    if (error instanceof ProviderRejected) {
+    if ((error instanceof ProviderRejected || error instanceof ProviderRequestNotSent)) {
       await releaseRejectedPaidWork(prepared.reservation);
       finalized = true;
     }
-    if (!(error instanceof ProviderRejected))
+    if (!((error instanceof ProviderRejected || error instanceof ProviderRequestNotSent)))
       await recordPaidFailure(prepared.reservation, error);
     throw error;
   } finally {

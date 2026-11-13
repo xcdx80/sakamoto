@@ -1,3 +1,5 @@
+import { connectFixtureProviders } from "./provider-fixtures";
+import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,6 +15,7 @@ before(async () => {
   const t = makeToken();
   token = t.token;
   await createToken("search-reader", t.id, t.hash, "Reader");
+  await connectFixtureProviders("search-reader");
   process.env.OPENAI_API_KEY = "fixture-openai";
   process.env.EXA_API_KEY = "fixture-exa";
   process.env.SAKAMOTO_EXA_MAX_USD = "0.05";
@@ -209,3 +212,5 @@ test("a credible over-bound operator receipt durably halts authorization instead
   };
   assert.equal((await answer()).status, 402);
 });
+
+beforeEach(async()=>{await connectFixtureProviders("search-reader");});

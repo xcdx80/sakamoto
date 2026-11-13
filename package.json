@@ -1,5 +1,5 @@
 {
-  "name": "sakamoto",
+  "name": "inview",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,13 +8,14 @@
     "start": "next start --port 3100",
     "lint": "tsc --noEmit",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --require ./tests/server-runtime.cjs --import tsx --test tests/*.test.ts",
     "budget:reconcile": "node --env-file-if-exists=.env.local --import tsx scripts/reconcile-paid.ts",
-    "process:worker": "node --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
-    "eval:library": "node --env-file-if-exists=.env.local --import tsx scripts/eval-library.ts",
+    "process:worker": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/process-worker.ts",
+    "eval:library": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/eval-library.ts",
     "test:reader": "node --import tsx --test tests/reader-markdown.test.ts",
     "frameworks:validate": "node --import tsx scripts/validate-frameworks.ts",
-    "eval:post-coherence": "node --import tsx scripts/eval-post-coherence.ts"
+    "eval:post-coherence": "node --import tsx scripts/eval-post-coherence.ts",
+    "credentials:maintain": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/credential-maintenance.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",
@@ -36,7 +37,8 @@
     "react-dom": "^19.3.0",
     "sql.js": "1.14.1",
     "yaml": "2.9.1",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

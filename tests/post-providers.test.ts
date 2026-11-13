@@ -1,3 +1,4 @@
+import { connectedContext } from "./provider-fixtures";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -48,11 +49,11 @@ function structureSupport(questions: Record<string, unknown>, probability = 0.99
   return Object.fromEntries(Object.keys(questions).filter(id => id.startsWith("supported_")).map(id => [id, { type: "noul", noul: probability }]));
 }
 
-test("Write pauses when writer and reviewer resolve to the same model", () => {
+test("Write pauses when writer and reviewer resolve to the same model", async () => {
   const previous = process.env.SAKAMOTO_POST_REVIEWER_MODEL;
   process.env.SAKAMOTO_POST_REVIEWER_MODEL = "gpt-6-luna";
   try {
-    const status = providerStatus();
+    const status = await providerStatus("status-owner");
     assert.equal(status.ready, false);
     assert.match(status.notice!, /distinct|independent/i);
   } finally {
@@ -72,7 +73,7 @@ test("Write produces structured evidence-addressed content and settles its durab
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } }, { headers: { "x-request-id": "writer-fixture" } });
   };
   try {
-    const result = await writePost(ctx, framework);
+    const result = await writePost(await connectedContext(ctx), framework);
     assert.deepEqual(result.content, content);
     assert.equal(result.model, "gpt-6-luna");
     const status = await budgetStatus(ctx.owner);
@@ -103,7 +104,7 @@ test("twelve UTF-8 research sources fit the full Jev signal batch while every st
     ])), usage: { input_tokens: 1000, output_tokens: 300 } });
   };
   try {
-    const signals = await decidePostSignals(ctx);
+    const signals = await decidePostSignals(await connectedContext(ctx));
     assert.equal(signals.length, 20);
     assert.equal(requests, 1);
     assert.equal((await budgetStatus(ctx.owner)).attempts[0].status, "settled");
@@ -141,13 +142,13 @@ test("the same twelve-source context fits structure, every catalog framework's w
     return Response.json({ model: body.model, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(value) } }], usage: { prompt_tokens: 1000, completion_tokens: 300 } });
   };
   try {
-    const structure = await choosePostStructure(researchContext(), [framework]);
+    const structure = await choosePostStructure(await connectedContext(researchContext()), [framework]);
     assert.equal(structure.frameworkId, framework.frameworkId);
     for (const entry of summarizeCatalog(catalog).frameworks) {
       const selected = { frameworkId: entry.id, name: entry.name, family: entry.family, score: 1, reasons: [], outline: entry.outline, hookPatternIds: entry.hookPatternIds, warnings: [] };
       const ctx = { ...researchContext(), framework: selected, selectedHookPatternId: entry.hookPatternIds[0] };
-      const written = await writePost(ctx, selected);
-      const review = await reviewPost(ctx, written.content, written.model);
+      const written = await writePost(await connectedContext(ctx), selected);
+      const review = await reviewPost(await connectedContext(ctx), written.content, written.model);
       assert.equal(review.status, "passed");
       if (entry.id === framework.frameworkId) {
         assert.deepEqual((await writePost({ ...ctx, priorContent: written.content }, selected, review)).content, content);
@@ -196,7 +197,7 @@ test("Jev evidence signals retain supported IDs while independent adjudication l
       }])) }, usage: { input_tokens: 500, output_tokens: 300 } });
   };
   try {
-    const signals = await decidePostSignals(ctx);
+    const signals = await decidePostSignals(await connectedContext(ctx));
     const personal = signals.find(s => s.signal === "personal_story")!;
     assert.equal(personal.strength, 2);
     assert.deepEqual(personal.evidenceIds, ["evidence-1"]);
@@ -223,7 +224,7 @@ test("Jev selects a hook only after the eligible framework decision has complete
     return Response.json({ model: "jev-1.14.0", answers: { ...structureSupport(body.questions), [id]: { type: "choice", choice: selected, confidence: 1, probabilities: Object.fromEntries(Object.keys(criteria).map(key => [key, key === selected ? 1 : 0])) } }, usage: { input_tokens: 200, output_tokens: 100 } });
   };
   try {
-    const selected = await choosePostStructure(ctx, [framework]);
+    const selected = await choosePostStructure(await connectedContext(ctx), [framework]);
     assert.equal(selected.frameworkId, framework.frameworkId);
     assert.equal(selected.hookPatternId, chosenHook);
     assert.equal(selected.decisions?.framework.mode, "jev");
@@ -247,7 +248,7 @@ test("independent structure support questions can inspect the finite eligible op
     }, usage: { input_tokens: 500, output_tokens: 200 } });
   };
   try {
-    const selected = await choosePostStructure(ctx, [framework]);
+    const selected = await choosePostStructure(await connectedContext(ctx), [framework]);
     assert.equal(selected.frameworkId, framework.frameworkId);
     assert.equal(selected.hookPatternId, framework.hookPatternIds[0]);
     assert.deepEqual(stages, ["framework", "hook"]);
@@ -272,7 +273,7 @@ test("diffuse editorial preferences automatically select eligible structure whil
     }, usage: { input_tokens: 200, output_tokens: 100 } });
   };
   try {
-    const selected = await choosePostStructure(ctx, candidates);
+    const selected = await choosePostStructure(await connectedContext(ctx), candidates);
     assert.equal(selected.frameworkId, framework.frameworkId);
     assert.equal(selected.hookPatternId, framework.hookPatternIds[0]);
     assert.equal(selected.decisions?.framework.mode, "editorial_tiebreak");
@@ -302,7 +303,7 @@ test("a preferred framework cannot borrow another candidate's evidence or ignore
     ])), usage: { input_tokens: 500, output_tokens: 200 } });
   };
   try {
-    const selected = await choosePostStructure(ctx, candidates);
+    const selected = await choosePostStructure(await connectedContext(ctx), candidates);
     assert.equal(selected.frameworkId, "single-paragraph-insight");
     assert.equal(selected.decisions?.framework.supportProbability, 0.99);
     assert.equal(selected.decisions?.framework.probabilities["old-vs-new"], 1);
@@ -336,7 +337,7 @@ test("a preferred hook cannot borrow another hook's feasibility or invent an uns
     }, usage: { input_tokens: 500, output_tokens: 200 } });
   };
   try {
-    const selected = await choosePostStructure(ctx, [candidate]);
+    const selected = await choosePostStructure(await connectedContext(ctx), [candidate]);
     assert.equal(selected.hookPatternId, "label-opener");
     assert.equal(selected.decisions?.hook?.probabilities["outcome-number"], 1);
     assert.equal(selected.decisions?.hook?.supportProbability, 0.99);
@@ -369,7 +370,7 @@ test("uncertain adjudication cannot restore a confidently unsupported framework"
     }) } }], usage: { prompt_tokens: 600, completion_tokens: 200 } });
   };
   try {
-    await assert.rejects(choosePostStructure(ctx, candidates), /ineligible choice/i);
+    await assert.rejects(choosePostStructure(await connectedContext(ctx), candidates), /ineligible choice/i);
     assert.equal(requests, 2, "The excluded option cannot trigger hook selection or writing.");
   } finally { globalThis.fetch = original; }
 });
@@ -398,7 +399,7 @@ test("uncertain evidence signals are independently resolved with exact source qu
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ signals: [{ signal: "process_steps", strength: 2, rationale: "The excerpt explicitly states three ordered experimental steps, so it supports a process structure.", support: [{ evidenceId: "evidence-1", quote: ctx.evidence[0].excerpt, reason: "First, then and finally directly identify the ordered steps." }] }] }) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
   };
   try {
-    const signal = (await decidePostSignals(ctx)).find(s => s.signal === "process_steps")!;
+    const signal = (await decidePostSignals(await connectedContext(ctx))).find(s => s.signal === "process_steps")!;
     assert.deepEqual(stages, ["jev", "sol"]);
     assert.equal(signal.strength, 2);
     assert.deepEqual(signal.evidenceIds, ["evidence-1"]);
@@ -439,7 +440,7 @@ test("ineligible positive adjudications are rejected as absent while valid signa
       })) }) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
     };
     try {
-      const signals = await decidePostSignals(ctx), rejected = signals.find(signal => signal.signal === fixture.signal)!;
+      const signals = await decidePostSignals(await connectedContext(ctx)), rejected = signals.find(signal => signal.signal === fixture.signal)!;
       assert.equal(rejected.strength, 0);
       assert.deepEqual(rejected.evidenceIds, []);
       assert.deepEqual(rejected.support, []);
@@ -480,7 +481,7 @@ test("malformed positive signal adjudications remain errors before conservative 
         support: [{ evidenceId: "evidence-1", quote: "evaluation catches defects.", reason: "A proposed source match." }], ...change,
       }] }) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
     };
-    try { await assert.rejects(decidePostSignals(ctx), { code: "invalid_response" }); }
+    try { await assert.rejects(decidePostSignals(await connectedContext(ctx)), { code: "invalid_response" }); }
     finally { globalThis.fetch = original; }
   }
 });
@@ -507,12 +508,12 @@ test("uncertain structure support requires grounded independent adjudication whi
     };
     try {
       if (mode === "resolved") {
-        const choice = await choosePostStructure(ctx, [framework]);
+        const choice = await choosePostStructure(await connectedContext(ctx), [framework]);
         assert.equal(choice.frameworkId, framework.frameworkId);
         assert.equal(choice.decisions?.framework.mode, "sol_resolved_uncertainty");
         assert.equal(choice.decisions?.framework.supportProbability, 0.5);
         assert.equal(choice.decisions?.framework.support?.[0].quote, "evaluation catches defects.");
-      } else await assert.rejects(choosePostStructure(ctx, [framework]), mode === "unsupported" ? /evidence.*support/i : /exact.*quote|quote.*exact/i);
+      } else await assert.rejects(choosePostStructure(await connectedContext(ctx), [framework]), mode === "unsupported" ? /evidence.*support/i : /exact.*quote|quote.*exact/i);
       assert.equal(adjudications, mode === "unsupported" ? 0 : 1);
     } finally { globalThis.fetch = original; }
   }
@@ -534,7 +535,7 @@ test("distinct web sources can establish source consensus while repeated URLs an
       ])), usage: { input_tokens: 500, output_tokens: 300 } });
     };
     try {
-      const signals = await decidePostSignals(ctx);
+      const signals = await decidePostSignals(await connectedContext(ctx));
       assert.equal(signals.find(s => s.signal === "multiple_sources_same_topic")?.strength, duplicateUrl ? 0 : 2);
       assert.equal(signals.find(s => s.signal === "personal_story")?.strength, 0);
     } finally { globalThis.fetch = original; }
@@ -560,7 +561,7 @@ test("an independent reviewer returns actionable evidence-addressed issues and s
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ status: "changes_requested", issues: [{ code: "source_attribution", severity: "revise", message: "Attribute this finding to the saved source rather than implying a first-hand result.", platform: "x", postIndex: 0, evidenceIds: ["evidence-1"] }], criteria: criteria.map(c => reviewerCriterion(c.id)), writerModel, reviewerModel: "gpt-6-sol" }) } }], usage: { prompt_tokens: 800, completion_tokens: 400 } });
   };
   try {
-    const review = await reviewPost(ctx, content, writerModel);
+    const review = await reviewPost(await connectedContext(ctx), content, writerModel);
     assert.deepEqual(order, ["rubric", "reviewer"]);
     assert.equal(review.writerModel, writerModel);
     assert.equal(review.reviewerModel, "gpt-6-sol");
@@ -576,7 +577,7 @@ test("a dispatched response without usage retains an uncertain paid attempt and 
   let dispatched = 0;
   globalThis.fetch = async () => { dispatched++; return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }] }); };
   try {
-    await assert.rejects(writePost(ctx, framework), /usage|reserved/i);
+    await assert.rejects(writePost(await connectedContext(ctx), framework), /usage|reserved/i);
     assert.equal((await budgetStatus(ctx.owner)).attempts[0].status, "uncertain");
     await assert.rejects(writePost({ ...ctx, attemptId: crypto.randomUUID() }, framework), /reconcile|unresolved/i);
     assert.equal(dispatched, 1);
@@ -587,14 +588,14 @@ test("post providers reject forged evidence IDs, invalid score distributions and
   configureKeys();
   const ctx = context(), original = globalThis.fetch;
   configurePostProviders({ decidePostSignals: async () => [{ signal: "personal_story", strength: 2, evidenceIds: ["forged-id"] }] });
-  await assert.rejects(decidePostSignals(ctx), /unsupported signal|evidence ID/i);
+  await assert.rejects(decidePostSignals(await connectedContext(ctx)), /unsupported signal|evidence ID/i);
   configurePostProviders({});
   globalThis.fetch = async (_, options) => {
     const body = JSON.parse(String(options?.body));
     return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id,q]: [string,any]) => [id, q.type === "choice" ? { type: "choice", choice: "none", confidence: 1, probabilities: Object.fromEntries(Object.keys(q.criteria).map(key => [key, key === "none" ? 1 : 0])) } : { type: "score", score: 2, confidence: 1, probabilities: { "0": 0, "2": 1 } }])), usage: { input_tokens: 400, output_tokens: 100 } });
   };
   try {
-    await assert.rejects(decidePostSignals(ctx), /probability distribution/i);
+    await assert.rejects(decidePostSignals(await connectedContext(ctx)), /probability distribution/i);
     globalThis.fetch = async () => Response.json({ model: "unpriced-alias", usage: { prompt_tokens: 500, completion_tokens: 100 } });
     await assert.rejects(writePost({ ...ctx, attemptId: crypto.randomUUID() }, framework), /unqualified model/i);
     const attempts = (await budgetStatus(ctx.owner)).attempts;
@@ -617,7 +618,7 @@ test("only public allow-listed context reaches the writer and style examples rem
     assert.match(body.messages[0].content, /examples.*never evidence/i);
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
   };
-  try { await writePost(ctx, framework); }
+  try { await writePost(await connectedContext(ctx), framework); }
   finally { globalThis.fetch = original; }
 });
 
@@ -634,7 +635,7 @@ test("plain-English author changes reach the writer as constrained instructions 
     assert.match(body.messages[0].content, /review messages.*untrusted/i);
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(revised) } }], usage: { prompt_tokens: 600, completion_tokens: 100 } });
   };
-  try { assert.deepEqual((await writePost(ctx, framework)).content, revised); }
+  try { assert.deepEqual((await writePost(await connectedContext(ctx), framework)).content, revised); }
   finally { globalThis.fetch = original; }
 });
 
@@ -662,8 +663,8 @@ test("a personal-lesson idea without author notes shares truthful source-grounde
     return Response.json({ model: body.model, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(value) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
   };
   try {
-    const written = await writePost(ctx, selected);
-    assert.equal((await reviewPost(ctx, written.content, written.model)).status, "passed");
+    const written = await writePost(await connectedContext(ctx), selected);
+    assert.equal((await reviewPost(await connectedContext(ctx), written.content, written.model)).status, "passed");
     assert.equal(policies.length, 3);
     assert.equal(new Set(policies).size, 1);
     for (const policy of policies) {
@@ -685,7 +686,7 @@ test("oversized input and cancellation before dispatch create no paid attempt", 
   globalThis.fetch = async () => { calls++; throw new Error("must not dispatch"); };
   try {
     ctx.evidence[0].excerpt = "x".repeat(60_000);
-    await assert.rejects(writePost(ctx, framework), /bounded provider input/i);
+    await assert.rejects(writePost(await connectedContext(ctx), framework), /bounded provider input/i);
     ctx.evidence[0].excerpt = "A saved source says evaluation catches defects.";
     const controller = new AbortController(); controller.abort();
     await assert.rejects(writePost({ ...ctx, signal: controller.signal }, framework), /abort/i);
@@ -712,8 +713,8 @@ test("writer and reviewer honor LinkedIn long delivery alongside X single posts 
       return Response.json({ model: body.model, choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
     };
     try {
-      assert.deepEqual((await writePost(ctx, framework)).content.variants, multi.variants);
-      assert.equal((await reviewPost(ctx, multi, "gpt-6-luna")).status, "passed");
+      assert.deepEqual((await writePost(await connectedContext(ctx), framework)).content.variants, multi.variants);
+      assert.equal((await reviewPost(await connectedContext(ctx), multi, "gpt-6-luna")).status, "passed");
     } finally { globalThis.fetch = original; }
   }
 });
@@ -730,7 +731,7 @@ test("retrying a composite stage with an uncertain second request dispatches no 
       assert.equal(url, "https://api.typesafe.ai/v1/systemone");
       return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id, q.type === "noul" ? { type: "noul", noul: stage === "structure" ? 1 : 0 } : q.type === "choice" ? { type: "choice", choice: framework.frameworkId, confidence: 1, probabilities: { [framework.frameworkId]: 1 } } : { type: "score", score: 4, confidence: 1, probabilities: { "0": 0, "1": 0, "2": 0, "3": 0, "4": 1 } }])), usage: { input_tokens: 500, output_tokens: 200 } });
     };
-    const run = (c: PostProviderContext) => stage === "review" ? reviewPost(c, content, "gpt-6-luna") : choosePostStructure(c, [framework]);
+    const run = async (c: PostProviderContext) => { await connectedContext(c); return stage === "review" ? reviewPost(c, content, "gpt-6-luna") : choosePostStructure(c, [framework]); };
     try {
       await assert.rejects(run(ctx), /usage|reserved/i);
       const attempts = (await budgetStatus(ctx.owner)).attempts;
@@ -758,7 +759,7 @@ test("news decisions preserve publication and evaluation dates and abstain when 
       return Response.json({ model: "jev-1.14.0", answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id, q.type === "choice" ? { type: "choice", choice: "source_0", confidence: 1, probabilities: Object.fromEntries(Object.keys(q.criteria).map(key => [key, key === "source_0" ? 1 : 0])) } : { type: "score", score: id === "breaking_news" ? 2 : 0, confidence: 1, probabilities: id === "breaking_news" ? { "0": 0, "1": 0, "2": 1 } : { "0": 1, "1": 0, "2": 0 } }])), usage: { input_tokens: 500, output_tokens: 250 } });
     };
     try {
-      const news = (await decidePostSignals(ctx)).find(s => s.signal === "breaking_news")!;
+      const news = (await decidePostSignals(await connectedContext(ctx))).find(s => s.signal === "breaking_news")!;
       assert.equal(news.strength, publishedAt === recent ? 2 : 0);
       assert.deepEqual(news.evidenceIds, publishedAt === recent ? ["evidence-1"] : []);
     } finally { globalThis.fetch = original; }
@@ -781,7 +782,7 @@ async function reviewWithScore(id: string, answer: Record<string, unknown>, stat
     })).map((c: any) => changeCriterion ? changeCriterion(c) : c);
     return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ status, issues: [], criteria, writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol" }) } }], usage: { prompt_tokens: 600, completion_tokens: 200 } });
   };
-  try { return await reviewPost(ctx, draft, "gpt-6-luna"); }
+  try { return await reviewPost(await connectedContext(ctx), draft, "gpt-6-luna"); }
   finally { globalThis.fetch = original; }
 }
 
@@ -833,8 +834,8 @@ test("reviewer wire schemas require a known post or evidence anchor and runtime 
       return Response.json({ model: "gpt-6-sol", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ ...result, issues: [mode === "post" ? post : mode === "evidence" ? evidence : issue] }) } }], usage: { prompt_tokens: 600, completion_tokens: 200 } });
     };
     try {
-      if (mode === "invalid") await assert.rejects(reviewPost(ctx, content, "gpt-6-luna"), /must address.*evidence ID|existing post/i);
-      else assert.equal((await reviewPost(ctx, content, "gpt-6-luna")).issues.length, 1);
+      if (mode === "invalid") await assert.rejects(reviewPost(await connectedContext(ctx), content, "gpt-6-luna"), /must address.*evidence ID|existing post/i);
+      else assert.equal((await reviewPost(await connectedContext(ctx), content, "gpt-6-luna")).issues.length, 1);
     } finally { globalThis.fetch = original; }
   }
 });
@@ -936,7 +937,7 @@ test("writer and targeted revisions receive explicit per-platform limits, preser
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(output) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
   };
   try {
-    await writePost(ctx, framework);
+    await writePost(await connectedContext(ctx), framework);
     await writePost({ ...ctx, attemptId: crypto.randomUUID(), priorContent: output as any, authorRequest: "Make the opening more conversational." }, framework);
   } finally { globalThis.fetch = original; }
 });
@@ -976,7 +977,7 @@ async function classifiedReview(draft: DraftContent, assessment: unknown, option
       }), writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",
     }) } }], usage: { prompt_tokens: 600, completion_tokens: 300 } });
   };
-  try { return await reviewPost(ctx, draft, "gpt-6-luna"); }
+  try { return await reviewPost(await connectedContext(ctx), draft, "gpt-6-luna"); }
   finally { globalThis.fetch = original; }
 }
 
@@ -1133,7 +1134,7 @@ test("writer receives full supplied context with caller provenance and no automa
     assert.match(packet.suppliedContextPolicy, /never.*author.*experience/i);
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ ...content, claimSources: [] }) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
   };
-  try { await writePost(ctx, framework); } finally { globalThis.fetch = original; }
+  try { await writePost(await connectedContext(ctx), framework); } finally { globalThis.fetch = original; }
 });
 
 test("agent analysis cannot establish factual signals or independent source consensus", async () => {
@@ -1149,7 +1150,7 @@ test("agent analysis cannot establish factual signals or independent source cons
     ])), usage: { input_tokens: 500, output_tokens: 300 } });
   };
   try {
-    const signals = await decidePostSignals(ctx);
+    const signals = await decidePostSignals(await connectedContext(ctx));
     for (const name of ["multiple_sources_same_topic", "personal_story", "data_or_stats"]) assert.equal(signals.find(s => s.signal === name)?.strength, 0);
   } finally { globalThis.fetch = original; }
 });
@@ -1170,7 +1171,7 @@ test("writer and revision requests carry platform-aware hook-to-body guidance wi
     return Response.json({ model: "gpt-6-luna", choices: [{ finish_reason: "stop", message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 500, completion_tokens: 100 } });
   };
   try {
-    await writePost(ctx, framework);
+    await writePost(await connectedContext(ctx), framework);
     await writePost({ ...ctx, operationId: `${ctx.operationId}:revision`, attemptId: crypto.randomUUID(), priorContent: content }, framework, {
       status: "changes_requested", issues: [{ code: "narrative_coherence", severity: "revise", platform: "x", postIndex: 0,
         message: "Explain why learner outcomes require a different test before introducing the evaluation layers." }], criteria: [], writerModel: "gpt-6-luna", reviewerModel: "gpt-6-sol",

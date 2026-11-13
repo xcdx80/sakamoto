@@ -1,3 +1,5 @@
+import { connectedOwner } from "./provider-fixtures";
+import { connectFixtureProviders } from "./provider-fixtures";
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -21,7 +23,7 @@ function configure() {
   process.env.SAKAMOTO_MONID_MAX_USD = "0.001";
   process.env.SAKAMOTO_BUDGET_USD = "1";
 }
-const owner = () => "research-owner-" + crypto.randomUUID();
+const owner = async () => {const id="research-owner-" + crypto.randomUUID();await connectFixtureProviders(id);return id;};
 const operation = () => "post:" + crypto.randomUUID() + ":context";
 const inspected = {
   provider: "octen", endpoint: "/search",
@@ -46,9 +48,9 @@ function completed(overrides: Record<string, unknown> = {}) {
 
 test("missing web configuration is visible and performs no paid work", async () => {
   configure(); delete process.env.MONID_API_KEY;
-  const account = owner();
+  const account = await owner();
   globalThis.fetch = async () => { throw new Error("No configured request should leave this process"); };
-  const result = await researchProductionWeb(account, operation(), "retrieval evaluation");
+  const result = await researchProductionWeb(await connectedOwner(account), operation(), "retrieval evaluation");
   assert.equal(result.web, "unconfigured");
   assert.deepEqual(result.evidence, []);
   assert.match(result.notice!, /web|Monid|configured/i);
@@ -56,7 +58,7 @@ test("missing web configuration is visible and performs no paid work", async () 
 });
 
 test("the live Monid inspection envelope permits the base search only while full-content billing is disabled", async () => {
-  configure(); const account = owner(), op = operation();
+  configure(); const account = await owner(), op = operation();
   const live = { provider: "octen", endpoint: "/search", method: "POST", input: { body: inspected.inputSchema, bodyType: "json" },
     price: { type: "TIERED", amount: { value: 0.001, currency: "USD" },
       default: { type: "PER_CALL", amount: { value: 0.001, currency: "USD" } },
@@ -71,12 +73,12 @@ test("the live Monid inspection envelope permits the base search only while full
     assert.deepEqual(JSON.parse(String(init?.body)).input.full_content, { enable: false });
     return Response.json(completed());
   };
-  assert.equal((await researchProductionWeb(account, op, "retrieval evaluation")).evidence.length, 2);
+  assert.equal((await researchProductionWeb(await connectedOwner(account), op, "retrieval evaluation")).evidence.length, 2);
   assert.equal(searches, 1);
 });
 
 test("Monid search verifies pricing before one bounded search and retains attributable evidence and its cost", async () => {
-  configure(); const account = owner(), op = operation();
+  configure(); const account = await owner(), op = operation();
   const requests: { url: string; body: unknown }[] = [];
   globalThis.fetch = async (url, init) => {
     assert.equal(init?.redirect, "error");
@@ -84,7 +86,7 @@ test("Monid search verifies pricing before one bounded search and retains attrib
     requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
     return Response.json(String(url).endsWith("/inspect") ? inspected : completed());
   };
-  const result = await researchProductionWeb(account, op, "retrieval evaluation");
+  const result = await researchProductionWeb(await connectedOwner(account), op, "retrieval evaluation");
   assert.equal(result.web, "searched");
   assert.equal(result.notice, null);
   assert.deepEqual(requests, [
@@ -118,12 +120,12 @@ test("unbounded prices and unsupported inspected schemas refuse paid dispatch", 
     { ...inspected, inputSchema: { type: "object", properties: { query: { type: "string" }, count: { type: "integer" } } } },
   ];
   for (const contract of cases) {
-    const account = owner(); let runs = 0;
+    const account = await owner(); let runs = 0;
     globalThis.fetch = async (url) => {
       if (String(url).endsWith("/run")) runs++;
       return Response.json(contract);
     };
-    await assert.rejects(researchProductionWeb(account, operation(), "a public topic"), { code: "configuration" });
+    await assert.rejects(researchProductionWeb(await connectedOwner(account), operation(), "a public topic"), { code: "configuration" });
     assert.equal(runs, 0);
     assert.equal((await budgetStatus(account)).attempts.length, 0);
   }
@@ -132,14 +134,14 @@ test("unbounded prices and unsupported inspected schemas refuse paid dispatch", 
 test("accepted asynchronous and interrupted Monid runs retain their reservations and block repeated paid research", async () => {
   configure();
   for (const asynchronous of [true, false]) {
-    const account = owner(), op = operation(); let runs = 0;
+    const account = await owner(), op = operation(); let runs = 0;
     globalThis.fetch = async (url) => {
       if (String(url).endsWith("/inspect")) return Response.json(inspected);
       runs++;
       if (!asynchronous) throw new Error("Interrupted fixture-monid-key");
       return Response.json({ runId: "fixture-async-run", status: "RUNNING" }, { status: 202 });
     };
-    await assert.rejects(researchProductionWeb(account, op, "a public topic"), error => {
+    await assert.rejects(researchProductionWeb(await connectedOwner(account), op, "a public topic"), error => {
       assert.ok(!String(error).includes("fixture-monid-key"));
       return true;
     });
@@ -147,7 +149,7 @@ test("accepted asynchronous and interrupted Monid runs retain their reservations
     assert.equal(attempts[0].status, "uncertain");
     assert.equal(attempts[0].reservedUsd, 0.001);
     if (asynchronous) assert.equal(attempts[0].providerRequestId, "fixture-async-run");
-    await assert.rejects(researchProductionWeb(account, op, "a public topic"), { code: "reconciliation_required" });
+    await assert.rejects(researchProductionWeb(await connectedOwner(account), op, "a public topic"), { code: "reconciliation_required" });
     assert.equal(runs, 1);
     await reconcilePaidWork({ verified: true, id: attempts[0].id, owner: account, model: "monid-octen-search", ...(asynchronous ? { providerRequestId: "fixture-async-run" } : {}), reference: "fixture independently verified Monid run receipt", costMicros: 700 });
     const reconciled = (await budgetStatus(account)).attempts[0];
@@ -159,9 +161,9 @@ test("accepted asynchronous and interrupted Monid runs retain their reservations
 test("known billing is settled before rejecting invalid Octen output and provider errors", async () => {
   configure();
   for (const response of [completed({ output: { results: [] } }), completed({ providerResponse: { httpStatus: 500 }, output: null })]) {
-    const account = owner();
+    const account = await owner();
     globalThis.fetch = async url => Response.json(String(url).endsWith("/inspect") ? inspected : response);
-    await assert.rejects(researchProductionWeb(account, operation(), "a public topic"));
+    await assert.rejects(researchProductionWeb(await connectedOwner(account), operation(), "a public topic"));
     const attempt = (await budgetStatus(account)).attempts[0];
     assert.equal(attempt.status, "settled");
     assert.equal(attempt.actualUsd, 0.0007);
@@ -175,9 +177,9 @@ test("missing billing and oversized responses remain reserved while definitive g
     new Response("x".repeat(257 * 1024), { headers: { "x-request-id": "fixture-large-response" } }),
     Response.json({ code: 400, message: "Invalid input" }, { status: 400 }),
   ]) {
-    const account = owner();
+    const account = await owner();
     globalThis.fetch = async url => String(url).endsWith("/inspect") ? Response.json(inspected) : response;
-    await assert.rejects(researchProductionWeb(account, operation(), "a public topic"));
+    await assert.rejects(researchProductionWeb(await connectedOwner(account), operation(), "a public topic"));
     const attempt = (await budgetStatus(account)).attempts[0];
     assert.equal(attempt.status, response.status === 400 ? "released" : "uncertain");
     if (response.status === 400) assert.equal(attempt.actualUsd, 0);
@@ -188,14 +190,14 @@ test("missing billing and oversized responses remain reserved while definitive g
 test("cancellation after inspection stops before paid dispatch with a safe research error", async () => {
   configure(); const controller = new AbortController();
   globalThis.fetch = async () => { controller.abort(); return Response.json(inspected); };
-  await assert.rejects(researchProductionWeb(owner(), operation(), "a public topic", controller.signal), error => {
+  await assert.rejects(researchProductionWeb(await owner(), operation(), "a public topic", controller.signal), error => {
     assert.equal((error as { code: string }).code, "provider_error");
     return true;
   });
 });
 
 test("a credible Monid charge above the reservation is recorded and durably halts further paid dispatch", async () => {
-  configure(); const account = owner(); let runs = 0;
+  configure(); const account = await owner(); let runs = 0;
   globalThis.fetch = async url => {
     if (String(url).endsWith("/inspect")) return Response.json(inspected);
     runs++;
@@ -204,10 +206,10 @@ test("a credible Monid charge above the reservation is recorded and durably halt
       actualCost: { value: 1200, unit: "MICRO_DOLLAR", currency: "USD" },
     } }));
   };
-  await assert.rejects(researchProductionWeb(account, operation(), "a public topic"), { code: "invalid_usage" });
+  await assert.rejects(researchProductionWeb(await connectedOwner(account), operation(), "a public topic"), { code: "invalid_usage" });
   const status = await budgetStatus(account);
   assert.equal(status.halted, true);
   assert.equal(status.attempts[0].actualUsd, 0.0012);
-  await assert.rejects(researchProductionWeb(account, operation(), "another public topic"), { code: "budget_paused" });
+  await assert.rejects(researchProductionWeb(await connectedOwner(account), operation(), "another public topic"), { code: "budget_paused" });
   assert.equal(runs, 1);
 });

@@ -1,12 +1,12 @@
-# Create and revise posts through Sakamoto MCP
+# Create and revise posts through InView MCP
 
 The same authenticated MCP endpoint now supports the writing desk journey. The adapter calls the existing owner-scoped production repository and generation/review/publishing workflow, not a separate writer. Library and source tools are unchanged.
 
 ## Connect
 
 1. Run this checkout with `npm run dev` (port 3100), or deploy the changes through the normal approved release process. A cloud assistant needs a reachable HTTPS origin, not its own localhost.
-2. Use an existing authorized Sakamoto personal token from Library → **Connect an agent**. Creating a new token is a separate account-access action. Nothing in these writing tools creates tokens or connects a publishing account.
-3. Prefer `POST https://YOUR-SAKAMOTO-ORIGIN/mcp` with `Authorization: Bearer <personal-token>` and `Content-Type: application/json`. The existing `/mcp/<token>` compatibility endpoint also works, but credential URLs can leak through logs and must remain private.
+2. Use an existing authorized InView personal token from Library → **Connect an agent**. Creating a new token is a separate account-access action. Nothing in these writing tools creates tokens or connects a publishing account.
+3. Prefer `POST https://YOUR-INVIEW-ORIGIN/mcp` with `Authorization: Bearer <personal-token>` and `Content-Type: application/json`. The existing `/mcp/<token>` compatibility endpoint also works, but credential URLs can leak through logs and must remain private.
 4. Initialize the MCP client, then refresh `tools/list` to discover the new tools. The response advertises server version 1.1.0 and writing instructions. Authentication remains mandatory for discovery and every call. Revoking the token revokes writing access too.
 
 Existing personal tokens are full account-agent tokens, not read-only tokens: when this server version is running, they can access the writing tools as well as the library. There is no separate writing scope or OAuth setup in this change. Only connect a trusted client. The server can validate the caller's explicit confirmation fields, but cannot independently prove that the human said yes; the client must obtain actual user approval rather than invent it.
@@ -97,7 +97,7 @@ When regeneration is pending, `result` still describes the saved wording and its
 
 Responses expose durable `progress` (status, stage, saved-draft presence, revision count, review status and notice), the exact result and a next action. Tool failures include structured `status: error`, `code`, `message` and `recovery`. Invalid arguments, missing confirmation, stale versions, inaccessible posts, changed publishing destinations and database/configuration failures are distinguishable. Authentication errors occur before tools run: HTTP 401 / JSON-RPC -32001 means missing/revoked credentials; 503 means database/server access is unavailable. A client cannot diagnose tool availability until authenticated `tools/list` succeeds.
 
-All writing calls accept only their advertised schema. Send one writing call per HTTP request, not mixed or parallel JSON-RPC batches. All mutations of an existing post require the latest version; stale callers must reread. Writing arguments are bounded to 250 KB. Oversized legacy responses return a `too_large` notice and Sakamoto link without truncating wording or repeating a mutation.
+All writing calls accept only their advertised schema. Send one writing call per HTTP request, not mixed or parallel JSON-RPC batches. All mutations of an existing post require the latest version; stale callers must reread. Writing arguments are bounded to 250 KB. Oversized legacy responses return a `too_large` notice and InView link without truncating wording or repeating a mutation.
 
 ## Approve, then publish only on request
 
@@ -105,7 +105,7 @@ All writing calls accept only their advertised schema. Send one writing call per
 2. Call `approve_post` with current `id`, `expectedVersion`, `revisionId`, `platforms`, and `userConfirmed: true`. Current independent passing review and exact revision are required. **This does not publish.** Revisions remove previous approval.
 3. If the user explicitly asks to publish now, show the exact approved wording/platforms and configured Postiz destinations from `get_post`. These identify configured integration IDs, not independently verified social-account names. Confirm the intended channels if their identity is unclear.
 4. Call `publish_post` with the same exact confirmation fields and `destinationFingerprint` from `publishing.destinations.fingerprint`. It binds confirmation to the configured provider, credentials and selected channels without exposing secrets. Changed configuration requires rereading and confirmation.
-5. Sakamoto uses the existing Postiz owner/platform configuration and rechecks channel availability. It durably reserves a submission before dispatch. `submitted` means Postiz accepted the submission, **not that the post is live**. `uncertain` means it may have accepted it. Never automatically retry either state; inspect Postiz first.
+5. InView uses the existing Postiz owner/platform configuration and rechecks channel availability. It durably reserves a submission before dispatch. `submitted` means Postiz accepted the submission, **not that the post is live**. `uncertain` means it may have accepted it. Never automatically retry either state; inspect Postiz first.
 
 A request to draft or review is not permission to approve or publish. Never set `userConfirmed` based on model judgment, review success, or generic tool access. This change does not schedule publication, connect new accounts, bypass content-review gates, or automatically mark provider submissions as published.
 

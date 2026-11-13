@@ -1,3 +1,4 @@
+import { connectFixtureProviders } from "./provider-fixtures";
 import assert from "node:assert/strict";
 import { after, afterEach, before, mock, test } from "node:test";
 import { createWriteClient } from "../lib/post-production/client";
@@ -61,7 +62,8 @@ const scenarios: Scenario[] = [
 ];
 
 /** The real provider adapters run, but every possible request terminates inside this fixture. */
-function isolatedJourney(owner: string, scenario: Scenario) {
+async function isolatedJourney(owner: string, scenario: Scenario) {
+  await connectFixtureProviders(owner);
   const requests: string[] = [];
   let invalidateStage: string | undefined;
   mock.method(globalThis, "fetch", async (input: string | URL | Request, options?: RequestInit) => {
@@ -123,7 +125,7 @@ function isolatedJourney(owner: string, scenario: Scenario) {
 }
 
 for (const scenario of scenarios) test(`stages 01–05 retain ${scenario.name} despite an unusable optional review annotation`, async () => {
-  const { client, requests } = isolatedJourney("stage-journey-" + crypto.randomUUID(), scenario);
+  const { client, requests } = await isolatedJourney("stage-journey-" + crypto.randomUUID(), scenario);
   const checkpoints: ProductionDetail[] = [];
   const ready = await client.generate(scenario.brief, detail => checkpoints.push(detail));
   assert.equal(ready.production.status, "ready", ready.production.notice ?? JSON.stringify(ready.review?.issues));
@@ -144,7 +146,7 @@ for (const scenario of scenarios) test(`stages 01–05 retain ${scenario.name} d
 
 test("each action runs only its own stage and malformed required provider output pauses without losing saved wording", async () => {
   const scenario = scenarios[1];
-  const { client, requests, invalidate } = isolatedJourney("stage-isolation-" + crypto.randomUUID(), scenario);
+  const { client, requests, invalidate } = await isolatedJourney("stage-isolation-" + crypto.randomUUID(), scenario);
   let current = await client.create(scenario.brief);
   current = await client.advance(current.production.id, current.production.version);
   assert.equal(current.production.stage, "selection");

@@ -1,3 +1,6 @@
+import { connectedOwner } from "./provider-fixtures";
+import { connectFixtureProviders } from "./provider-fixtures";
+import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +19,9 @@ before(async () => {
     identity.hash,
     "Answer fixture",
   );
+  await connectFixtureProviders("answer-reader");
   process.env.OPENAI_API_KEY = "fixture-openai";
+  await connectFixtureProviders("answer-reader");
   process.env.DATABASE_URL = "fixture-only-no-network";
   delete process.env.GOOGLE_API_KEY;
   delete process.env.TYPESAFE_API_KEY;
@@ -346,6 +351,7 @@ test("removed, changed, or newly filtered-out sources are rechecked after genera
     const identity = makeToken();
     const owner = "answer-" + change;
     await createToken(owner, identity.id, identity.hash, "Race fixture");
+  await connectFixtureProviders(owner);
     await save(
       id,
       "Supernova alignment uses a reference chart.",
@@ -481,12 +487,14 @@ test("authentication, owner binding, strict filters and a streamed request byte 
 
 test("missing answer configuration and provider rejection return explicit safe states while saved reading remains intact", async () => {
   delete process.env.OPENAI_API_KEY;
+  await connectFixtureProviders("answer-reader");
   const paused = await (
     await ask(request({ query: "Orbital calibration", semantic: false }))
   ).json();
   assert.equal(paused.status, "paused");
   assert.deepEqual(paused.citations, []);
   process.env.OPENAI_API_KEY = "fixture-openai";
+  await connectFixtureProviders("answer-reader");
   globalThis.fetch = async () =>
     Response.json(
       { error: { message: "secret-provider-detail" } },
@@ -548,6 +556,7 @@ test("an already canceled authenticated answer never authorizes or dispatches pa
     identity.hash,
     "Cancellation fixture",
   );
+  await connectFixtureProviders("cancel-reader");
   await save(
     "cancel-source",
     "Astrometry aligns the measured star positions against a reference catalogue.",
@@ -560,7 +569,7 @@ test("an already canceled authenticated answer never authorizes or dispatches pa
       embedding: { values: [1, ...Array(767).fill(0)] },
       usageMetadata: { promptTokenCount: 20 },
     });
-  await processLibrary("cancel-reader", { limit: 1 });
+  await processLibrary(await connectedOwner("cancel-reader"), { limit: 1 });
   const before = await budgetStatus("cancel-reader");
   let calls = 0;
   globalThis.fetch = async () => {
@@ -599,6 +608,7 @@ test("canceling an in-flight query embedding retains ambiguous charges and never
     identity.hash,
     "Inflight cancellation fixture",
   );
+  await connectFixtureProviders("inflight-answer");
   await save(
     "inflight-source",
     "Spectroscopy measures a star's spectral lines.",
@@ -611,7 +621,7 @@ test("canceling an in-flight query embedding retains ambiguous charges and never
       embedding: { values: [1, ...Array(767).fill(0)] },
       usageMetadata: { promptTokenCount: 20 },
     });
-  await processLibrary("inflight-answer", { limit: 1 });
+  await processLibrary(await connectedOwner("inflight-answer"), { limit: 1 });
   const before = await budgetStatus("inflight-answer");
   let google = 0,
     luna = 0,
@@ -677,6 +687,7 @@ test("canceling while Luna authorization waits releases its known-undispatched r
     identity.hash,
     "Authorization cancellation fixture",
   );
+  await connectFixtureProviders("reservation-answer");
   await save(
     "reservation-source",
     "Optical metrology compares a reference surface.",
@@ -758,6 +769,7 @@ test("canceling a genuinely dispatched Luna request retains its ambiguous reserv
     identity.hash,
     "Dispatched answer cancellation fixture",
   );
+  await connectFixtureProviders("luna-inflight");
   await save(
     "luna-inflight-source",
     "Interferometry compares optical path lengths.",
@@ -814,3 +826,5 @@ test("canceling a genuinely dispatched Luna request retains its ambiguous reserv
     ["uncertain"],
   );
 });
+
+beforeEach(async()=>{await connectFixtureProviders("answer-reader");});

@@ -1,3 +1,4 @@
+import { connectedOwner } from "./provider-fixtures";
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pool,setupPostgres} from './postgres';
@@ -17,7 +18,7 @@ test('failed self and quote link tasks resolve from saved posts without fetching
  assert.equal((await processingStatus(owner)).summary.ready,2);
  const before=await readPosts(owner,['100','200']);let fetches=0;
  configureProcessing({fetchArticle:async()=>{fetches++;throw new Error('Already saved X posts must not be fetched again.');}});
- const result=await processLibrary(owner,{limit:4});
+ const result=await processLibrary(await connectedOwner(owner),{limit:4});
  const links=result.jobs.filter(j=>j.kind==='link');assert.deepEqual(links.map(j=>j.state),['complete','complete']);
  assert.equal(links.find(j=>j.target.includes('/100'))?.resultItemId,imported.results[0].itemId);
  assert.equal(links.find(j=>j.target.includes('/200'))?.resultItemId,before.find(p=>p.postId==='200')?.itemId);
@@ -30,7 +31,7 @@ test('reusing a readable partial post preserves its content and thread-completen
  const owner='partial-saved-reader';
  await importBookmarks(owner,{posts:[post('600',{links:['https://x.com/author/status/600/photo/1'],completeness:{status:'partial',reason:'Saved preview needs fuller text.'},threadCoverage:{status:'partial',observedAt:'2026-10-30T00:00:00Z',missingPostIds:['601']}})]},'Fixture');
  await pool.query("update processing_jobs set state='terminal',error='That link is a social post, not a readable article.' where user_id=$1 and kind='link'",[owner]);
- const before=await readPosts(owner,['600']);const result=await processLibrary(owner,{limit:1});
+ const before=await readPosts(owner,['600']);const result=await processLibrary(await connectedOwner(owner),{limit:1});
  assert.equal(result.jobs.find(j=>j.kind==='link')?.state,'complete');assert.deepEqual(await readPosts(owner,['600']),before);
  assert.equal((await readAdminFailures(owner)).summary.failed,0);
 });
@@ -39,7 +40,7 @@ test('photo and video permalinks resolve to their saved post without being mista
  const owner='saved-media-reader';await importBookmarks(owner,{posts:[post('300',{links:['https://x.com/author/status/300/photo/1','https://mobile.twitter.com/author/status/300/video/1?s=20']})]},'Fixture');
  await pool.query("update processing_jobs set state='terminal',error='That link is a social post, not a readable article.' where user_id=$1 and kind='link'",[owner]);
  configureProcessing({fetchArticle:async()=>{throw new Error('Saved media permalink must reuse its post.');}});
- const result=await processLibrary(owner,{limit:2});assert.equal(result.finished,2);assert.deepEqual(result.jobs.filter(j=>j.kind==='link').map(j=>j.state),['complete','complete']);
+ const result=await processLibrary(await connectedOwner(owner),{limit:2});assert.equal(result.finished,2);assert.deepEqual(result.jobs.filter(j=>j.kind==='link').map(j=>j.state),['complete','complete']);
 });
 
 test('only the current reader’s active saved targets resolve; missing, deleted, stale, lost, running and lookalike tasks remain unchanged',async()=>{
@@ -67,7 +68,7 @@ test('only the current reader’s active saved targets resolve; missing, deleted
   // specifically about the previously failed revision, not its replacement.
   if(c.name==='stale')await pool.query("update processing_jobs set state='cancelled' where user_id=$1 and kind='link' and state='pending'",[owner]);
   const before=(await processingStatus(owner)).jobs.filter(j=>j.kind==='link');
-  await processLibrary(owner,{limit:1});
+  await processLibrary(await connectedOwner(owner),{limit:1});
   assert.deepEqual((await processingStatus(owner)).jobs.filter(j=>j.kind==='link'),before,c.name);
  }
 });
@@ -75,8 +76,8 @@ test('only the current reader’s active saved targets resolve; missing, deleted
 test('new matching link work resolves in bounded batches and concurrent callers cannot count it twice',async()=>{
  const owner='bounded-saved-reader';await importBookmarks(owner,{posts:[post('500',{links:['https://x.com/author/status/500','https://twitter.com/author/status/500/photo/1']})]},'Fixture');
  let fetches=0;configureProcessing({fetchArticle:async()=>{fetches++;throw new Error('Saved posts require no fetch.');}});
- const first=await processLibrary(owner,{limit:1});assert.equal(first.finished,1);assert.equal(first.jobs.filter(j=>j.kind==='link'&&j.state==='complete').length,1);
- const results=await Promise.all([processLibrary(owner,{limit:1}),processLibrary(owner,{limit:1})]);assert.equal(results.reduce((n,r)=>n+r.finished,0),1);
+ const first=await processLibrary(await connectedOwner(owner),{limit:1});assert.equal(first.finished,1);assert.equal(first.jobs.filter(j=>j.kind==='link'&&j.state==='complete').length,1);
+ const results=await Promise.all([processLibrary(await connectedOwner(owner),{limit:1}),processLibrary(await connectedOwner(owner),{limit:1})]);assert.equal(results.reduce((n,r)=>n+r.finished,0),1);
  const status=await processingStatus(owner);assert.equal(status.jobs.filter(j=>j.kind==='link'&&j.state==='complete').length,2);assert.equal(fetches,0);
 });
 
@@ -102,7 +103,7 @@ test('a worker claim committed after eligibility was read cannot be overwritten 
  const claimant=await pool.connect();let repair:ReturnType<typeof processLibrary>|undefined;
  try{
   await claimant.query('begin');await claimant.query('select pg_advisory_xact_lock(72621950)');
-  repair=processLibrary(owner,{limit:1});void repair.catch(()=>{});let waiting=false;
+  repair=processLibrary(await connectedOwner(owner),{limit:1});void repair.catch(()=>{});let waiting=false;
   for(let i=0;i<100&&!waiting;i++){waiting=(await pool.query("select exists(select 1 from pg_locks where locktype='advisory' and objid=72621950 and not granted) as waiting")).rows[0].waiting;if(!waiting)await new Promise(r=>setTimeout(r,5));}
   assert.equal(waiting,true,'fixture must stop after reading eligibility and before locking the job');
   const claimed=await claimant.query("select * from claim_processing($1,'claimed-during-repair',now(),array['link'])",[owner]);assert.equal(claimed.rows.length,1);

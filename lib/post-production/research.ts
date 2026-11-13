@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, hasProviderConnection } from "../provider-connections";
 import type { ProductionEvidence } from "./types";
 import Ajv from "ajv";
 import Ajv2020 from "ajv/dist/2020";
@@ -18,8 +19,8 @@ export async function researchProductionWeb(
 ): Promise<ProductionWebResearch> {
   const provider = process.env.SAKAMOTO_POST_RESEARCH_PROVIDER?.trim() || "monid-octen";
   if (provider !== "monid-octen") throw new PaidWorkError("configuration", "Write web research needs a supported explicitly selected provider: monid-octen.");
-  const key = process.env.MONID_API_KEY?.trim();
-  if (!key) return { evidence: [], web: "unconfigured", notice: "Web research is not configured. Add the server's Monid key and a bounded search price to enable it." };
+  if (!(await hasProviderConnection(owner, "monid"))) return { evidence: [], web: "unconfigured", notice: "Web research is not configured. Connect your Monid key in API key settings and a bounded search price to enable it." };
+  const connection = await prepareProviderConnection(owner, "monid");
   const ceiling = process.env.SAKAMOTO_MONID_MAX_USD;
   if (!ceiling || !/^\d+(\.\d{1,6})?$/.test(ceiling) || Number(ceiling) <= 0 || !Number.isSafeInteger(Math.ceil(Number(ceiling) * 1e6))) {
     throw new PaidWorkError("configuration", "Monid research is paused: configure its maximum USD charge per search.");
@@ -28,13 +29,12 @@ export async function researchProductionWeb(
   if (!input.query) throw new PaidWorkError("configuration", "A public topic is required for web research.");
   const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000);
   const options = {
-    method: "POST", headers: { authorization: "Bearer " + key, "content-type": "application/json" },
     signal: requestSignal, redirect: "error" as const, cache: "no-store" as const,
   };
   await assertPostOperationResolved(owner, operationId);
   try {
     requestSignal.throwIfAborted();
-    const response = await fetch("https://api.monid.ai/v1/inspect", { ...options, body: JSON.stringify({ provider: "octen", endpoint: "/search" }) });
+    const response = await executeProviderRequest(connection, "monid-inspect", { ...options, body: JSON.stringify({ provider: "octen", endpoint: "/search" }) });
     if (!response.ok) throw new Error("Inspection failed");
     const endpoint = await readJson(response);
     if (!record(endpoint) || endpoint.provider !== "octen" || endpoint.endpoint !== "/search" ||
@@ -50,7 +50,7 @@ export async function researchProductionWeb(
   try {
     requestSignal.throwIfAborted();
     sent = true;
-    const response = await fetch("https://api.monid.ai/v1/run", { ...options, body: serializedInput });
+    const response = await executeProviderRequest(connection, "monid-run", { ...options, body: serializedInput });
     await recordPaidResponse(reservation, response.headers.get("x-request-id"));
     // These gateway errors reject a run before execution. Timeouts/5xx remain ambiguous.
     if ([400, 401, 402, 403, 404].includes(response.status)) {
@@ -70,7 +70,7 @@ export async function researchProductionWeb(
     }
     return { evidence: evidenceFrom(result.output), web: "searched", notice: null };
   } catch (error) {
-    if (!sent && !settled) await releaseRejectedPaidWork(reservation);
+    if ((!sent || error instanceof ProviderRequestNotSent) && !settled) await releaseRejectedPaidWork(reservation);
     else if (!settled) await recordPaidFailure(reservation, error);
     if (error instanceof PaidWorkError) throw error;
     throw new PaidWorkError("provider_error", "Web research could not finish. Inspect the recorded Monid attempt before retrying; uncertain usage remains reserved.");

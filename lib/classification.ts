@@ -1,3 +1,4 @@
+import { prepareProviderConnection, executeProviderRequest, ProviderRequestNotSent, type ProviderConnection } from "./provider-connections";
 /** Saved-source categorization, budget orchestration and explicit scheduling. */
 import { blockText, type Article } from "./article";
 import { db } from "./db";
@@ -43,6 +44,7 @@ export async function classifySavedSource({
     const body = jevRequest(state),
       serializedInput = JSON.stringify(body);
     if(signal.aborted) throw new PaidWorkError('dispatch_deferred','Categorization yielded before dispatch because its request window ended.');
+    const connection = await prepareProviderConnection(owner, "typesafe");
     reservation = await reservePaidWork({
       owner,
       operationId: `classify:${job.id}`,
@@ -57,7 +59,7 @@ export async function classifySavedSource({
       reservation = undefined;
       throw new PaidWorkError('dispatch_deferred','Categorization yielded before dispatch because its request window ended.');
     }
-    const { data, cost } = await decideCategory(body, signal, (id) =>
+    const { data, cost } = await decideCategory(connection, body, signal, (id) =>
       recordPaidResponse(reservation!, id ?? ""),
     );
     await settlePaidWork(reservation, cost);
@@ -74,7 +76,7 @@ export async function classifySavedSource({
     };
   } catch (e) {
     if (reservation) {
-      if (e instanceof PaidWorkError && e.code === "provider_rejected")
+      if (e instanceof ProviderRequestNotSent || e instanceof PaidWorkError && e.code === "provider_rejected")
         await releaseRejectedPaidWork(reservation);
       else await recordPaidFailure(reservation, e);
     }

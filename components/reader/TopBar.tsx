@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Keyboard, NotebookPen, PenLine } from "lucide-react";
 import { Account } from "@/components/account/Account";
-import { Lockup } from "@/components/brand/Sakamoto";
+import { Lockup } from "@/components/brand/InView";
 import { KeyMenu } from "@/components/ui/KeyMenu";
 import { ListenButton } from "./Listen";
 import { SettingsMenu } from "@/components/ui/SettingsMenu";
