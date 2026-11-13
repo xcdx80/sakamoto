@@ -20,3 +20,10 @@ export async function connectedContext<T extends {owner:string}>(context:T):Prom
 }
 
 export async function connectedOwner(owner:string) {await connectFixtureProviders(owner);return owner;}
+
+/** Set the fixture user's budget through the same management interface as settings. */
+export async function setFixtureBudget(owner:string,capUsd:number) {
+ const {providerConnectionsHttp}=await import('../lib/provider-connections-http');
+ const response=await providerConnectionsHttp(new Request('https://fixture.test/api/provider-connections',{method:'POST',headers:{origin:'https://fixture.test','content-type':'application/json'},body:JSON.stringify({action:'budget',capUsd})}),owner);
+ if(response.status!==200)throw new Error('Fixture budget configuration failed');
+}

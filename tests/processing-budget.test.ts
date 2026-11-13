@@ -1,3 +1,4 @@
+import {setFixtureBudget} from "./provider-fixtures";
 import { connectedOwner } from "./provider-fixtures";
 import {after,before,test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ after(async()=>{globalThis.fetch=original;await pool.end();});
 const save=(owner:string)=>shelveForUser(owner,{id:'source',title:'Source'},{id:'source',title:'Source',blocks:[{id:'b1',type:'p',runs:[{text:'Saved text.'}]}]});
 test('an unaffordable processing envelope pauses before claiming and does not burn retry allowance',async()=>{
  await save('budget-reader');
- await pool.query('insert into paid_budget values(true,1000,550,0,false)');
+ await setFixtureBudget('budget-reader',0.00045);
  let calls=0;globalThis.fetch=async()=>{calls++;throw new Error('No dispatch expected');};
  await connectedOwner('budget-reader');
  const before=await processingStatus('budget-reader');
@@ -22,7 +23,7 @@ test('an unaffordable processing envelope pauses before claiming and does not bu
 });
 test('budget exhaustion between passages blocks without consuming attempts and resumes cached progress',async()=>{
  const owner='mid-job-reader';process.env.SAKAMOTO_BUDGET_USD='0.002';
- await pool.query('update paid_budget set cap_micros=2000,settled_micros=0,reserved_micros=0,halted=false');
+ await setFixtureBudget(owner,0.002);
  await shelveForUser(owner,{id:'source',title:'Source'},{id:'source',title:'Source',blocks:[{id:'b1',type:'p',runs:[{text:'Retained passage. '.repeat(80)}]}]});
  let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({embedding:{values:[1,...Array(767).fill(0)]},usageMetadata:{promptTokenCount:8192}});};
  const paused=await processLibrary(await connectedOwner(owner),{limit:1});
@@ -35,7 +36,7 @@ test('budget exhaustion between passages blocks without consuming attempts and r
 test('unresolved Google attempts block another paid dispatch and retry-all excludes them',async()=>{
  const {embedText}=await import('../lib/google-embeddings');
  const {readAdminFailures,manageAdminFailures}=await import('../lib/admin-failures');
- process.env.SAKAMOTO_BUDGET_USD='1';await pool.query('update paid_budget set cap_micros=1000000,settled_micros=0,reserved_micros=0');
+ process.env.SAKAMOTO_BUDGET_USD='1';await setFixtureBudget('mid-job-reader',1);
  await save('uncertain-reader');
  await pool.query("update processing_jobs set state='cancelled' where user_id='uncertain-reader' and kind='classification'");
  let calls=0;globalThis.fetch=async()=>{calls++;throw new TypeError('Fixture network timeout');};
@@ -53,7 +54,7 @@ test('unresolved Google attempts block another paid dispatch and retry-all exclu
 
 test('blocked budget work resumes after authority is restored without fetching cached passages again',async()=>{
  const {configureProcessing}=await import('../lib/processing');
- process.env.SAKAMOTO_BUDGET_USD='1';await pool.query('update paid_budget set cap_micros=1000000,settled_micros=0,reserved_micros=0');
+ process.env.SAKAMOTO_BUDGET_USD='1';await setFixtureBudget('mid-job-reader',1);
  let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({embedding:{values:[1,...Array(767).fill(0)]},usageMetadata:{promptTokenCount:10}});};
  configureProcessing({now:()=>Date.now()+120000});
  try{
@@ -77,11 +78,11 @@ test('a repaired provider configuration can resume through the existing explicit
 });
 
 test('configured allowance increases become durable before checking readiness without unhalting paid work',async()=>{
- process.env.SAKAMOTO_BUDGET_USD='1';await pool.query('update paid_budget set cap_micros=1000,settled_micros=0,reserved_micros=0,halted=false');
+ process.env.SAKAMOTO_BUDGET_USD='1';await setFixtureBudget('budget-reader',1);
  const status=await processingStatus('budget-reader');assert.equal(status.summary.budget_paused,false);assert.ok(status.summary.ready>0);
- await pool.query('update paid_budget set halted=true');
+ await pool.query("insert into provider_budgets(owner_id,cap_micros,halted) values('budget-reader',1000000,true),('indexed-paused',1000000,true) on conflict(owner_id) do update set halted=true");
  assert.equal((await processingStatus('budget-reader')).summary.budget_paused,true);
- await pool.query('update paid_budget set halted=false');
+ await pool.query('update provider_budgets set halted=false');
 });
 
 test('repeated pre-dispatch deferrals preserve retries and create no paid attempts',async()=>{
@@ -123,6 +124,6 @@ test('a paused categorization does not label its already completed index as budg
  await save('indexed-paused');
  await pool.query("update processing_jobs set state='complete' where user_id='indexed-paused'");
  await pool.query("update articles set data=jsonb_set(data,'{processing}',jsonb_build_object('classification','paused','indexing','complete')) where user_id='indexed-paused'");
- await pool.query('update paid_budget set halted=true');
- try{const status=await processingStatus('indexed-paused');assert.equal(status.summary.blocked,1);assert.equal(status.summary.attention,1);assert.equal(status.summary.complete,1);}finally{await pool.query('update paid_budget set halted=false');}
+ await pool.query("insert into provider_budgets(owner_id,cap_micros,halted) values('budget-reader',1000000,true),('indexed-paused',1000000,true) on conflict(owner_id) do update set halted=true");
+ try{const status=await processingStatus('indexed-paused');assert.equal(status.summary.blocked,1);assert.equal(status.summary.attention,1);assert.equal(status.summary.complete,1);}finally{await pool.query('update provider_budgets set halted=false');}
 });

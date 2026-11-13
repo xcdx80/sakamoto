@@ -1,3 +1,4 @@
+import {setFixtureBudget} from "./provider-fixtures";
 import { connectFixtureProviders } from "./provider-fixtures";
 import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -17,7 +18,7 @@ before(async () => {
   await connectFixtureProviders("reader");
   process.env.OPENAI_API_KEY = "fixture-server-secret";
   await connectFixtureProviders("reader");
-  process.env.SAKAMOTO_BUDGET_USD = "0.034";
+  await setFixtureBudget("reader",0.034);
 });
 after(async () => {
   globalThis.fetch = originalFetch;
@@ -104,7 +105,7 @@ test("a reader answer streams cited Luna content with server credentials and set
 
 test("a reader summary uses Luna structured output and returns only saved paragraph addresses", async () => {
   const { POST: brief } = await import("../app/api/brief/route");
-  process.env.SAKAMOTO_BUDGET_USD = "0.05";
+  await setFixtureBudget("reader",0.05);
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), "https://api.openai.com/v1/chat/completions");
     const sent = JSON.parse(String(init?.body));
@@ -132,7 +133,7 @@ test("deployment budget status records reader charges without exposing another o
   const response = await GET(request("/api/budget"));
   assert.equal(response.status, 200);
   const status = await response.json();
-  assert.equal(status.scope, "deployment");
+  assert.equal(status.scope, "user");
   assert.equal(status.settledUsd, 0.00022);
   assert.equal(status.reservedUsd, 0);
   assert.equal(status.capUsd, 0.05);
@@ -208,7 +209,7 @@ test("an interrupted answer retains possibly billed usage and an intentional cum
     request("/api/ask", { doc, thread: { action: "ask" }, search: false }),
   );
   assert.equal(paused.status, 402);
-  process.env.SAKAMOTO_BUDGET_USD = "0.10";
+  await setFixtureBudget("reader",0.10);
   globalThis.fetch = async () => stream();
   const resumed = await ask(
     request("/api/ask", { doc, thread: { action: "ask" }, search: false }),
@@ -219,9 +220,10 @@ test("an interrupted answer retains possibly billed usage and an intentional cum
   assert.equal(after.capUsd, 0.1);
   assert.equal(after.reservedUsd, 0.033218);
   assert.equal(after.settledUsd, 0.00044);
-  // A stale replica/configuration cannot reset a deliberately raised cap or settled charges.
-  process.env.SAKAMOTO_BUDGET_USD = "0.05";
-  assert.equal((await (await GET(request("/api/budget"))).json()).capUsd, 0.1);
+  // Lowering a user limit is intentional and does not erase settled charges.
+  await setFixtureBudget("reader",0.05);
+  assert.equal((await (await GET(request("/api/budget"))).json()).capUsd, 0.05);
+  await setFixtureBudget("reader",0.1);
 });
 
 test("missing keys, unknown prices, and oversized whole Unicode conversations fail before provider dispatch", async () => {
@@ -380,7 +382,7 @@ test("database failure pauses paid authorization without a process-local fallbac
 
 test("a reader tool lookup and its second Luna pass each reserve against the same deployment ledger", async () => {
   const { GET } = await import("../app/api/budget/route");
-  process.env.SAKAMOTO_BUDGET_USD = "1";
+  await setFixtureBudget("reader",1);
   process.env.EXA_API_KEY = "fixture-exa-secret";
   await connectFixtureProviders("reader");
   process.env.SAKAMOTO_EXA_MAX_USD = "0.004";

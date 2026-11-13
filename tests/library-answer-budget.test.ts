@@ -1,3 +1,4 @@
+import {setFixtureBudget} from "./provider-fixtures";
 import { connectFixtureProviders } from "./provider-fixtures";
 import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -12,7 +13,7 @@ let token = "";
 before(async () => {
   await setupPostgres();
   process.env.OPENAI_API_KEY = "fixture-openai";
-  process.env.SAKAMOTO_BUDGET_USD = "0.035";
+  await setFixtureBudget("budget-answer",0.035);
   const identity = makeToken();
   token = identity.token;
   await createToken(

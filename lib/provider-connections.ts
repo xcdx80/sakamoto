@@ -26,7 +26,7 @@ export async function connectionSettings(owner: string): Promise<ConnectionSetti
   const rows = await db().query("select provider,updated_at,expires_at from provider_connections where owner_id=$1", [owner]);
   const [budget] = await db().query(`select coalesce((select cap_micros from provider_budgets where owner_id=$1),10000000) as cap,
     coalesce(sum(actual_micros) filter(where status='settled'),0) as used,
-    coalesce(sum(reserved_micros) filter(where status in ('reserved','uncertain')),0) as reserved from paid_attempts where owner_id=$1`, [owner]);
+    coalesce(sum(reserved_micros) filter(where status in ('reserved','uncertain')),0) as reserved from paid_attempts where owner_id=$1 and budget_scope='byok'`, [owner]);
   return { connections: (Object.keys(providerCatalog) as CredentialProvider[]).map(provider => {
     const row = rows.find(r => r.provider === provider);
     return { provider, stored: !!row, connected: !!row && (!row.expires_at || Date.parse(row.expires_at) > Date.now()), updatedAt: row ? new Date(row.updated_at).toISOString() : null, expiresAt: row?.expires_at ?? null };

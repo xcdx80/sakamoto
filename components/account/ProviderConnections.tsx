@@ -32,7 +32,7 @@ export function ProviderConnections({ owner }: { owner: string }) {
       {settings.connections.map(connection => <ConnectionForm key={connection.provider} provider={connection.provider} connected={connection.connected} stored={connection.stored} busy={busy} onChange={change} />)}
       <form className="mt-8 border-t pt-6" onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); void change({action:"budget",capUsd:Number(form.get("cap"))}); }}>
         <h2 className="text-xl">Spending limit</h2>
-        <p className="my-2">Cumulative usage: ${settings.budget.usedUsd.toFixed(4)}. Reserved: ${settings.budget.reservedUsd.toFixed(4)}. This limit covers work sent through InView and does not reset when you replace a key.</p>
+        <p className="my-2">Your BYOK usage: ${settings.budget.usedUsd.toFixed(4)}. Reserved: ${settings.budget.reservedUsd.toFixed(4)}. This cumulative limit covers new usage with your keys. Historical usage is separate. Replacing a key does not reset the limit.</p>
         <label>Total limit in USD <input key={settings.budget.capUsd} name="cap" type="number" min="0" max="1000" step="0.01" defaultValue={settings.budget.capUsd} required className="border rounded px-2 py-1" /></label>
         <button disabled={busy} className="sk-btn ml-2">Save limit</button>
         <p className="mt-2 text-sm">Set zero to pause new paid work. Provider limits remain the final control on your account’s spending.</p>

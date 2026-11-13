@@ -249,7 +249,7 @@ test("invalid categories, provider failures and exhausted budget preserve readab
   const { budgetStatus } = await import("../lib/paid-work");
   const b = await budgetStatus(a.owner);
   await pool.query(
-    "update paid_budget set settled_micros=cap_micros-reserved_micros",
+    "insert into provider_budgets(owner_id,cap_micros) values($1,0) on conflict(owner_id) do update set cap_micros=0", [a.owner],
   );
   let dispatched = false;
   globalThis.fetch = async () => {
@@ -271,8 +271,8 @@ test("invalid categories, provider failures and exhausted budget preserve readab
     assert.ok(status.summary.blocked>0);
   } finally {
     globalThis.fetch = original;
-    await pool.query("update paid_budget set settled_micros=$1", [
-      Math.round(b.settledUsd * 1e6),
+    await pool.query("update provider_budgets set cap_micros=$1 where owner_id=$2", [
+      Math.round(b.capUsd * 1e6), a.owner,
     ]);
   }
 });

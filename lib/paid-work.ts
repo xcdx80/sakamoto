@@ -123,21 +123,29 @@ async function durableBudget() {
   }
   return budget;
 }
+/** New user-funded usage is independent of historical deployment accounting. */
+async function userBudget(owner: string) {
+  const [budget] = await db().query(`select
+    coalesce((select cap_micros from provider_budgets where owner_id=$1),10000000) as cap_micros,
+    coalesce((select halted from provider_budgets where owner_id=$1),false) as halted,
+    coalesce(sum(actual_micros) filter(where status='settled'),0) as settled_micros,
+    coalesce(sum(reserved_micros) filter(where status in ('reserved','uncertain')),0) as reserved_micros,
+    count(*) filter(where status in ('reserved','uncertain')) as active
+    from paid_attempts where owner_id=$1 and budget_scope='byok'`, [owner]);
+  return budget;
+}
 export async function processingBudget(owner?: string) {
-  const budget=await durableBudget();
-  let remaining=Number(budget.cap_micros)-Number(budget.settled_micros)-Number(budget.reserved_micros);
+  let budget: Record<string,any>;
   let connected: Record<string,any>[] = [];
   try {
+    budget=owner ? await userBudget(owner) : await durableBudget();
     connected = owner ? await db().query("select provider from provider_connections where owner_id=$1 and (expires_at is null or expires_at::timestamptz>now())", [owner]) : [];
-    if (owner) {
-      const [own] = await db().query(`select coalesce((select cap_micros from provider_budgets where owner_id=$1),10000000)-coalesce(sum(case when status='settled' then actual_micros when status in ('reserved','uncertain') then reserved_micros else 0 end),0) as remaining,
-        count(*) filter(where status in ('reserved','uncertain')) as active from paid_attempts where owner_id=$1`,[owner]);
-      remaining = Number(own.active) >= 16 ? 0 : Math.min(remaining, Number(own.remaining));
-    }
-  } catch (error) {
-    // Older installations remain inspectable; no paid work is available until migration.
-    if (!(error && typeof error === "object" && "code" in error && error.code === "42P01")) throw error;
+  } catch(error) {
+    // Unmigrated libraries remain readable; paid work fails closed.
+    if (!(error && typeof error === "object" && "code" in error && ['42P01','42703'].includes(String(error.code)))) throw error;
+    budget={cap_micros:0,settled_micros:0,reserved_micros:0,halted:true};
   }
+  const remaining=Number(budget.active ?? 0)>=16 ? 0 : Number(budget.cap_micros)-Number(budget.settled_micros)-Number(budget.reserved_micros);
   const configured = (kind:string) => !owner || !['classification','indexing'].includes(kind) || connected.some(c => c.provider === (kind === "classification" ? "typesafe" : "google"));
   const budgetAllows = (kind:string) => {
     if (!['classification','indexing'].includes(kind)) return true;
@@ -347,15 +355,15 @@ export async function markPaidWorkUncertain(reservation: PaidReservation, receip
   );
 }
 export async function budgetStatus(owner?: string) {
-  const b=await durableBudget();
+  const b=owner ? await userBudget(owner) : await durableBudget();
   const attempts = owner
     ? await db().query(
-        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,failure_receipt,created_at from paid_attempts where owner_id=$1 order by created_at desc limit 20",
+        "select id,operation_id,attempt_id,provider,model,provider_request_id,status,reserved_micros,actual_micros,failure_receipt,created_at from paid_attempts where owner_id=$1 and budget_scope='byok' order by created_at desc limit 20",
         [owner],
       )
     : [];
   return {
-    scope: "deployment",
+    scope: owner ? "user" : "deployment",
     capUsd: Number(b.cap_micros) / 1e6,
     settledUsd: Number(b.settled_micros) / 1e6,
     reservedUsd: Number(b.reserved_micros) / 1e6,
@@ -368,7 +376,7 @@ export async function budgetStatus(owner?: string) {
       ) / 1e6,
     halted: Boolean(b.halted),
     paused:
-      Boolean(b.halted) || Number(b.cap_micros)-Number(b.settled_micros)-Number(b.reserved_micros) < Math.min(processingReservationMicros('indexing'),processingReservationMicros('classification')),
+      Boolean(b.halted) || Number(b.active ?? 0)>=16 || Number(b.cap_micros)-Number(b.settled_micros)-Number(b.reserved_micros) < Math.min(processingReservationMicros('indexing'),processingReservationMicros('classification')),
     attempts: attempts.map((a) => ({
       id: a.id,
       operationId: a.operation_id,

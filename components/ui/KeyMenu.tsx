@@ -102,15 +102,13 @@ export function KeyMenu() {
                 </dd>
               </dl>
               <p className="mt-3 text-[12px] leading-snug text-ink-3">
-                This deployment shares one cumulative budget for paid
-                processing. It does not reset monthly or include other use of
+                Your cumulative BYOK budget covers paid processing with your keys. Historical usage is separate. It does not reset monthly or include other use of
                 provider keys or your Grok subscription.
               </p>
               <p className="mt-2 text-[12px] leading-snug text-ink-3">
                 Paid work pauses when remaining funds cannot cover a full
                 attempt. Saved reading and manual library changes stay
-                available. The deployment owner can intentionally raise the
-                limit to resume eligible work.
+                available. You can change your limit in API key settings to resume eligible work.
               </p>
               {budget.halted && (
                 <p role="status" className="mt-2 text-[12px] text-rubric-text">

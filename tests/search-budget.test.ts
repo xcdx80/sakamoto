@@ -1,3 +1,4 @@
+import {setFixtureBudget} from "./provider-fixtures";
 import { connectFixtureProviders } from "./provider-fixtures";
 import { beforeEach } from "node:test";
 import { pool, setupPostgres } from "./postgres";
@@ -19,7 +20,7 @@ before(async () => {
   process.env.OPENAI_API_KEY = "fixture-openai";
   process.env.EXA_API_KEY = "fixture-exa";
   process.env.SAKAMOTO_EXA_MAX_USD = "0.05";
-  process.env.SAKAMOTO_BUDGET_USD = "1";
+  await setFixtureBudget("search-reader",1);
 });
 after(async () => {
   globalThis.fetch = originalFetch;

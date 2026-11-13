@@ -82,7 +82,7 @@ test("a classification deadline reached during durable authorization releases on
   try {
     await locker.query("begin");
     locked = true;
-    await locker.query("select * from paid_budget where id=true for update");
+    await locker.query("select pg_advisory_xact_lock(hashtextextended($1,72621026))",['classification-cancel']);
     const pid = Number(
       (await locker.query("select pg_backend_pid() as pid")).rows[0].pid,
     );

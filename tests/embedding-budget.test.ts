@@ -1,3 +1,4 @@
+import {setFixtureBudget} from "./provider-fixtures";
 import { connectedOwner } from "./provider-fixtures";
 import { connectFixtureProviders } from "./provider-fixtures";
 import { beforeEach } from "node:test";
@@ -13,7 +14,7 @@ before(async () => {
   await setupPostgres();
   delete process.env.TYPESAFE_API_KEY;
   process.env.GOOGLE_API_KEY = "fixture-google";
-  process.env.SAKAMOTO_BUDGET_USD = "0.002";
+  await setFixtureBudget("budget-search",0.002);
 });
 after(async () => {
   globalThis.fetch = original;
@@ -52,7 +53,7 @@ test("unknown Google usage retains its reservation, caps paid queries and leaves
   );
 });
 test("credible over-bound Google usage durably halts all paid work while preserving saved text and lexical retrieval", async () => {
-  process.env.SAKAMOTO_BUDGET_USD = "10";
+  await setFixtureBudget("budget-search",10);
   await budgetStatus("budget-search");
   let calls = 0;
   globalThis.fetch = async () => {

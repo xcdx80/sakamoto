@@ -2,7 +2,7 @@
 
 import { accountScope } from "./account-scope";
 export type BudgetView = {
-  scope: "deployment";
+  scope: "user";
   capUsd: number;
   settledUsd: number;
   reservedUsd: number;
@@ -31,7 +31,7 @@ export async function fetchBudget(): Promise<BudgetView> {
         : "Processing usage is unavailable.",
     );
   if (
-    data.scope !== "deployment" ||
+    data.scope !== "user" ||
     !["capUsd", "settledUsd", "reservedUsd", "remainingUsd"].every(
       (k) =>
         typeof data[k] === "number" && Number.isFinite(data[k]) && data[k] >= 0,

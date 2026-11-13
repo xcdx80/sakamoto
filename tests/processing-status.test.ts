@@ -28,11 +28,11 @@ test('queue status exposes failed classification outcomes, isolates owners and r
  await shelveForUser(owner,{id:'unconfigured',title:'Unconfigured'},{id:'unconfigured',title:'Unconfigured',blocks:[]});
  assert.equal((await read()).summary.unavailable,2);
  process.env.SAKAMOTO_BUDGET_USD='0.0001';
- await pool.query('update paid_budget set cap_micros=100,settled_micros=25,reserved_micros=75,halted=false');
+ await pool.query("insert into provider_budgets(owner_id,cap_micros) values('status-reader',0) on conflict(owner_id) do update set cap_micros=0");
  assert.equal((await read()).summary.budget_paused,true);
- await pool.query('update paid_budget set reserved_micros=0,halted=true');
+ await pool.query('update provider_budgets set halted=true');
  assert.equal((await read()).summary.budget_paused,true);
- await pool.query('update paid_budget set halted=false,cap_micros=10000000');
+ await pool.query('update provider_budgets set halted=false,cap_micros=10000000');
  assert.equal((await read()).summary.budget_paused,false);
 });
 

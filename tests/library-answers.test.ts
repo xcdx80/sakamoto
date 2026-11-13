@@ -705,7 +705,7 @@ test("canceling while Luna authorization waits releases its known-undispatched r
   try {
     await locker.query("begin");
     locked = true;
-    await locker.query("select * from paid_budget where id=true for update");
+    await locker.query("select pg_advisory_xact_lock(hashtextextended($1,72621026))",['reservation-answer']);
     const pid = Number(
       (await locker.query("select pg_backend_pid() as pid")).rows[0].pid,
     );

@@ -26,9 +26,9 @@ before(async () => {
       unique(user_id,source_id,source_revision,kind,target));
     create table saved_passages(user_id text,source_id text,source_revision int,content_fingerprint text);
     create table passage_embeddings(user_id text,contract text,content_fingerprint text);
-    create table paid_attempts(owner_id text,operation_id text,status text,actual_micros bigint,reserved_micros bigint);
+    create table paid_attempts(owner_id text,operation_id text,status text,actual_micros bigint,reserved_micros bigint,budget_scope text default 'byok');
     create table provider_connections(owner_id text,provider text,id uuid unique,key_id text,ciphertext text,expires_at text,updated_at timestamptz default now(),primary key(owner_id,provider));
-    create table provider_budgets(owner_id text primary key,cap_micros bigint);
+    create table provider_budgets(owner_id text primary key,cap_micros bigint,halted boolean default false);
     create table deleted_credential_owners(owner_id text primary key);
     create table credential_audit(sequence bigserial,owner_id text,provider text,action text);
     create table paid_budget(id boolean primary key,halted boolean,settled_micros bigint,reserved_micros bigint,cap_micros bigint);
