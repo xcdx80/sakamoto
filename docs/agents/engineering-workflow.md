@@ -22,7 +22,7 @@ For `code-review`, pin a resolved baseline SHA before changes and identify the o
 
 ## Actual checks and stages
 
-Run commands from the repository root (`sakamoto/`). Node 20.20.2 and npm/package-lock.json are the current local toolchain. The package manifest remains authoritative.
+Run commands from the repository root (`sakamoto/`). Node 24.22.2 (`.nvmrc`) and npm/package-lock.json are the current local toolchain. Production uses Node 24.x. The package manifest remains authoritative.
 
 | Stage | Responsibility / current command |
 | --- | --- |

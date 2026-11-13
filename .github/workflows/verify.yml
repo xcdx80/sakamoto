@@ -15,7 +15,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.20.2
+          node-version: 24.22.2
           cache: npm
       - run: npm ci
       - name: Check candidate whitespace

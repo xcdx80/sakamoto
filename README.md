@@ -19,7 +19,7 @@ The library offers cards/list, sorting and topic/tag/content-type filters. Reade
 
 ## Run locally
 
-1. Use the repository's Node/npm toolchain (locally verified with Node 20.20.2) and run `npm ci`.
+1. Use the Node 24 toolchain pinned in `.nvmrc` and run `npm ci`. Production uses Node 24.x.
 2. Populate ignored `.env.local` from `.env.example`. Set Neon and Clerk credentials, the server-only encryption keyring and a stable environment context; set `NEXT_PUBLIC_SITE_URL` to this deployment's exact frontend origin (`https://getinview.app` in production). Each reader connects their own provider keys at `/settings/providers`. Keys are write-only, encrypted on the server and never returned by the settings API. Missing connections pause the corresponding paid work. Follow [the BYOK activation and recovery guide](docs/security/byok.md).
 3. Confirm that `DATABASE_URL` names the intended Neon project/branch before running `npm run db:migrate`. This applies recorded ordered migrations, including pgvector, without resetting existing source IDs or data. Never use an unknown database as a test target.
 4. Run `npm run dev` and open [localhost:3100](http://localhost:3100). Sign in for your private library. Read a bundled sample or import a link, pasted text, `.txt`, `.md` or readable PDF.
