@@ -34,9 +34,11 @@ test("home leads with a knowledge-base question using the shared saved-answer co
   const { Hero } = await import("../components/landing/Hero");
   const { LibraryAnswer } = await import("../components/library/LibraryAnswer");
   const { document } = parseHTML(renderToStaticMarkup(createElement(Hero, {
+    onNudge: () => {},
     children: createElement(LibraryAnswer, { owner: "home-reader", filters: {}, presentation: "home" }),
   })));
   assert.match(document.querySelector("h1")?.textContent ?? "", /Ask.*knowledge base/s);
+  assert.equal(document.querySelector('h1 button[aria-label="Nudge the desk"]')?.textContent, ".");
   const question = document.querySelector('textarea[placeholder="Ask anything about what you’ve saved…"]');
   assert.ok(question);
   assert.equal(document.querySelector('button[type="submit"]')?.textContent, "Ask your knowledge base");
