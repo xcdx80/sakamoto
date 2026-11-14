@@ -7,15 +7,15 @@ import { Reveal, Words } from "@/components/motion/Reveal";
 import { spring } from "@/components/motion/tokens";
 
 /** The primary home action: a question answered from saved knowledge. */
-export function Hero({ children }: { children: ReactNode }) {
+export function Hero({ children, onNudge }: { children: ReactNode; onNudge: () => void }) {
   return (
     <section className="home-hero">
-      <h1 className="sk-display home-display text-ink">
+      <h1 className="sk-display home-display text-ink" aria-label="Ask your knowledge base.">
         <span className="home-display-line"><Words text="Ask your" delay={0.15} /></span>{" "}
         <span className="home-display-line">
           <span className="home-display-mask">
             <motion.span className="inline-block" initial={{ y: "112%", rotate: 2 }} animate={{ y: 0, rotate: 0 }} transition={{ ...spring.soft, delay: 0.32 }}>
-              <Marker inView={false} delay={1.05}>knowledge base</Marker>.
+              <Marker inView={false} delay={1.05}>knowledge base</Marker><button type="button" className="home-nudge-dot" aria-label="Nudge the desk" onClick={onNudge}>.</button><span className="home-nudge-period" aria-hidden>.</span>
             </motion.span>
           </span>
         </span>

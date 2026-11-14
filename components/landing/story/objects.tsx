@@ -1,12 +1,69 @@
 /* eslint-disable @next/next/no-img-element */
+import type { ReactNode } from "react";
+
 /** The things people save, made of paper. Decorative: the layer holding them is aria-hidden. */
 
-export function TweetSlip() {
+export function XBookmark() {
   return (
     <div className="pc pc-tweet">
-      <div className="pc-tweet-head"><i /><span><b>a stranger</b><em>@saved_it_once</em></span></div>
-      <p>this thread changed my life. haven’t read it yet.</p>
-      <small>Bookmarked 3 years ago</small>
+      <div className="pc-tweet-head"><i /><span><b>X bookmarks</b><em>Synced to InView</em></span></div>
+      <p>A thread on how to take better notes</p>
+      <small>Saved from X</small>
+    </div>
+  );
+}
+
+function XPostCard({ name, handle, label, children, links }: {
+  name: string;
+  handle: string;
+  label?: string;
+  children: ReactNode;
+  links?: readonly string[];
+}) {
+  return (
+    <div className="pc pc-tweet pc-post-card">
+      <div className="pc-tweet-head">
+        <i />
+        <span><b>{name}</b><em>{handle}</em></span>
+        <b className="pc-post-mark">𝕏</b>
+      </div>
+      <p>{children}</p>
+      {links && <div className="pc-post-links">{links.map((link) => <span key={link}>{link}</span>)}</div>}
+      {label && <small>{label}</small>}
+    </div>
+  );
+}
+
+const threadAuthor = { name: "Maya Chen", handle: "@mayareads" };
+
+export function XThreadStack() {
+  return (
+    <div className="pc-stack pc-thread-stack">
+      <XPostCard {...threadAuthor}>3/3 End with one question worth coming back to.</XPostCard>
+      <XPostCard {...threadAuthor}>2/3 Write down one good idea in your own words.</XPostCard>
+      <XPostCard {...threadAuthor} label="X thread">1/3 A small habit that made my reading notes more useful.</XPostCard>
+    </div>
+  );
+}
+
+function LinkedArticleCard({ title, source }: { title: string; source: string }) {
+  return (
+    <div className="pc pc-article-card">
+      <small>{source}</small>
+      <b>{title}</b>
+      <small>Auto-saved to InView</small>
+    </div>
+  );
+}
+
+export function XLinkedArticlesStack() {
+  return (
+    <div className="pc-stack pc-linked-stack">
+      <LinkedArticleCard title="A Better Reading List" source="The Reading Room" />
+      <LinkedArticleCard title="A Guide to Marginalia" source="Field Notes" />
+      <XPostCard name="Nora Ellis" handle="@norareads" label="2 linked articles saved" links={["t.co/k8L4pQ2m", "t.co/r6W9dV3n"]}>
+        Two good reads for the weekend:
+      </XPostCard>
     </div>
   );
 }
@@ -16,7 +73,7 @@ export function PdfCorner() {
     <div className="pc pc-pdf">
       <span className="pc-pdf-tag">PDF</span>
       <div className="pc-lines"><i /><i /><i /><i style={{ width: "62%" }} /></div>
-      <small>report_FINAL_v7(2).pdf</small>
+      <small>field-notes.pdf</small>
     </div>
   );
 }
@@ -24,8 +81,8 @@ export function PdfCorner() {
 export function Clipping() {
   return (
     <div className="pc pc-clip">
-      <small>Morning Edition</small>
-      <h4>Local Reader Finally Opens Tab From 2019</h4>
+      <small>Saved web article</small>
+      <h4>The Art of Noticing</h4>
       <div className="pc-columns"><i /><i /></div>
     </div>
   );
@@ -34,28 +91,15 @@ export function Clipping() {
 export function IndexCard() {
   return (
     <div className="pc pc-index">
-      <span>Ideas</span>
-      <p>read more</p>
-      <p>(see: every year)</p>
+      <span>Pasted text</span>
+      <p>Notes from a</p>
+      <p>favorite essay</p>
     </div>
   );
 }
 
 export function Sticky({ tone, children }: { tone: "marigold" | "blush"; children: string }) {
   return <div className={`pc pc-sticky is-${tone}`}><p>{children}</p></div>;
-}
-
-export function Ticket() {
-  return (
-    <div className="pc pc-ticket">
-      <div>
-        <small>Boarding</small>
-        <b>NOW <span>→</span> LATER</b>
-        <small>Seat: couch</small>
-      </div>
-      <em>Read<br />later</em>
-    </div>
-  );
 }
 
 export function Stamp() {
@@ -109,10 +153,10 @@ export function Book({ cover, title }: { cover: string; title: string }) {
 export function Receipt() {
   return (
     <div className="pc pc-receipt">
-      <span>Your browser</span>
-      <p><em>Open tabs</em><em>47</em></p>
-      <p><em>Read</em><em>0</em></p>
-      <p className="is-total"><em>Total</em><em>Guilt</em></p>
+      <span>In your library</span>
+      <p><em>X posts</em><em>✓</em></p>
+      <p><em>Articles</em><em>✓</em></p>
+      <p className="is-total"><em>PDFs</em><em>✓</em></p>
     </div>
   );
 }
@@ -121,8 +165,8 @@ export function Envelope() {
   return (
     <div className="pc pc-envelope">
       <svg viewBox="0 0 150 96" preserveAspectRatio="none" fill="none"><path d="M1 2l74 54 74-54" stroke="#000" strokeOpacity=".22" /></svg>
-      <small>Newsletter</small>
-      <b>Unread (312)</b>
+      <small>Newsletter link</small>
+      <b>Saved from the web</b>
     </div>
   );
 }

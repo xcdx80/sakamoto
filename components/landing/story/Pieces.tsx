@@ -1,18 +1,18 @@
 "use client";
 
 import { easeInOut, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity, type MotionValue } from "motion/react";
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { spring } from "@/components/motion/tokens";
 import { at, type Viewport } from "./clock";
 import { PIECES, type PieceDef } from "./placement";
 
 let topLayer = 40;
 
-function Piece({ def, index, view, x: position, p, pointerX, pointerY, bounds, scale }: {
+function Piece({ def, index, view, position, p, pointerX, pointerY, bounds, scale }: {
   def: PieceDef;
   index: number;
   view: Viewport;
-  x: [number, number];
+  position: [number, number];
   p: MotionValue<number>;
   pointerX: MotionValue<number>;
   pointerY: MotionValue<number>;
@@ -20,6 +20,7 @@ function Piece({ def, index, view, x: position, p, pointerX, pointerY, bounds, s
   scale: number;
 }) {
   const reduced = useReducedMotion();
+  const card = useRef<HTMLDivElement>(null);
   const restX = ((position[0] - 50) / 100) * view.w;
   const restY = ((position[1] - 50) / 100) * view.h;
   const radius = Math.hypot(restX, restY);
@@ -34,11 +35,11 @@ function Piece({ def, index, view, x: position, p, pointerX, pointerY, bounds, s
 
   const x = useTransform([gather, dragX] as MotionValue<number>[], ([g, d]: number[]) => {
     const r = radius * (1 - g);
-    return r * Math.cos(angle + 2.1 * g) + (stackX - d * scale * (1 - 0.18 * g)) * g;
+    return r * Math.cos(angle + 2.1 * g) - restX + (stackX - d) * g;
   });
   const y = useTransform([gather, dragY] as MotionValue<number>[], ([g, d]: number[]) => {
     const r = radius * (1 - g);
-    return r * Math.sin(angle + 2.1 * g) + (stackY - d * scale * (1 - 0.18 * g)) * g;
+    return r * Math.sin(angle + 2.1 * g) - restY + (stackY - d) * g;
   });
   const size = useTransform(gather, [0, 1], [scale, scale * 0.82]);
   const opacity = useTransform(p, [at(2.0), at(2.16)], [1, 0]);
@@ -59,27 +60,49 @@ function Piece({ def, index, view, x: position, p, pointerX, pointerY, bounds, s
   const throwY = (position[1] < 50 ? -1 : 1) * (view.h * 0.28 + (index % 3) * 60);
 
   return (
-    <motion.div className="pc-seat" style={{ x, y, scale: size, opacity, visibility, zIndex: layer }}>
-      <motion.div style={{ x: driftX, y: driftY }}>
-        <motion.div
-          initial={reduced ? false : { x: throwX, y: throwY, rotate: (index % 2 ? 1 : -1) * 34, opacity: 0 }}
-          animate={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 58, damping: 13, mass: 1, delay: 0.25 + index * 0.05, opacity: { duration: 0.3, delay: 0.25 + index * 0.05 } }}
-        >
+    // Keep drag in desk pixels; the entrance, parallax and scale only move the artwork.
+    <motion.div
+      ref={card}
+      className="pc-grab"
+      style={{ left: `calc(50% + ${restX}px)`, top: `calc(50% + ${restY}px)`, x: dragX, y: dragY, opacity, visibility, zIndex: layer }}
+      drag
+      dragConstraints={bounds}
+      onMeasureDragConstraints={({ left, right, top, bottom }) => {
+        // Motion measures the full-size wrapper. The artwork is scaled around its center.
+        const insetX = (card.current?.offsetWidth ?? 0) * (1 - scale) / 2;
+        const insetY = (card.current?.offsetHeight ?? 0) * (1 - scale) / 2;
+        // Some cards intentionally start partly off the desk. Keep their origin reachable.
+        return {
+          left: Math.min(left - insetX, 0), right: Math.max(right + insetX, 0),
+          top: Math.min(top - insetY, 0), bottom: Math.max(bottom + insetY, 0),
+        };
+      }}
+      dragElastic={0.14}
+      dragMomentum
+      dragTransition={{ power: 0.22, timeConstant: 260 }}
+      whileHover="hover"
+      whileDrag="drag"
+      onDragStart={() => layer.set(++topLayer)}
+    >
+      <motion.div style={{ x, y, scale: size }}>
+        <motion.div style={{ x: driftX, y: driftY }}>
           <motion.div
-            className="pc-grab"
-            drag
-            dragConstraints={bounds}
-            dragElastic={0.14}
-            dragMomentum
-            dragTransition={{ power: 0.22, timeConstant: 260 }}
-            style={{ x: dragX, y: dragY, rotate }}
-            whileHover={{ scale: 1.05, y: -3 }}
-            whileDrag={{ scale: 1.12, filter: "drop-shadow(0 22px 20px rgb(40 30 20 / 0.28))" }}
-            transition={spring.snap}
-            onDragStart={() => layer.set(++topLayer)}
+            initial={reduced ? false : { x: throwX, y: throwY, rotate: (index % 2 ? 1 : -1) * 34, opacity: 0 }}
+            animate={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 58, damping: 13, mass: 1, delay: 0.25 + index * 0.05, opacity: { duration: 0.3, delay: 0.25 + index * 0.05 } }}
           >
-            {def.node}
+            <motion.div
+              className="pc-artwork"
+              data-desk-piece={def.id}
+              style={{ rotate }}
+              variants={{
+                hover: { scale: 1.05 },
+                drag: { scale: 1.05, filter: "drop-shadow(0 22px 20px rgb(40 30 20 / 0.28))" },
+              }}
+              transition={spring.snap}
+            >
+              {def.node}
+            </motion.div>
           </motion.div>
         </motion.div>
       </motion.div>
@@ -105,13 +128,13 @@ export function Pieces({ view, p, bounds }: { view: Viewport; p: MotionValue<num
     return () => window.removeEventListener("pointermove", move);
   }, [reduced, view.compact, rawX, rawY]);
 
-  const scale = view.compact ? 0.62 : view.w < 1240 ? 0.8 : view.w < 1500 ? 0.94 : 1;
+  const scale = view.compact ? Math.min(0.62, view.w / 600) : view.w < 1240 ? 0.8 : view.w < 1500 ? 0.94 : 1;
   const shown = PIECES.filter((d) => (view.compact ? !!d.phone : view.w < 1240 ? d.tier < 2 : true));
 
   return (
     <div className="pc-layer" aria-hidden>
       {shown.map((def, i) => (
-        <Piece key={def.id} def={def} index={i} view={view} x={view.compact ? def.phone! : def.at} p={p} pointerX={pointerX} pointerY={pointerY} bounds={bounds} scale={scale} />
+        <Piece key={def.id} def={def} index={i} view={view} position={view.compact ? def.phone! : def.at} p={p} pointerX={pointerX} pointerY={pointerY} bounds={bounds} scale={scale} />
       ))}
     </div>
   );

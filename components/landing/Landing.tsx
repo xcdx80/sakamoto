@@ -18,6 +18,7 @@ import { LibraryAnswer } from "@/components/library/LibraryAnswer";
 import { AnimatePresence, motion } from "motion/react";
 import { spring } from "@/components/motion/tokens";
 import { HomeStage } from "./story/HomeStage";
+import { nudgeDesk } from "./nudgeDesk";
 import "@/app/landing.css";
 
 /** Questions lead; manual imports and existing share links remain available. */
@@ -39,6 +40,17 @@ export function Landing() {
   const [dragging, setDragging] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const dragDepth = useRef(0);
+  const landing = useRef<HTMLDivElement>(null);
+  const nudgeAnimations = useRef<Animation[]>([]);
+
+  const nudge = () => {
+    if (!landing.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    nudgeAnimations.current = nudgeDesk(landing.current, nudgeAnimations.current);
+  };
+
+  useEffect(() => () => {
+    nudgeAnimations.current.forEach((animation) => animation.cancel());
+  }, []);
 
   useEffect(() => {
     hydrate();
@@ -221,13 +233,13 @@ export function Landing() {
   }, [library, progress, glosses, hydrated, hiddenSamples]);
 
   return (
-    <div className={`landing relative z-[1] flex min-h-dvh flex-col transition-[opacity,filter,transform] duration-300 ease-[var(--ease-out)] ${leaving ? "scale-[0.995] opacity-0 blur-[2px]" : ""}`}>
+    <div ref={landing} className={`landing relative z-[1] flex min-h-dvh flex-col transition-[opacity,filter,transform] duration-300 ease-[var(--ease-out)] ${leaving ? "scale-[0.995] opacity-0 blur-[2px]" : ""}`}>
       <TopBar />
 
       <main className="relative flex flex-1 flex-col">
         <HomeStage story={account === null}>
           <div className="home-primary">
-            <Hero>
+            <Hero onNudge={nudge}>
               <LibraryAnswer key={account ?? "anonymous"} owner={account ?? null} filters={{}} presentation="home" />
             </Hero>
           </div>
