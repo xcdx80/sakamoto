@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { SignInButton } from "@clerk/nextjs";
 import { loadAdminDashboard } from "@/lib/admin-dashboard";
 import { AdminDashboardView } from "@/components/admin/AdminDashboardView";
-import "./admin.css";
+import "@/app/admin/admin.css";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Library dashboard", robots: { index: false, follow: false } };

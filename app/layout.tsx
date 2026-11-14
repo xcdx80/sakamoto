@@ -7,7 +7,6 @@ import { MotionRoot } from "@/components/motion/MotionRoot";
 import { PageCurtain } from "@/components/motion/PageCurtain";
 import { Tooltips } from "@/components/ui/Tooltips";
 import { ClerkProvider } from "@clerk/nextjs";
-import { AccountLibrary } from "@/components/account/SyncAgent";
 import { BRAND, OG_IMAGE, SITE_URL } from "@/lib/brand";
 
 const serif = Newsreader({
@@ -90,7 +89,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ClerkProvider appearance={CLERK_APPEARANCE}>
           <MotionRoot>
-            <AccountLibrary>{children}</AccountLibrary>
+            {children}
             <PageCurtain />
           </MotionRoot>
         </ClerkProvider>

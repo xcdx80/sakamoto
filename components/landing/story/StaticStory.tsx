@@ -4,7 +4,6 @@
 import { SignInButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { SAMPLE_SHELF } from "@/lib/classics";
-import { Colophon } from "./Colophon";
 import { ANSWER, CLOSE_LINE, DRAFT, LIBRARY_SENTENCE, QUESTION, SOURCES, samplesForChips } from "./copy";
 
 /** The whole story, standing still, for readers who prefer no motion. */
@@ -52,7 +51,6 @@ export function StaticStory() {
           ))}
         </div>
       </div>
-      <Colophon />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import "@/app/landing.css";
 
 export function Colophon() {
   return (
@@ -9,6 +10,8 @@ export function Colophon() {
         <Link href="/library">Library</Link>
         <Link href="/write">Write</Link>
         <Link href="/calendar">Calendar</Link>
+        <Link href="/privacy">Privacy Policy</Link>
+        <Link href="/terms">Terms of Service</Link>
       </nav>
     </footer>
   );

@@ -3,7 +3,6 @@
 import { useMotionValue, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { useRef, type ReactNode } from "react";
 import { SCREENS, useViewport } from "./clock";
-import { Colophon } from "./Colophon";
 import { Pieces } from "./Pieces";
 import { AskScene, CloseScene, GatherCaption, HighlightScene, Sheet, SourceScene, WriteScene } from "./Scenes";
 import { StaticStory } from "./StaticStory";
@@ -55,7 +54,6 @@ export function HomeStage({ story, children }: { story: boolean; children: React
         </section>
         <div className="home-hero-layer">{children}</div>
       </div>
-      <Colophon />
     </>
   );
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { WriteDesk } from "@/components/write/WriteDesk";
-import "./write.css";
+import "@/app/write/write.css";
 
 export const metadata: Metadata = { title: "Write · InView", alternates: { canonical: "/write" } };
 
