@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { SignInButton } from "@clerk/nextjs";
 import { tidyTitle } from "@/lib/article";
-import { SAMPLES } from "@/lib/samples";
+import { SAMPLE_TITLES } from "@/lib/samples";
 import { useStore } from "@/lib/store";
 import { todaysReview } from "@/lib/review";
 import { DailyHighlight } from "./DailyHighlight";
@@ -44,7 +44,7 @@ export function HomeBelow({ signedIn }: { signedIn: boolean }) {
 
   const titleOf = useMemo(() => {
     const m = new Map<string, string>();
-    for (const a of SAMPLES) m.set(a.id, a.title);
+    for (const a of SAMPLE_TITLES) m.set(a.id, a.title);
     for (const x of library) m.set(x.id, x.title);
     return m;
   }, [library]);

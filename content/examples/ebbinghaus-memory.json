@@ -1,0 +1,184 @@
+{
+ "id": "ebbinghaus-memory",
+ "title": "Memory",
+ "published": "1908",
+ "dek": "Why some experiences return to mind, and what changes when practice is spaced out.",
+ "source": "Project Gutenberg, Psychology, trans. Max Meyer (public domain; section 9)",
+ "sourceUrl": "https://www.gutenberg.org/ebooks/52823",
+ "author": "Hermann Ebbinghaus",
+ "blocks": [
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "While attention means limitation, memory means expansion. From the enormous number of impressions calling simultaneously for response, the mind selects a small group of those related to its present needs. But the mind may go beyond the limits of that which is presented and respond to impressions of a former time. We then speak of memory. When I hear the first verse of a poem which I have previously heard or read more than once, I continue to hear, in imagination, the following verses although the reader has stopped. When I see a black cloud drawing over the sky and the trees bowing under the pressure of the wind, I know that a thunderstorm is approaching. When I smell carbolic acid or iodoform, I look for a person wearing a bandage. In every case the mind tends toward expansion beyond the limits of the data presented at the moment. The mind thus restores the connections in which the accidentally isolated object of present interest has been experienced with other objects in the past."
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We refer to this ability of expansion by the term "
+    },
+    {
+     "text": "memory",
+     "em": true
+    },
+    {
+     "text": ", to the actual process of expansion by "
+    },
+    {
+     "text": "reproduction",
+     "em": true
+    },
+    {
+     "text": " or "
+    },
+    {
+     "text": "association",
+     "em": true
+    },
+    {
+     "text": ". The immense importance of memory for life is easily understood. Nature repeats itself--not without some variations of the accompanying phenomena; but no group of phenomena, aside from such variations, fails to recur at frequent intervals. In reproducing what previously existed under similar conditions, our mind possesses, as a rule, a real knowledge of what now exists but happens to remain hidden, and of what is about to occur. Thus our mind adapts itself to those parts of the world which are for spatial or temporal reasons beyond the reach of our sense organs."
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "A special case of reproduction deserves to be mentioned because of its frequency of application. Two things may possess one common part while completely differing in other parts: for example, two words that rhyme, or a photograph and an oil portrait, or either of these and the face of the original. Let us call the parts of one thing "
+    },
+    {
+     "text": "abcd",
+     "em": true
+    },
+    {
+     "text": ", those of another "
+    },
+    {
+     "text": "cdef",
+     "em": true
+    },
+    {
+     "text": ". It easily happens that by mediation of the common parts, "
+    },
+    {
+     "text": "cd",
+     "em": true
+    },
+    {
+     "text": ", the train of thought is carried from "
+    },
+    {
+     "text": "ab",
+     "em": true
+    },
+    {
+     "text": " to "
+    },
+    {
+     "text": "ef",
+     "em": true
+    },
+    {
+     "text": ". Thus we may say that our train of thought is determined, not only by simultaneity of previous experience, which is often quite fortuitous, but also by similarity, by essential connection, by relationship."
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The possibilities of reproduction are, of course, very numerous in each case of experience. At present I see before me some books of reference, on the hill at a distance a house partly hidden by trees, and many other things. All these have previously been in my mind, each in various temporal or essential connections with other things. An immense number of images might therefore be reproduced now in my mind. That as a matter of fact I do not become conscious of all of them needs no further explanation. It has been spoken of before when we discussed the limitation, the focalness of consciousness, that is, attention. We have also stated some of the rules determining the selection among these many possibilities. Let us here state these rules more definitely."
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Whatever tends to bring about strong feeling, also tends to be reproduced. A brilliant success, but also a humiliating defeat, are not easily forgotten. They are always lying in ambush, so to speak, ready for the least opportunity. As in attention, so here even more, pleasant thoughts show this tendency more strongly than unpleasant ones. What is unpleasant is soon repressed. This is illustrated by such facts as the healing power of time, the painting of the future in glowing colors, the unfailing belief that advancing age has in the good old time."
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "A second law governing reproduction may be called the set of the mind. When a railway train enters a large station, there are many paths over which it might pass; but its actual path depends on the position which was given to the switches immediately before the train’s arrival. In a similar manner the path taken by the mind depends on the set established just a few seconds or minutes before by the contents of the mind. If during a conversation in English a French word is unexpectedly pronounced by some one, the other people, though perfectly familiar with the French language, may fail to understand it. The French sounds are unexpected--the track is there, but the switch is not properly set--and consequently the sounds remain ineffective. A certain book seen on my desk calls up associated ideas very different from those which are produced when I see it in the bookstore. The same thought leads to one conclusion in the dark or in a dream, to another conclusion in daylight or in the waking state. Every student is familiar with the difficulty of becoming conscious of the right kind of ideas after having just gone from one recitation room to another. After a few minutes the new set of the mind is established, and the difficulty has disappeared."
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Many other factors are to be mentioned as influencing the train of thought. During the last decades many experimental investigations have been devoted, with much success, to their exact determination. Numerous methods have been used, some being only slight modifications of the conditions under which ideas are reproduced in ordinary life, others being more artificial in order to yield answers to special questions to which the other methods are not applicable. The common involuntary reproduction of ideas by words or pictures shown has been used in order to determine how this reproduction varies with different individuals under different circumstances, how much time it requires, and so on. Voluntary reproduction of impressions that have just been made (as used in school in dictation) has been used by presenting, optically or through speech, words, syllables, numbers, or pictures and telling the subject to write down everything remembered. The quantity of the matter retained, and the number and kind of errors, then permit many important conclusions. Also whole poems or pieces of prose have been memorized, and answers have been found to questions as to the length of time necessary for such memorizing under different conditions, and the number of additional repetitions needed to make the material learned available again after a greater number of days or weeks. The acquisition of the vocabulary of a foreign language or of a set of historical dates has been developed into a special method of hitting or missing. The material to be learned has been presented in pairs, and the number of pairs has been counted of which one element causes the mental reproduction of the other. By all these methods psychologists have definitely secured many rules which had been derived from earlier, less reliable experiences. Many new facts have also been discovered. Let us give a brief account of the results of this work."
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "That which has been in consciousness most recently is, other conditions being equal, reproduced most readily. For some time the memorized material is reproduced so easily that it seems to have found a permanent place in our mind. Soon, however, it begins to be forgotten. At first this forgetting goes on with great rapidity; but it becomes slower and slower, so that a person retains very little less after thirteen months than after twelve. Even after twenty years definite traces of a single former memorizing have been proved to exist. Nothing, therefore, is likely to be completely lost, although voluntary reproduction has long since become impossible."
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The most important factor contributing toward certainty of reproduction is frequent repetition, of course with attention, for without attention no memorizing is possible. The experimental investigation of the influence of repetition has yielded, among minor ones, two particularly interesting results. One of them justifies an educational practice which had already been adopted by teachers because it seemed to be advisable. In order to memorize any material we should not try to force the desired end by accumulated repetition without pause. It is much more economical to devote a short time to learning, long enough for a few repetitions, to do this again after a pause of some hours or days and again after the same interval, until the desired effect is obtained. The total time required for obtaining this effect would be much greater if the total process of memorizing were to occur at one time without intermission."
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Another result of experimental investigation is contrary to the tradition of educational practice. It has been proved that, in order to learn a long poem, monologue, or piece of prose, this should not be divided into smaller parts. It is uneconomical to learn each stanza or sentence separately. The whole should always be read from the beginning to the end, without introducing points of division which are not desired at the time of reproduction."
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The method of involuntary reproduction has recently been applied to a problem of much practical significance. The attempt has been made to reveal thus associations of ideas which have been firmly established, but which the subject has strong reasons for keeping secret, for instance, the ideas forming the memory of a crime which he has committed. He is asked to tell or write as quickly as possible a word suggested by each of a great number of words presented to him in succession. Among these latter words are given some which have a special relation to the knowledge which the subject is suspected of possessing. If the suspicion is correct, it is likely to be shown in either of two ways in the answers to these test words. Either the expected (for instance incriminating) answers are actually given and reveal thus the subject’s knowledge; or if these answers are inhibited and voluntarily replaced by others of a more innocent appearance, the time of answering, the reaction time, is considerably increased. It may also happen that the subject, under these conditions, becomes confused and gives absolutely meaningless answers."
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "That the individual differences in the ability to memorize are very great, has always been observed. Modern psychology, however, has added to this knowledge an insight into the various kinds of differences and their proper causes. Let us notice the perception and imagery types. There are people who perceive and imagine very readily visual sensation groups. They give attention to the shape and color of the things rather than to any other sensible qualities, and they imagine visual shape or color very vividly so that the right and left, the above and below, of their imagery is clearly in their minds. In others auditory perception and auditory imagery are very vivid; in a third class of persons the same is to be said of kinesthetic mental states. We therefore distinguish visual, auditory, and kinesthetic types of consciousness. There may be also gustatory, olfactory, and other types, but they are of little practical importance. Extreme cases, where one of these classes of mental states is extraordinarily developed at the expense of all others, are rare. Eminent ability in art or music probably depends on such development. Generally, one kind of imagery is but slightly superior to the rest."
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "There seem to be further individual differences with respect to a predominance of either word images or images of the things of nature. All these differences bring about numerous variations of memory. The visual type is able to play chess blindfolded, to repeat a memorized series of numbers somewhat slowly also backwards. To the auditory type these performances seem miraculous. But the former in recalling easily confuses similar looking elements of such a memorized series, which the latter would certainly distinguish because of their difference in sound. The auditory type, however, confuses elements that are similar in sound or accent. The auditory and kinesthetic types depend largely on reading aloud for memorizing, while the visual type is scarcely aided by it. These differences are of much importance for all the various kinds of professional activity."
+    }
+   ]
+  }
+ ]
+}

@@ -2,9 +2,14 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import type { DocIndex } from "@/lib/doc";
+import type { BriefState, Gloss } from "@/lib/store";
 
 export type ReaderApi = {
   ix: DocIndex;
+  brief?: BriefState;
+  summarize: () => void;
+  glosses: Gloss[];
+  exampleGlosses: Gloss[];
   /** Scroll a paragraph into view and flash it. */
   jumpTo: (n: number, opts?: { flash?: boolean }) => void;
   jumpToBlock: (blockId: string, opts?: { flash?: boolean }) => void;

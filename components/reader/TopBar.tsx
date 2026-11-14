@@ -9,11 +9,11 @@ import { KeyMenu } from "@/components/ui/KeyMenu";
 import { ListenButton } from "./Listen";
 import { SettingsMenu } from "@/components/ui/SettingsMenu";
 import { barBtn } from "@/components/ui/Popover";
-import { useGlosses, useHighlights, useStore } from "@/lib/store";
+import { useHighlights, useStore } from "@/lib/store";
 import { useReader } from "./context";
 
 export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number | null; pastTitle: boolean; listenFrom: () => string | null }) {
-  const { ix, jumpTo } = useReader();
+  const { ix, jumpTo, brief, glosses } = useReader();
   const [hidden, setHidden] = useState(false);
   const [scrolledUp, setScrolledUp] = useState(false);
   const [peek, setPeek] = useState(false);
@@ -22,8 +22,7 @@ export function TopBar({ currentN, pastTitle, listenFrom }: { currentN: number |
   const barRef = useRef<HTMLSpanElement>(null);
   const notebookOpen = useStore((s) => s.notebookOpen);
   const setUI = useStore((s) => s.setUI);
-  const brief = useStore((s) => s.briefs[ix.article.id]);
-  const count = useGlosses(ix.article.id).length + useHighlights(ix.article.id).length;
+  const count = glosses.length + useHighlights(ix.article.id).length;
 
   // Tuck away while reading down, come back the moment the reader scrolls up.
   // The progress hairline is written straight to the DOM: no re-render per frame.

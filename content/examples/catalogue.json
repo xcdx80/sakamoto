@@ -1,0 +1,122 @@
+[
+  {
+    "id": "self-reliance",
+    "title": "Self-Reliance",
+    "author": "Ralph Waldo Emerson",
+    "byline": "Emerson",
+    "published": "1841",
+    "dek": "Trusting your judgment when belonging to a group rewards conformity.",
+    "topic": "philosophy",
+    "words": 10050
+  },
+  {
+    "id": "liberty-of-discussion",
+    "title": "Of the Liberty of Thought and Discussion",
+    "author": "John Stuart Mill",
+    "byline": "Mill",
+    "published": "1859",
+    "dek": "Mill asks what gives anyone the right to decide which ideas others may hear.",
+    "topic": "philosophy",
+    "words": 7576
+  },
+  {
+    "id": "division-of-labour",
+    "title": "Of the Division of Labour",
+    "author": "Adam Smith",
+    "byline": "Smith",
+    "published": "1776",
+    "dek": "A pin factory shows what specialization changes about work and output.",
+    "topic": "economics",
+    "words": 3477
+  },
+  {
+    "id": "broken-window",
+    "title": "The Broken Window",
+    "author": "Frédéric Bastiat",
+    "byline": "Bastiat",
+    "published": "1850",
+    "dek": "A smashed window brings work to the glazier. What happened to the work nobody saw?",
+    "topic": "economics",
+    "words": 1335
+  },
+  {
+    "id": "feature-visualization",
+    "title": "Feature Visualization",
+    "author": "Chris Olah, Alexander Mordvintsev, and Ludwig Schubert",
+    "byline": "Olah et al.",
+    "published": "2017",
+    "dek": "What does a neural network look for when it decides what is in an image?",
+    "topic": "ai",
+    "words": 1368
+  },
+  {
+    "id": "introduction-to-circuits",
+    "title": "Zoom In: An Introduction to Circuits",
+    "author": "Chris Olah, Nick Cammarata, Ludwig Schubert, Gabriel Goh, Michael Petrov, and Shan Carter",
+    "byline": "Olah et al.",
+    "published": "2020",
+    "dek": "An argument for reading learned neural circuits as small algorithms.",
+    "topic": "ai",
+    "words": 3026
+  },
+  {
+    "id": "test-campaigns",
+    "title": "Test Campaigns",
+    "author": "Claude C. Hopkins",
+    "byline": "Hopkins",
+    "published": "1923",
+    "dek": "The advertising pioneer makes the case for testing with real buyers before going national.",
+    "topic": "distribution",
+    "words": 1231
+  },
+  {
+    "id": "effects-of-advertisements",
+    "title": "Experiments on the Effects of Advertisements",
+    "author": "Hugo Münsterberg",
+    "byline": "Münsterberg",
+    "published": "1913",
+    "dek": "Early experiments ask why ad size, repetition, and placement affect what people remember.",
+    "topic": "distribution",
+    "words": 3507
+  },
+  {
+    "id": "laws-of-habit",
+    "title": "The Laws of Habit",
+    "author": "William James",
+    "byline": "James",
+    "published": "1899",
+    "dek": "What practice moves out of conscious thought, and how to make that work in your favor.",
+    "topic": "mind",
+    "words": 3223
+  },
+  {
+    "id": "ebbinghaus-memory",
+    "title": "Memory",
+    "author": "Hermann Ebbinghaus",
+    "byline": "Ebbinghaus",
+    "published": "1908",
+    "dek": "Why some experiences return to mind, and what changes when practice is spaced out.",
+    "topic": "mind",
+    "words": 2009
+  },
+  {
+    "id": "relativity-of-simultaneity",
+    "title": "The Relativity of Simultaneity",
+    "author": "Albert Einstein",
+    "byline": "Einstein",
+    "published": "1916",
+    "dek": "Two flashes of lightning, a moving train, and the problem of agreeing on what's happening now.",
+    "topic": "science",
+    "words": 1686
+  },
+  {
+    "id": "newton-on-colour",
+    "title": "On Light and Colour",
+    "author": "Isaac Newton",
+    "byline": "Newton",
+    "published": "1704",
+    "dek": "Newton separates sunlight with a prism, puts it back together, and asks what the glass actually changes.",
+    "topic": "science",
+    "words": 5518
+  }
+]

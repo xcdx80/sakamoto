@@ -1,0 +1,668 @@
+{
+ "id": "introduction-to-circuits",
+ "title": "Zoom In: An Introduction to Circuits",
+ "published": "2020",
+ "dek": "An argument for reading learned neural circuits as small algorithms.",
+ "source": "Distill (CC BY 4.0; text excerpt, interactive figures omitted)",
+ "sourceUrl": "https://distill.pub/2020/circuits/zoom-in/",
+ "author": "Chris Olah, Nick Cammarata, Ludwig Schubert, Gabriel Goh, Michael Petrov, and Shan Carter",
+ "blocks": [
+  {
+   "id": "h1",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Three Speculative Claims"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "One of the earliest articulations of something approaching modern cell theory was three claims by Theodor Schwann — who you may know for Schwann cells — in 1839:"
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The first two of these claims are likely familiar, persisting in modern cellular theory. The third is likely not familiar, since it turned out to be horribly wrong."
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We believe there’s a lot of value in articulating a strong version of something one may believe to be true, even if it might be false like Schwann’s third claim. In this spirit, we offer three claims about neural networks. They are intended both as empirical claims about the nature of neural networks, and also as normative claims about how it’s useful to understand them."
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "These claims are deliberately speculative. They also aren’t totally novel: claims along the lines of (1) and (3) have been suggested before, as we’ll discuss in more depth below."
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "But we believe these claims are important to consider because, if true, they could form the basis of a new “zoomed in” field of interpretability. In the following sections, we’ll discuss each one individually and present some of the evidence that has led us to believe they might be true."
+    }
+   ]
+  },
+  {
+   "id": "h2",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Claim 1: Features"
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Features are the fundamental unit of neural networks. They correspond to directions. They can be rigorously studied and understood."
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We believe that neural networks consist of meaningful, understandable features. Early layers contain features like edge or curve detectors, while later layers have features like floppy ear detectors or wheel detectors. The community is divided on whether this is true. While many researchers treat the existence of meaningful neurons as an almost trivial fact — there’s even a small literature studying them — many others are deeply skeptical and believe that past cases of neurons that seemed to track meaningful latent variables were mistaken. Nevertheless, thousands of hours of studying individual neurons have led us to believe the typical case is that neurons (or in some cases, other directions in the vector space of neuron activations) are understandable."
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Of course, being understandable doesn’t mean being simple or easily understandable. Many neurons are initially mysterious and don’t follow our a priori guesses of what features might exist! However, our experience is that there’s usually a simple explanation behind these neurons, and that they’re actually doing something quite natural. For example, we were initially confused by high-low frequency detectors (discussed below) but in retrospect, they are simple and elegant."
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This introductory essay will only give an overview of a couple examples we think are illustrative, but it will be followed both by deep dives carefully characterizing individual features, and broad overviews sketching out all the features we understand to exist. We will take our examples from InceptionV1 for now, but believe these claims hold generally and will discuss other models in the final section on universality."
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Regardless of whether we’re correct or mistaken about meaningful features, we believe this is an important question for the community to resolve. We hope that introducing several specific carefully explored examples of seemingly understandable features will help advance the dialogue."
+    }
+   ]
+  },
+  {
+   "id": "h3",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Example 1: Curve Detectors"
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Curve detecting neurons can be found in every non-trivial vision model we’ve carefully examined. These units are interesting because they straddle the boundary between features the community broadly agrees exist (e.g. edge detectors) and features for which there’s significant skepticism (e.g. high-level features such as ears, automotives, and faces)."
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We’ll focus on curve detectors in layer mixed3b, an early layer of InceptionV1. These units responded to curved lines and boundaries with a radius of around 60 pixels. They are also slightly additionally excited by perpendicular lines along the boundary of the curve, and prefer the two sides of the curve to be different colors."
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Curve detectors are found in families of units, with each member of the family detecting the same curve feature in a different orientation. Together, they jointly span the full range of orientations."
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It’s important to distinguish curve detectors from other units which may seem superficially similar. In particular, there are many units which use curves to detect a curved sub-component (e.g. circles, spirals, S-curves, hourglass shape, 3d curvature, …). There are also units which respond to curve related shapes like lines or sharp corners. We do not consider these units to be curve detectors."
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "type": "p",
+   "runs": [
+    {
+     "text": "But are these “curve detectors” really detecting curves? We will be dedicating an entire later article to exploring this in depth, but the summary is that we think the evidence is quite strong."
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We offer seven arguments, outlined below. It’s worth noting that none of these arguments are curve specific: they’re a useful, general toolkit for testing our understanding of other features as well. Several of these arguments — dataset examples, synthetic examples, and tuning curves — are classic methods from visual neuroscience (e.g. ). The last three arguments are based on circuits, which we’ll discuss in the next section."
+    }
+   ]
+  },
+  {
+   "id": "p17",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The above arguments don’t fully exclude the possibility of some rare secondary case where curve detectors fire for a different kind of stimulus. But they do seem to establish that (1) curves cause these neurons to fire, (2) each unit responds to curves at different angular orientations, and (3) if there are other stimuli that cause them to fire those stimuli are rare or cause weaker activations. More generally, these arguments seem to meet the evidentiary standards we understand to be used in neuroscience, which has established traditions and institutional knowledge of how to evaluate such claims."
+    }
+   ]
+  },
+  {
+   "id": "p18",
+   "type": "p",
+   "runs": [
+    {
+     "text": "All of these arguments will be explored in detail in the later articles on curve detectors and curve detection circuits."
+    }
+   ]
+  },
+  {
+   "id": "h4",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Example 2: High-Low Frequency Detectors"
+    }
+   ]
+  },
+  {
+   "id": "p19",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Curve detectors are an intuitive type of feature — the kind of feature one might guess exists in neural networks a priori. Given that they’re present, it’s not surprising we can understand them. But what about features that aren’t intuitive? Can we also understand those? We believe so."
+    }
+   ]
+  },
+  {
+   "id": "p20",
+   "type": "p",
+   "runs": [
+    {
+     "text": "High-low frequency detectors are an example of a less intuitive type of feature. We find them in early vision, and once you understand what they’re doing, they’re quite simple. They look for low-frequency patterns on one side of their receptive field, and high-frequency patterns on the other side. Like curve detectors, high-low frequency detectors are found in families of features that look for the same thing in different orientations."
+    }
+   ]
+  },
+  {
+   "id": "p21",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Why are high-low frequency detectors useful to the network? They seem to be one of several heuristics for detecting the boundaries of objects, especially when the background is out of focus. In a later article, we’ll explore how they’re used in the construction of sophisticated boundary detectors."
+    }
+   ]
+  },
+  {
+   "id": "p22",
+   "type": "p",
+   "runs": [
+    {
+     "text": "(One hope some researchers have for interpretability is that understanding models will be able to teach us better abstractions for thinking about the world. High-low frequency detectors are, perhaps, an example of a small success in this: a natural, useful visual feature that we didn’t anticipate in advance.)"
+    }
+   ]
+  },
+  {
+   "id": "p23",
+   "type": "p",
+   "runs": [
+    {
+     "text": "All seven of the techniques we used to interrogate curve neurons can also be used to study high-low frequency neurons with some tweaking — for instance, rendering synthetic high-low frequency examples. Again we believe these arguments collectively provide strong support for the idea that these really are a family of high-low frequency contrast detectors."
+    }
+   ]
+  },
+  {
+   "id": "h5",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Example 3: Pose-Invariant Dog Head Detector"
+    }
+   ]
+  },
+  {
+   "id": "p24",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Both curve detectors and high-low frequency detectors are low-level visual features, found in the early layers of InceptionV1. What about more complex, high-level features?"
+    }
+   ]
+  },
+  {
+   "id": "p25",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let’s consider this unit which we believe to be a pose-invariant dog detector. As with any neuron, we can create a feature visualization and collect dataset examples. If you look at the feature visualization, the geometry is… not possible, but very informative about what it’s looking for and the dataset examples validate it."
+    }
+   ]
+  },
+  {
+   "id": "p26",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It’s worth noting that the combination of feature visualization and dataset examples alone are already quite a strong argument. Feature visualization establishes a causal link, while dataset examples test the neuron’s use in practice and whether there are a second type of stimuli that it reacts to. But we can bring all our other approaches to analyzing a neuron to bear again. For example, we can use a 3D model to generate synthetic dog head images from different angles."
+    }
+   ]
+  },
+  {
+   "id": "p27",
+   "type": "p",
+   "runs": [
+    {
+     "text": "At the same time, some of the approaches we’ve emphasized so far become a lot of effort for these higher-level, more abstract features. Thankfully, our circuit-based arguments — which we’ll discuss more soon — will continue to be easy to apply, and give us really powerful tools for understanding and testing high-level features that don’t require a lot of effort."
+    }
+   ]
+  },
+  {
+   "id": "h6",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Polysemantic Neurons"
+    }
+   ]
+  },
+  {
+   "id": "p28",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This essay may be giving you an overly rosy picture: perhaps every neuron yields a nice, human-understandable concept if one seriously investigates it?"
+    }
+   ]
+  },
+  {
+   "id": "p29",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Alas, this is not the case. Neural networks often contain “polysemantic neurons” that respond to multiple unrelated inputs. For example, InceptionV1 contains one neuron that responds to cat faces, fronts of cars, and cat legs."
+    }
+   ]
+  },
+  {
+   "id": "p30",
+   "type": "p",
+   "runs": [
+    {
+     "text": "To be clear, this neuron isn’t responding to some commonality of cars and cat faces. Feature visualization shows us that it’s looking for the eyes and whiskers of a cat, for furry legs, and for shiny fronts of cars — not some subtle shared feature."
+    }
+   ]
+  },
+  {
+   "id": "p31",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We can still study such features, characterizing each different case they fire, and reason about their circuits to some extent. Despite this, polysemantic neurons are a major challenge for the circuits agenda, significantly limiting our ability to reason about neural networks. Our hope is that it may be possible to resolve polysemantic neurons, perhaps by “unfolding” a network to turn polysemantic neurons into pure features, or training networks to not exhibit polysemanticity in the first place. This is essentially the problem studied in the literature of disentangling representations, although at present that literature tends to focus on known features in the latent spaces of generative models."
+    }
+   ]
+  },
+  {
+   "id": "p32",
+   "type": "p",
+   "runs": [
+    {
+     "text": "One natural question to ask is why do polysemantic neurons form? In the next section, we’ll see that they seem to result from a phenomenon we call “superposition” where a circuit spreads a feature across many neurons, presumably to pack more features into the limited number of neurons it has available."
+    }
+   ]
+  },
+  {
+   "id": "h7",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Claim 2: Circuits"
+    }
+   ]
+  },
+  {
+   "id": "p33",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Features are connected by weights, forming circuits. These circuits can also be rigorously studied and understood."
+    }
+   ]
+  },
+  {
+   "id": "p34",
+   "type": "p",
+   "runs": [
+    {
+     "text": "All neurons in our network are formed from linear combinations of neurons in the previous layer, followed by ReLU. If we can understand the features in both layers, shouldn’t we also be able to understand the connections between them? To explore this, we find it helpful to study circuits: sub-graphs of the network, consisting a set of tightly linked features and the weights between them."
+    }
+   ]
+  },
+  {
+   "id": "p35",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The remarkable thing is how tractable and meaningful these circuits seem to be as objects of study. When we began looking, we expected to find something quite messy. Instead, we’ve found beautiful rich structures, often with symmetry to them. Once you understand what features they’re connecting together, the individual floating point number weights in your neural network become meaningful! You can literally read meaningful algorithms off of the weights."
+    }
+   ]
+  },
+  {
+   "id": "p36",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let’s consider some examples."
+    }
+   ]
+  },
+  {
+   "id": "h8",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Circuit 1: Curve Detectors"
+    }
+   ]
+  },
+  {
+   "id": "p37",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In the previous section, we discussed curve detectors, a family of units detecting curves in different angular orientations. In this section, we’ll explore how curve detectors are implemented from earlier features and connect to the rest of the model."
+    }
+   ]
+  },
+  {
+   "id": "p38",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Curve detectors are primarily implemented from earlier, less sophisticated curve detectors and line detectors. These curve detectors are used in the next layer to create 3D geometry and complex shape detectors. Of course, there’s a long tail of smaller connections to other features, but this seems to be the primary story."
+    }
+   ]
+  },
+  {
+   "id": "p39",
+   "type": "p",
+   "runs": [
+    {
+     "text": "For this introduction, we’ll focus on the interaction of the early curve detectors and our full curve detectors."
+    }
+   ]
+  },
+  {
+   "id": "p40",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let’s focus even more and look at how a single early curve detector connects to a more sophisticated curve detector in the same orientation."
+    }
+   ]
+  },
+  {
+   "id": "p41",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In this case, our model is implementing a 5x5 convolution, so the weights linking these two neurons are a 5x5 set of weights, which can be positive or negative. A positive weight means that if the earlier neuron fires in that position, it excites the late neuron. Conversely a negative weight would mean that it inhibits it."
+    }
+   ]
+  },
+  {
+   "id": "p42",
+   "type": "p",
+   "runs": [
+    {
+     "text": "What we see are strong positive weights, arranged in the shape of the curve detector. We can think of this as meaning that, at each point along the curve, our curve detector is looking for a “tangent curve” using the earlier curve detector."
+    }
+   ]
+  },
+  {
+   "id": "p43",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This is true for every pair of early and full curve detectors in similar orientations. At every point along the curve, it detects the curve in a similar orientation. Similarly, curves in the opposite orientation are inhibitory at every point along the curve."
+    }
+   ]
+  },
+  {
+   "id": "p44",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It’s worth reflecting here that we’re looking at neural network weights and they’re meaningful."
+    }
+   ]
+  },
+  {
+   "id": "p45",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And the structure gets richer the closer you look. For example, if you look at an early curve detector and full curve detector in similar, but not exactly the same orientation you can often see it have stronger positive weights on the side of the curve it is more aligned with."
+    }
+   ]
+  },
+  {
+   "id": "p46",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It’s also worth noting how the weights rotate with the orientation of the curve detector. The symmetry of the problem is reflected as a symmetry in the weights. We call circuits with exhibiting this phenomenon an “equivariant circuit”, and will discuss it in depth in a later article."
+    }
+   ]
+  },
+  {
+   "id": "h9",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Circuit 2: Oriented Dog Head Detection"
+    }
+   ]
+  },
+  {
+   "id": "p47",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The curve detector circuit is a low-level circuit and only spans two layers. In this section, we’ll discuss a higher-level circuit spanning across four layers. This circuit will also teach us about how neural networks implement sophisticated invariances."
+    }
+   ]
+  },
+  {
+   "id": "p48",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Remember that a huge part of what an ImageNet model has to do is tell apart different animals. In particular, it has to distinguish between a hundred different species of dogs! And so, unsurprisingly, it develops a large number of neurons dedicated to recognizing dog related features, including heads."
+    }
+   ]
+  },
+  {
+   "id": "p49",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Within this “dog recognition” system, one circuit strikes us as particularly interesting: a collection of neurons that handle dog heads facing to the left and dog heads facing to the right. Over three layers, the network maintains two mirrored pathways, detecting analogous units facing to the left and to the right. At each step, these pathways try to inhibit each other, sharpening the contrast. Finally, it creates invariant neurons which respond to both pathways."
+    }
+   ]
+  },
+  {
+   "id": "p50",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We call this pattern “unioning over cases”. The network separately detects two cases (left and right) and then takes a union over them to create invariant “multifaceted” units. Note that, because the two pathways inhibit each other, this circuit actually has some XOR like properties."
+    }
+   ]
+  },
+  {
+   "id": "p51",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This circuit is striking because the network could have easily done something much less sophisticated. It could easily create invariant neurons by not caring very much about where the eyes, fur and snout went, and just looking for a jumble of them together. But instead, the network has learned to carve apart the left and right cases and handle them separately. We’re somewhat surprised that gradient descent could learn to do this!"
+    }
+   ]
+  },
+  {
+   "id": "p52",
+   "type": "p",
+   "runs": [
+    {
+     "text": "But this summary of the circuit is only scratching the surface of what is going on. Every connection between neurons is a convolution, so we can also look at where an input neuron excites the the next one. And the models tends to be doing what you might have optimistically hoped. For example, consider these “head with neck” units. The head is only detected on the correct side:"
+    }
+   ]
+  },
+  {
+   "id": "p53",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The union step is also interesting to look at the details of. The network doesn’t indiscriminately respond to the heads into the two orientations: the regions of excitation extend from the center in different directions depending on orientation, allowing snouts to converge in to the same point."
+    }
+   ]
+  },
+  {
+   "id": "p54",
+   "type": "p",
+   "runs": [
+    {
+     "text": "There’s a lot more to say about this circuit, so we plan to return to it in a future article and analyze it in depth, including testing our theory of the circuit by editing the weights."
+    }
+   ]
+  },
+  {
+   "id": "h10",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Circuit 3: Cars in Superposition"
+    }
+   ]
+  },
+  {
+   "id": "p55",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In mixed4c, a mid-late layer of InceptionV1, there is a car detecting neuron. Using features from the previous layers, it looks for wheels at the bottom of its convolutional window, and windows at the top."
+    }
+   ]
+  },
+  {
+   "id": "p56",
+   "type": "p",
+   "runs": [
+    {
+     "text": "But then the model does something surprising. Rather than create another pure car detector at the next layer, it spreads its car feature over a number of neurons that seem to primarily be doing something else — in particular, dog detectors."
+    }
+   ]
+  },
+  {
+   "id": "p57",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This circuit suggests that polysemantic neurons are, in some sense, deliberate. That is, you could imagine a world where the process of detecting cars and dogs was deeply intertwined in the model for some reason, and as a result polysemantic neurons were difficult to avoid. But what we’re seeing here is that the model had a “pure neuron” and then mixed it up with other features."
+    }
+   ]
+  },
+  {
+   "id": "p58",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We call this phenomenon superposition."
+    }
+   ]
+  },
+  {
+   "id": "p59",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Why would it do such a thing? We believe superposition allows the model to use fewer neurons, conserving them for more important tasks. As long as cars and dogs don’t co-occur, the model can accurately retrieve the dog feature in a later layer, allowing it to store the feature without dedicating a neuron."
+    }
+   ]
+  },
+  {
+   "id": "h11",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Circuit Motifs"
+    }
+   ]
+  },
+  {
+   "id": "p60",
+   "type": "p",
+   "runs": [
+    {
+     "text": "As we’ve studied circuits throughout InceptionV1 and other models, we’ve seen the same abstract patterns over and over. Equivariance, as we saw with the curve detectors. Unioning over cases, as we saw with the pose-invariant dog head detector. Superposition, as we saw with the car detector."
+    }
+   ]
+  },
+  {
+   "id": "p61",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In biology, a circuit motif is a recurring pattern in complex graphs like transcription networks or biological neural networks. Motifs are helpful because understanding one motif can give researchers leverage on all graphs where it occurs."
+    }
+   ]
+  },
+  {
+   "id": "p62",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We think it’s quite likely that studying motifs will be important in understanding the circuits of artificial neural networks. In the long run, it may be more important than the study of individual circuits. At the same time, we expect investigations of motifs to be well served by us first building up a solid foundation of well understood circuits first."
+    }
+   ]
+  }
+ ]
+}

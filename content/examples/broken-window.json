@@ -1,0 +1,354 @@
+{
+ "id": "broken-window",
+ "title": "The Broken Window",
+ "published": "1850",
+ "dek": "A smashed window brings work to the glazier. What happened to the work nobody saw?",
+ "source": "Project Gutenberg, Essays on Political Economy (public domain; opening and first section)",
+ "sourceUrl": "https://www.gutenberg.org/ebooks/15962",
+ "author": "Frédéric Bastiat",
+ "blocks": [
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In the department of economy, an act, a habit, an institution, a law, gives birth not only to an effect, but to a series of effects. Of these effects, the first only is immediate; it manifests itself simultaneously with its cause--"
+    },
+    {
+     "text": "it is seen",
+     "em": true
+    },
+    {
+     "text": ". The others unfold in succession--"
+    },
+    {
+     "text": "they are not seen",
+     "em": true
+    },
+    {
+     "text": ": it is well for us if they are "
+    },
+    {
+     "text": "foreseen",
+     "em": true
+    },
+    {
+     "text": ". Between a good and a bad economist this constitutes the whole difference--the one takes account of the "
+    },
+    {
+     "text": "visible",
+     "em": true
+    },
+    {
+     "text": " effect; the other takes account both of the effects which are "
+    },
+    {
+     "text": "seen",
+     "em": true
+    },
+    {
+     "text": " and also of those which it is necessary to "
+    },
+    {
+     "text": "foresee",
+     "em": true
+    },
+    {
+     "text": ". Now this difference is enormous, for it almost always happens that when the immediate consequence is favourable, the ultimate consequences are fatal, "
+    },
+    {
+     "text": "and the converse",
+     "em": true
+    },
+    {
+     "text": ". Hence it follows that the bad economist pursues a small present good, which will be followed by a great evil to come, while the true economist pursues a great good to come, at the risk of a small present evil."
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In fact, it is the same in the science of health, arts, and in that of morals. If often happens, that the sweeter the first fruit of a habit is, the more bitter are the consequences. Take, for example, debauchery, idleness, prodigality. When, therefore, a man, absorbed in the effect which "
+    },
+    {
+     "text": "is seen",
+     "em": true
+    },
+    {
+     "text": ", has not yet learned to discern those which are not seen, he gives way to fatal habits, not only by inclination, but by calculation."
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This explains the fatally grievous condition of mankind. Ignorance surrounds its cradle: then its actions are determined by their first consequences, the only ones which, in its first stage, it can see. It is only in the long run that it learns to take account of the others. It has to learn this lesson from two very different masters--experience and foresight. Experience teaches effectually, but brutally. It makes us acquainted with all the effects of an action, by causing us to feel them; and we cannot fail to finish by knowing that fire burns, if we have burned ourselves. For this rough teacher, I should like, if possible, to substitute a more gentle one. I mean Foresight. For this purpose I shall examine the consequences of certain economical phenomena, by placing in opposition to each other those "
+    },
+    {
+     "text": "which are seen",
+     "em": true
+    },
+    {
+     "text": ", and those "
+    },
+    {
+     "text": "which are not seen",
+     "em": true
+    },
+    {
+     "text": "."
+    }
+   ]
+  },
+  {
+   "id": "h1",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "I.--The Broken Window."
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Have you ever witnessed the anger of the good shopkeeper, James B., when his careless son happened to break a pane of glass? If you have been present at such a scene, you will most assuredly bear witness to the fact, that every one of the spectators, were there even thirty of them, by common consent apparently, offered the unfortunate owner this invariable consolation--\"It is an ill wind that blows nobody good. Everybody must live, and what would become of the glaziers if panes of glass were never broken?\""
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Now, this form of condolence contains an entire theory, which it will be well to show up in this simple case, seeing that it is precisely the same as that which, unhappily, regulates the greater part of our economical institutions."
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Suppose it cost six francs to repair the damage, and you say that the accident brings six francs to the glazier's trade--that it encourages that trade to the amount of six francs--I grant it; I have not a word to say against it; you reason justly. The glazier comes, performs his task, receives his six francs, rubs his hands, and, in his heart, blesses the careless child. All this is "
+    },
+    {
+     "text": "that which is seen",
+     "em": true
+    },
+    {
+     "text": "."
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "But if, on the other hand, you come to the conclusion, as is too often the case, that it is a good thing to break windows, that it causes money to circulate, and that the encouragement of industry in general will be the result of it, you will oblige me to call out, \"Stop there! your theory is confined to that "
+    },
+    {
+     "text": "which is seen",
+     "em": true
+    },
+    {
+     "text": "; it takes no account of that "
+    },
+    {
+     "text": "which is not seen",
+     "em": true
+    },
+    {
+     "text": ".\""
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It is not seen",
+     "em": true
+    },
+    {
+     "text": " that as our shopkeeper has spent six francs upon one thing, he cannot spend them upon another. "
+    },
+    {
+     "text": "It is not seen",
+     "em": true
+    },
+    {
+     "text": " that if he had not had a window to replace, he would, perhaps, have replaced his old shoes, or added another book to his library. In short, he would have employed his six francs in some way which this accident has prevented."
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let us take a view of industry in general, as affected by this circumstance. The window being broken, the glazier's trade is encouraged to the amount of six francs: "
+    },
+    {
+     "text": "this is that which is seen",
+     "em": true
+    },
+    {
+     "text": "."
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "If the window had not been broken, the shoemaker's trade (or some other) would have been encouraged to the amount of six francs: this is "
+    },
+    {
+     "text": "that which is not seen",
+     "em": true
+    },
+    {
+     "text": "."
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And if "
+    },
+    {
+     "text": "that which is not seen",
+     "em": true
+    },
+    {
+     "text": " is taken into consideration, because it is a negative fact, as well as that which is seen, because it is a positive fact, it will be understood that neither industry "
+    },
+    {
+     "text": "in general",
+     "em": true
+    },
+    {
+     "text": ", nor the sum total of "
+    },
+    {
+     "text": "national labour",
+     "em": true
+    },
+    {
+     "text": ", is affected, whether windows are broken or not."
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Now let us consider James B. himself. In the former supposition, that of the window being broken, he spends six francs, and has neither more nor less than he had before, the enjoyment of a window."
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In the second, where we suppose the window not to have been broken, he would have spent six francs in shoes, and would have had at the same time the enjoyment of a pair o shoes and of a window."
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Now, as James B. forms a part of society, we must come to the conclusion, that, taking it altogether, and making an estimate of its enjoyments and its labours, it has lost the value of the broken window."
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Whence we arrive at this unexpected conclusion: \"Society loses the value of things which are uselessly destroyed;\" and we must assent to a maxim which will make the hair of protectionists stand on end--To break, to spoil, to waste, is not to encourage national labour; or, more briefly, \"destruction is not profit.\""
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "type": "p",
+   "runs": [
+    {
+     "text": "What will you say, "
+    },
+    {
+     "text": "Moniteur Industriel",
+     "em": true
+    },
+    {
+     "text": "--what will you say, disciples of good M. F. Chamans, who has calculated with so much precision how much trade would gain by the burning of Paris, from the number of houses it would be necessary to rebuild?"
+    }
+   ]
+  },
+  {
+   "id": "p17",
+   "type": "p",
+   "runs": [
+    {
+     "text": "I am sorry to disturb these ingenious calculations, as far as their spirit has been introduced into our legislation; but I beg him to begin them again, by taking into the account "
+    },
+    {
+     "text": "that which is not seen",
+     "em": true
+    },
+    {
+     "text": ", and placing it alongside of "
+    },
+    {
+     "text": "that which is seen",
+     "em": true
+    },
+    {
+     "text": "."
+    }
+   ]
+  },
+  {
+   "id": "p18",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The reader must take care to remember that there are not two persons only, but three concerned in the little scene which I have submitted to his attention. One of them, James B., represents the consumer, reduced, by an act of destruction, to one enjoyment instead of two. Another, under the title of the glazier, shows us the producer, whose trade is encouraged by the accident. The third is the shoemaker (or some other tradesman), whose labour suffers proportionably by the same cause. It is this third person who is always kept in the shade, and who, personating "
+    },
+    {
+     "text": "that which is not seen",
+     "em": true
+    },
+    {
+     "text": ", is a necessary element of the problem. It is he who shows us how absurd it is to think we see a profit in an act of destruction. It is he who will soon teach us that it is not less absurd to see a profit in a restriction, which is, after all, nothing else than a partial destruction. Therefore, if you will only go to the root of all the arguments which are adduced in its favour, all you will find will be the paraphrase of this vulgar saying--"
+    },
+    {
+     "text": "What would become of the glaziers, if nobody ever broke windows",
+     "em": true
+    },
+    {
+     "text": "?"
+    }
+   ]
+  }
+ ]
+}

@@ -6,7 +6,7 @@ import { ArrowRight, Check } from "lucide-react";
 import { tidyTitle } from "@/lib/article";
 import { useLibraryPrefs } from "@/lib/library-prefs";
 import { SAMPLE_SHELF } from "@/lib/classics";
-import { SAMPLES } from "@/lib/samples";
+import { SAMPLES, SAMPLE_TITLES } from "@/lib/samples";
 import { useStore } from "@/lib/store";
 
 export type Saved = { id: string; title: string };
@@ -51,7 +51,7 @@ export function LibraryLine({ saved }: { saved: Saved | null }) {
   const { hiddenSamples } = useLibraryPrefs();
 
   const reading = useMemo(() => {
-    const samples = SAMPLES.filter((a) => !hiddenSamples.includes(a.id));
+    const samples = SAMPLE_TITLES.filter((a) => !hiddenSamples.includes(a.id));
     const titles = new Map<string, string>([...samples.map((a) => [a.id, a.title] as const), ...library.map((x) => [x.id, x.title] as const)]);
     const cur = Object.entries(progress)
       .filter(([id, p]) => titles.has(id) && p.pct > 0 && p.pct < 1)
@@ -81,13 +81,14 @@ export function LibraryLine({ saved }: { saved: Saved | null }) {
     return (
       <p className="lib-line">
         <span>No link handy? Try</span>
-        {samples.map((a) => (
+        {samples.slice(0, 3).map((a) => (
           <Link key={a.id} href={`/read/${a.id}`} className="lib-sample" data-tip={a.title} data-tip-hint={`${a.author}, ${a.published}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={SAMPLE_SHELF[a.id]?.cover} alt="" draggable={false} />
-            {a.author?.split(" ").slice(-1)[0]}
+            {a.byline}
           </Link>
         ))}
+        <Link href="/library" className="lib-line-go">All examples <ArrowRight size={13} /></Link>
       </p>
     );
   }

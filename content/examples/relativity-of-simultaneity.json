@@ -1,0 +1,184 @@
+{
+ "id": "relativity-of-simultaneity",
+ "title": "The Relativity of Simultaneity",
+ "published": "1916",
+ "dek": "Two flashes of lightning, a moving train, and the problem of agreeing on what's happening now.",
+ "source": "Project Gutenberg, Relativity, trans. Robert W. Lawson (public domain; sections VIII–IX, footnotes omitted)",
+ "sourceUrl": "https://www.gutenberg.org/cache/epub/5001/pg5001-images.html#ch8",
+ "author": "Albert Einstein",
+ "blocks": [
+  {
+   "id": "h1",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "On the Idea of Time in Physics"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Lightning has struck the rails on our railway embankment at two places A and B far distant from each other. I make the additional assertion that these two lightning flashes occurred simultaneously. If I ask you whether there is sense in this statement, you will answer my question with a decided “Yes.” But if I now approach you with the request to explain to me the sense of the statement more precisely, you find after some consideration that the answer to this question is not so easy as it appears at first sight."
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "After some time perhaps the following answer would occur to you: “The significance of the statement is clear in itself and needs no further explanation; of course it would require some consideration if I were to be commissioned to determine by observations whether in the actual case the two events took place simultaneously or not.” I cannot be satisfied with this answer for the following reason. Supposing that as a result of ingenious considerations an able meteorologist were to discover that the lightning must always strike the places A and B simultaneously, then we should be faced with the task of testing whether or not this theoretical result is in accordance with the reality. We encounter the same difficulty with all physical statements in which the conception “simultaneous” plays a part. The concept does not exist for the physicist until he has the possibility of discovering whether or not it is fulfilled in an actual case. We thus require a definition of simultaneity such that this definition supplies us with the method by means of which, in the present case, he can decide by experiment whether or not both the lightning strokes occurred simultaneously. As long as this requirement is not satisfied, I allow myself to be deceived as a physicist (and of course the same applies if I am not a physicist), when I imagine that I am able to attach a meaning to the statement of simultaneity. (I would ask the reader not to proceed farther until he is fully convinced on this point.)"
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "After thinking the matter over for some time you then offer the following suggestion with which to test simultaneity. By measuring along the rails, the connecting line AB should be measured up and an observer placed at the mid-point M of the distance AB. This observer should be supplied with an arrangement (e.g. two mirrors inclined at 90 °) which allows him visually to observe both places A and B at the same time. If the observer perceives the two flashes of lightning at the same time, then they are simultaneous."
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "I am very pleased with this suggestion, but for all that I cannot regard the matter as quite settled, because I feel constrained to raise the following objection:"
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "“Your definition would certainly be right, if only I knew that the light by means of which the observer at M perceives the lightning flashes travels along the length A → M with the same velocity as along the length B → M. But an examination of this supposition would only be possible if we already had at our disposal the means of measuring time. It would thus appear as though we were moving here in a logical circle.”"
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "After further consideration you cast a somewhat disdainful glance at me—and rightly so—and you declare:"
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "“I maintain my previous definition nevertheless, because in reality it assumes absolutely nothing about light. There is only one demand to be made of the definition of simultaneity, namely, that in every real case it must supply us with an empirical decision as to whether or not the conception that has to be defined is fulfilled. That my definition satisfies this demand is indisputable. That light requires the same time to traverse the path A → M as for the path B → M is in reality neither a supposition nor a hypothesis about the physical nature of light, but a stipulation which I can make of my own freewill in order to arrive at a definition of simultaneity.”"
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It is clear that this definition can be used to give an exact meaning not only to two events, but to as many events as we care to choose, and independently of the positions of the scenes of the events with respect to the body of reference (here the railway embankment). We are thus led also to a definition of “time” in physics. For this purpose we suppose that clocks of identical construction are placed at the points A, B, and C of the railway line (co-ordinate system) and that they are set in such a manner that the positions of their pointers are simultaneously (in the above sense) the same. Under these conditions we understand by the “time” of an event the reading (position of the hands) of that one of these clocks which is in the immediate vicinity (in space) of the event. In this manner a time-value is associated with every event which is essentially capable of observation."
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This stipulation contains a further physical hypothesis, the validity of which will hardly be doubted without empirical evidence to the contrary. It has been assumed that all these clocks go at the same rate if they are of identical construction. Stated more exactly: When two clocks arranged at rest in different places of a reference-body are set in such a manner that a particular position of the pointers of the one clock is simultaneous (in the above sense) with the same position, of the pointers of the other clock, then identical “settings” are always simultaneous (in the sense of the above definition)."
+    }
+   ]
+  },
+  {
+   "id": "h2",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "The Relativity of Simultaneity"
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Up to now our considerations have been referred to a particular body of reference, which we have styled a “railway embankment.” We suppose a very long train travelling along the rails with the constant velocity v and in the direction indicated in Fig. 1. People travelling in this train will with a vantage view the train as a rigid reference-body (co-ordinate system); they regard all events in reference to the train. Then every event which takes place along the line also takes place at a particular point of the train. Also the definition of simultaneity can be given relative to the train in exactly the same way as with respect to the embankment. As a natural consequence, however, the following question arises:"
+    }
+   ]
+  },
+  {
+   "id": "train-figure",
+   "type": "figure",
+   "src": "/library/figures/einstein-train.png",
+   "alt": "Two lightning locations on the embankment and the midpoint of the moving train.",
+   "runs": [
+    {
+     "text": "Figure 1. The train and the railway embankment."
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Are two events (e.g. the two strokes of lightning A and B) which are simultaneous with reference to the railway embankment also simultaneous relatively to the train? We shall show directly that the answer must be in the negative."
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "When we say that the lightning strokes A and B are simultaneous with respect to the embankment, we mean: the rays of light emitted at the places A and B, where the lightning occurs, meet each other at the mid-point M of the length A → B of the embankment. But the events A and B also correspond to positions A and B on the train. Let M′ be the mid-point of the distance A → B on the travelling train. Just when the flashes of lightning occur, this point M′ naturally coincides with the point M but it moves towards the right in the diagram with the velocity v of the train. If an observer sitting in the position M′ in the train did not possess this velocity, then he would remain permanently at M, and the light rays emitted by the flashes of lightning A and B would reach him simultaneously, i.e. they would meet just where he is situated. Now in reality (considered with reference to the railway embankment) he is hastening towards the beam of light coming from B, whilst he is riding on ahead of the beam of light coming from A. Hence the observer will see the beam of light emitted from B earlier than he will see that emitted from A. Observers who take the railway train as their reference-body must therefore come to the conclusion that the lightning flash B took place earlier than the lightning flash A. We thus arrive at the important result:"
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Events which are simultaneous with reference to the embankment are not simultaneous with respect to the train, and vice versa (relativity of simultaneity). Every reference-body (co-ordinate system) has its own particular time; unless we are told the reference-body to which the statement of time refers, there is no meaning in a statement of the time of an event."
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Now before the advent of the theory of relativity it had always tacitly been assumed in physics that the statement of time had an absolute significance, i.e. that it is independent of the state of motion of the body of reference. But we have just seen that this assumption is incompatible with the most natural definition of simultaneity; if we discard this assumption, then the conflict between the law of the propagation of light in vacuo and the principle of relativity (developed in Section VII) disappears."
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We were led to that conflict by the considerations of Section VI, which are now no longer tenable. In that section we concluded that the man in the carriage, who traverses the distance w per second relative to the carriage, traverses the same distance also with respect to the embankment in each second of time. But, according to the foregoing considerations, the time required by a particular occurrence with respect to the carriage must not be considered equal to the duration of the same occurrence as judged from the embankment (as reference-body). Hence it cannot be contended that the man in walking travels the distance w relative to the railway line in a time which is equal to one second as judged from the embankment."
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Moreover, the considerations of Section VI are based on yet a second assumption, which, in the light of a strict consideration, appears to be arbitrary, although it was always tacitly made even before the introduction of the theory of relativity."
+    }
+   ]
+  }
+ ]
+}

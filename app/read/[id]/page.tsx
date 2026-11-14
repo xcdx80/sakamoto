@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Reader } from "@/components/reader/Reader";
-import { sampleById } from "@/lib/samples";
+import { sampleById } from "@/lib/sample-articles";
+import { readSampleGlosses } from "@/lib/sample-reader";
 import { OG_IMAGE } from "@/lib/brand";
 
 type Props = { params: Promise<{ id: string }> };
@@ -26,5 +27,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ReadPage({ params }: Props) {
   const { id } = await params;
-  return <Reader id={id} initial={sampleById(id)} />;
+  const article = sampleById(id);
+  const exampleGlosses = article ? await readSampleGlosses(id).catch(() => []) : [];
+  return <Reader key={id} id={id} initial={article} exampleGlosses={exampleGlosses} />;
 }

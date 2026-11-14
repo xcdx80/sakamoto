@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TopBar } from "@/components/ui/TopBar";
-import { wordCount, type Article } from "@/lib/article";
+import { type Article } from "@/lib/article";
 import { importFromFile, importFromText, importFromUrl, keep, looksLikeUrl } from "@/lib/import";
 import { hideSample, useLibraryPrefs } from "@/lib/library-prefs";
 import { normalizeUrl } from "@/lib/links";
@@ -219,9 +219,9 @@ export function Landing() {
     const samples = SAMPLES.filter((a) => !hiddenSamples.includes(a.id)).map((a) => ({
       id: a.id,
       title: a.title,
-      byline: [a.author?.split(" ").slice(-1)[0], a.published].filter(Boolean).join(", "),
+      byline: [a.byline, a.published].filter(Boolean).join(", "),
       dek: a.dek,
-      words: wordCount(a),
+      words: a.words,
       pct: p(a.id),
       glosses: g(a.id),
       sample: true,

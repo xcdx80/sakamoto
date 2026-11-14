@@ -10,7 +10,7 @@ import { Check, Copy, Download, Trash2, X } from "lucide-react";
 import { cmp } from "@/lib/anchor";
 import { undash } from "@/lib/article";
 import { stopGloss } from "@/lib/ask";
-import { useGlosses, useHighlights, useStore, type Gloss, type Highlight, type Turn } from "@/lib/store";
+import { useHighlights, useStore, type Gloss, type Highlight, type Turn } from "@/lib/store";
 import { ACTIONS } from "@/lib/actions";
 import { notesMarkdown, pairsOf } from "@/lib/export";
 import { Answer, Sources } from "./Answer";
@@ -21,17 +21,15 @@ type Entry = { kind: "gloss"; g: Gloss; key: string } | { kind: "hl"; h: Highlig
 
 /** Below this width the notebook covers the margin, so it steps aside when you jump to a passage. */
 const covers = () => window.innerWidth < 1900;
-type Filter = "all" | "q" | "hl";
+export type NotebookFilter = "all" | "q" | "hl";
 
 /** Everything you marked and asked, in reading order, as questions and answers you can scan. */
-export function Notebook() {
-  const { ix } = useReader();
+export function Notebook({ filter, setFilter }: { filter: NotebookFilter; setFilter: (value: NotebookFilter) => void }) {
+  const { ix, glosses, exampleGlosses } = useReader();
   const open = useStore((s) => s.notebookOpen);
   const setUI = useStore((s) => s.setUI);
-  const glosses = useGlosses(ix.article.id);
   const highlights = useHighlights(ix.article.id);
   const [copied, setCopied] = useState(false);
-  const [filter, setFilter] = useState<Filter>("all");
   const [scrolled, setScrolled] = useState(false);
 
   const entries = useMemo(() => {
@@ -53,9 +51,11 @@ export function Notebook() {
   }, [open, setUI]);
 
   const both = glosses.length > 0 && highlights.length > 0;
+  const personalGlosses = glosses.filter((g) => !exampleGlosses.includes(g));
+  const hasPersonalNotes = personalGlosses.length > 0 || highlights.length > 0;
   const shown = entries.filter((e) => !both || filter === "all" || (filter === "q" ? e.kind === "gloss" : e.kind === "hl"));
   const markdown = () =>
-    notesMarkdown({ title: ix.article.title, author: ix.article.author, published: ix.article.published, url: ix.article.sourceUrl }, glosses, highlights, ix);
+    notesMarkdown({ title: ix.article.title, author: ix.article.author, published: ix.article.published, url: ix.article.sourceUrl }, personalGlosses, highlights, ix);
   const summary = [
     glosses.length ? `${glosses.length} question${glosses.length === 1 ? "" : "s"}` : "",
     highlights.length ? `${highlights.length} highlight${highlights.length === 1 ? "" : "s"}` : "",
@@ -89,7 +89,7 @@ export function Notebook() {
           </div>
           <HeadBtn
             label={copied ? "Copied" : "Copy as Markdown"}
-            disabled={!entries.length}
+            disabled={!hasPersonalNotes}
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(markdown());
@@ -102,7 +102,7 @@ export function Notebook() {
           </HeadBtn>
           <HeadBtn
             label="Download Markdown"
-            disabled={!entries.length}
+            disabled={!hasPersonalNotes}
             onClick={() => {
               const blob = new Blob([markdown()], { type: "text/markdown" });
               const a = document.createElement("a");
@@ -163,9 +163,9 @@ export function Notebook() {
               </li>
             ))}
           </ol>
-          <Show when="signed-out">
+          {hasPersonalNotes && <Show when="signed-out">
             <p className="pb-1 pl-[62px] pr-8 pt-5 font-hand text-[22px] leading-[1.05] text-ink-3">
-              These live in this browser only.{" "}
+              Your notes live in this browser only.{" "}
               <SignInButton mode="modal">
                 <button type="button" className="text-[var(--rubric-text)] underline decoration-[var(--rubric-line)] underline-offset-4">
                   Sign in
@@ -173,7 +173,7 @@ export function Notebook() {
               </SignInButton>{" "}
               to keep them on every device.
             </p>
-          </Show>
+          </Show>}
         </div>
       )}
     </motion.aside>
@@ -205,18 +205,19 @@ function ago(t: number) {
   return new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-function Meta({ n, label, at }: { n?: number; label?: string; at: number }) {
+function Meta({ n, label, at }: { n?: number; label?: string; at?: number }) {
   return (
     <span className="flex items-center gap-2 text-[11.5px] leading-none text-ink-3">
       {n !== undefined && <span className="nb-entry-n">¶{n}</span>}
       {label && <span className="nb-tag !text-ink-2">{label}</span>}
-      <span className="nb-tag !text-ink-4">{ago(at)}</span>
+      {at !== undefined && <span className="nb-tag !text-ink-4">{ago(at)}</span>}
     </span>
   );
 }
 
 function GlossEntry({ g }: { g: Gloss }) {
-  const { ix, jumpToBlock } = useReader();
+  const { ix, jumpToBlock, exampleGlosses } = useReader();
+  const isExample = exampleGlosses.some((example) => example.id === g.id);
   const setUI = useStore((s) => s.setUI);
   const removeGloss = useStore((s) => s.removeGloss);
   const archived = !annotationMatchesSource(g, ix.article);
@@ -237,8 +238,8 @@ function GlossEntry({ g }: { g: Gloss }) {
       <button type="button" onClick={go} className="block w-full text-left">
         <Meta
           n={n}
-          label={archived ? (sameSourceRevision(g, ix.article) ? "Saved passage unavailable" : `Earlier source revision ${g.sourceRevision ?? 1}`) : label}
-          at={g.createdAt}
+          label={archived ? (sameSourceRevision(g, ix.article) ? "Saved passage unavailable" : `Earlier source revision ${g.sourceRevision ?? 1}`) : isExample ? "Example question" : label}
+          at={isExample ? undefined : g.createdAt}
         />
         {g.anchor && (
           <span className="mt-2.5 line-clamp-2 font-serif text-[15.5px] italic leading-[1.42] text-ink-3 transition-colors group-hover:text-ink-2">
@@ -256,7 +257,7 @@ function GlossEntry({ g }: { g: Gloss }) {
         ))}
       </div>
 
-      <button
+      {!isExample && <button
         type="button"
         aria-label="Delete this question"
         data-tip="Delete"
@@ -267,7 +268,7 @@ function GlossEntry({ g }: { g: Gloss }) {
         className="absolute right-2.5 top-3.5 grid size-7 place-items-center rounded-full text-ink-4 opacity-0 transition-opacity hover:bg-sunk hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
       >
         <Trash2 size={13} />
-      </button>
+      </button>}
     </article>
   );
 }

@@ -1,16 +1,16 @@
-import chalk from "@/content/on-a-piece-of-chalk.json";
-import thinking from "@/content/on-thinking-for-oneself.json";
-import walden from "@/content/walden-reading.json";
-import type { Article } from "./article";
+import catalogue from "@/content/examples/catalogue.json";
+import type { TopicKey } from "./library";
 
-/** Bundled texts. Public domain, so they ship in full. */
-export const SAMPLES: Article[] = [chalk, thinking, walden].map((a) => ({ ...(a as Article), origin: "sample" as const }));
+type Sample = Omit<(typeof catalogue)[number], "topic"> & { topic: TopicKey };
 
-export const sampleById = (id: string) => SAMPLES.find((a) => a.id === id) ?? null;
+/** The shelf only needs metadata; the reader loads the text on the server. */
+export const SAMPLES = catalogue as Sample[];
+export const isFeaturedSample = (id: string) => SAMPLES.some((article) => article.id === id);
 
-/** Starter questions per sample, where the age of the text is the interesting part. */
-export const SAMPLE_QUESTIONS: Record<string, string[]> = {
-  "on-a-piece-of-chalk": ["What is the core argument, in three sentences?", "What has science learned since 1868?", "Why lecture this to working men?"],
-  "on-thinking-for-oneself": ["What is the core argument, in three sentences?", "Is he against reading?", "How would he see the internet?"],
-  "walden-reading": ["What is the core argument, in three sentences?", "What does he mean by heroic books?", "Is he being elitist?"],
-};
+/** Resolve existing notes and progress even after an example leaves the shelf. */
+export const SAMPLE_TITLES = [
+  ...SAMPLES,
+  { id: "on-a-piece-of-chalk", title: "On a Piece of Chalk", author: "Thomas Henry Huxley" },
+  { id: "on-thinking-for-oneself", title: "On Thinking for Oneself", author: "Arthur Schopenhauer" },
+  { id: "walden-reading", title: "Reading", author: "Henry David Thoreau" },
+];

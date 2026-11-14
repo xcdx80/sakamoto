@@ -1,0 +1,678 @@
+{
+ "id": "newton-on-colour",
+ "title": "On Light and Colour",
+ "published": "1704",
+ "dek": "Newton separates sunlight with a prism, puts it back together, and asks what the glass actually changes.",
+ "source": "Project Gutenberg, Opticks, fourth edition (public domain; book I, part II, selected propositions, figures omitted)",
+ "sourceUrl": "https://www.gutenberg.org/ebooks/33504",
+ "author": "Isaac Newton",
+ "blocks": [
+  {
+   "id": "h1",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Proposition II: The colour of homogeneous light"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "All homogeneal Light has its proper Colour answering to its Degree of Refrangibility, and that Colour cannot be changed by Reflexions and Refractions.",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In the Experiments of the fourth Proposition of the first Part of this first Book, when I had separated the heterogeneous Rays from one another, the Spectrum "
+    },
+    {
+     "text": "pt",
+     "em": true
+    },
+    {
+     "text": " formed by the separated Rays, did in the Progress from its End "
+    },
+    {
+     "text": "p",
+     "em": true
+    },
+    {
+     "text": ", on which the most refrangible Rays fell, unto its other End "
+    },
+    {
+     "text": "t",
+     "em": true
+    },
+    {
+     "text": ", on which the least refrangible Rays fell, appear tinged with this Series of Colours, violet, indigo, blue, green, yellow, orange, red, together with all their intermediate Degrees in a continual Succession perpetually varying. So that there appeared as many Degrees of Colours, as there were sorts of Rays differing in Refrangibility."
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 5. Now, that these Colours could not be changed by Refraction, I knew by refracting with a Prism sometimes one very little Part of this Light, sometimes another very little Part, as is described in the twelfth Experiment of the first Part of this Book. For by this Refraction the Colour of the Light was never changed in the least. If any Part of the red Light was refracted, it remained totally of the same red Colour as before. No orange, no yellow, no green or blue, no other new Colour was produced by that Refraction. Neither did the Colour any ways change by repeated Refractions, but continued always the same red entirely as at first. The like Constancy and Immutability I found also in the blue, green, and other Colours. So also, if I looked through a Prism upon any Body illuminated with any part of this homogeneal Light, as in the fourteenth Experiment of the first Part of this Book is described; I could not perceive any new Colour generated this way. All Bodies illuminated with compound Light appear through Prisms confused, (as was said above) and tinged with various new Colours, but those illuminated with homogeneal Light appeared through Prisms neither less distinct, nor otherwise colour'd, than when viewed with the naked Eyes. Their Colours were not in the least changed by the Refraction of the interposed Prism. I speak here of a sensible Change of Colour: For the Light which I here call homogeneal, being not absolutely homogeneal, there ought to arise some little Change of Colour from its Heterogeneity. But, if that Heterogeneity was so little as it might be made by the said Experiments of the fourth Proposition, that Change was not sensible, and therefore in Experiments, where Sense is Judge, ought to be accounted none at all."
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 6. And as these Colours were not changeable by Refractions, so neither were they by Reflexions. For all white, grey, red, yellow, green, blue, violet Bodies, as Paper, Ashes, red Lead, Orpiment, Indico Bise, Gold, Silver, Copper, Grass, blue Flowers, Violets, Bubbles of Water tinged with various Colours, Peacock's Feathers, the Tincture of "
+    },
+    {
+     "text": "Lignum Nephriticum",
+     "em": true
+    },
+    {
+     "text": ", and such-like, in red homogeneal Light appeared totally red, in blue Light totally blue, in green Light totally green, and so of other Colours. In the homogeneal Light of any Colour they all appeared totally of that same Colour, with this only Difference, that some of them reflected that Light more strongly, others more faintly. I never yet found any Body, which by reflecting homogeneal Light could sensibly change its Colour."
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "From all which it is manifest, that if the Sun's Light consisted of but one sort of Rays, there would be but one Colour in the whole World, nor would it be possible to produce any new Colour by Reflexions and Refractions, and by consequence that the variety of Colours depends upon the Composition of Light."
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "DEFINITION.",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The homogeneal Light and Rays which appear red, or rather make Objects appear so, I call Rubrifick or Red-making; those which make Objects appear yellow, green, blue, and violet, I call Yellow-making, Green-making, Blue-making, Violet-making, and so of the rest. And if at any time I speak of Light and Rays as coloured or endued with Colours, I would be understood to speak not philosophically and properly, but grossly, and accordingly to such Conceptions as vulgar People in seeing all these Experiments would be apt to frame. For the Rays to speak properly are not coloured. In them there is nothing else than a certain Power and Disposition to stir up a Sensation of this or that Colour. For as Sound in a Bell or musical String, or other sounding Body, is nothing but a trembling Motion, and in the Air nothing but that Motion propagated from the Object, and in the Sensorium 'tis a Sense of that Motion under the Form of Sound; so Colours in the Object are nothing but a Disposition to reflect this or that sort of Rays more copiously than the rest; in the Rays they are nothing but their Dispositions to propagate this or that Motion into the Sensorium, and in the Sensorium they are Sensations of those Motions under the Forms of Colours."
+    }
+   ]
+  },
+  {
+   "id": "h2",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Proposition V: Making white light"
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Whiteness and all grey Colours between white and black, may be compounded of Colours, and the whiteness of the Sun's Light is compounded of all the primary Colours mix'd in a due Proportion.",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The PROOF by Experiments."
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 9. The Sun shining into a dark Chamber through a little round hole in the Window-shut, and his Light being there refracted by a Prism to cast his coloured Image PT [in "
+    },
+    {
+     "text": "Fig.",
+     "em": true
+    },
+    {
+     "text": " 5.] upon the opposite Wall: I held a white Paper V to that image in such manner that it might be illuminated by the colour'd Light reflected from thence, and yet not intercept any part of that Light in its passage from the Prism to the Spectrum. And I found that when the Paper was held nearer to any Colour than to the rest, it appeared of that Colour to which it approached nearest; but when it was equally or almost equally distant from all the Colours, so that it might be equally illuminated by them all it appeared white. And in this last situation of the Paper, if some Colours were intercepted, the Paper lost its white Colour, and appeared of the Colour of the rest of the Light which was not intercepted. So then the Paper was illuminated with Lights of various Colours, namely, red, yellow, green, blue and violet, and every part of the Light retained its proper Colour, until it was incident on the Paper, and became reflected thence to the Eye; so that if it had been either alone (the rest of the Light being intercepted) or if it had abounded most, and been predominant in the Light reflected from the Paper, it would have tinged the Paper with its own Colour; and yet being mixed with the rest of the Colours in a due proportion, it made the Paper look white, and therefore by a Composition with the rest produced that Colour. The several parts of the coloured Light reflected from the Spectrum, whilst they are propagated from thence through the Air, do perpetually retain their proper Colours, because wherever they fall upon the Eyes of any Spectator, they make the several parts of the Spectrum to appear under their proper Colours. They retain therefore their proper Colours when they fall upon the Paper V, and so by the confusion and perfect mixture of those Colours compound the whiteness of the Light reflected from thence."
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 10. Let that Spectrum or solar Image PT [in "
+    },
+    {
+     "text": "Fig.",
+     "em": true
+    },
+    {
+     "text": " 6.] fall now upon the Lens MN above four Inches broad, and about six Feet distant from the Prism ABC and so figured that it may cause the coloured Light which divergeth from the Prism to converge and meet again at its Focus G, about six or eight Feet distant from the Lens, and there to fall perpendicularly upon a white Paper DE. And if you move this Paper to and fro, you will perceive that near the Lens, as at "
+    },
+    {
+     "text": "de",
+     "em": true
+    },
+    {
+     "text": ", the whole solar Image (suppose at "
+    },
+    {
+     "text": "pt",
+     "em": true
+    },
+    {
+     "text": ") will appear upon it intensely coloured after the manner above-explained, and that by receding from the Lens those Colours will perpetually come towards one another, and by mixing more and more dilute one another continually, until at length the Paper come to the Focus G, where by a perfect mixture they will wholly vanish and be converted into whiteness, the whole Light appearing now upon the Paper like a little white Circle. And afterwards by receding farther from the Lens, the Rays which before converged will now cross one another in the Focus G, and diverge from thence, and thereby make the Colours to appear again, but yet in a contrary order; suppose at [Greek: de], where the red "
+    },
+    {
+     "text": "t",
+     "em": true
+    },
+    {
+     "text": " is now above which before was below, and the violet "
+    },
+    {
+     "text": "p",
+     "em": true
+    },
+    {
+     "text": " is below which before was above."
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let us now stop the Paper at the Focus G, where the Light appears totally white and circular, and let us consider its whiteness. I say, that this is composed of the converging Colours. For if any of those Colours be intercepted at the Lens, the whiteness will cease and degenerate into that Colour which ariseth from the composition of the other Colours which are not intercepted. And then if the intercepted Colours be let pass and fall upon that compound Colour, they mix with it, and by their mixture restore the whiteness. So if the violet, blue and green be intercepted, the remaining yellow, orange and red will compound upon the Paper an orange, and then if the intercepted Colours be let pass, they will fall upon this compounded orange, and together with it decompound a white. So also if the red and violet be intercepted, the remaining yellow, green and blue, will compound a green upon the Paper, and then the red and violet being let pass will fall upon this green, and together with it decompound a white. And that in this Composition of white the several Rays do not suffer any Change in their colorific Qualities by acting upon one another, but are only mixed, and by a mixture of their Colours produce white, may farther appear by these Arguments."
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "If the Paper be placed beyond the Focus G, suppose at [Greek: de], and then the red Colour at the Lens be alternately intercepted, and let pass again, the violet Colour on the Paper will not suffer any Change thereby, as it ought to do if the several sorts of Rays acted upon one another in the Focus G, where they cross. Neither will the red upon the Paper be changed by any alternate stopping, and letting pass the violet which crosseth it."
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And if the Paper be placed at the Focus G, and the white round Image at G be viewed through the Prism HIK, and by the Refraction of that Prism be translated to the place "
+    },
+    {
+     "text": "rv",
+     "em": true
+    },
+    {
+     "text": ", and there appear tinged with various Colours, namely, the violet at "
+    },
+    {
+     "text": "v",
+     "em": true
+    },
+    {
+     "text": " and red at "
+    },
+    {
+     "text": "r",
+     "em": true
+    },
+    {
+     "text": ", and others between, and then the red Colours at the Lens be often stopp'd and let pass by turns, the red at "
+    },
+    {
+     "text": "r",
+     "em": true
+    },
+    {
+     "text": " will accordingly disappear, and return as often, but the violet at "
+    },
+    {
+     "text": "v",
+     "em": true
+    },
+    {
+     "text": " will not thereby suffer any Change. And so by stopping and letting pass alternately the blue at the Lens, the blue at "
+    },
+    {
+     "text": "v",
+     "em": true
+    },
+    {
+     "text": " will accordingly disappear and return, without any Change made in the red at "
+    },
+    {
+     "text": "r",
+     "em": true
+    },
+    {
+     "text": ". The red therefore depends on one sort of Rays, and the blue on another sort, which in the Focus G where they are commix'd, do not act on one another. And there is the same Reason of the other Colours."
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "type": "p",
+   "runs": [
+    {
+     "text": "I considered farther, that when the most refrangible Rays P"
+    },
+    {
+     "text": "p",
+     "em": true
+    },
+    {
+     "text": ", and the least refrangible ones T"
+    },
+    {
+     "text": "t",
+     "em": true
+    },
+    {
+     "text": ", are by converging inclined to one another, the Paper, if held very oblique to those Rays in the Focus G, might reflect one sort of them more copiously than the other sort, and by that Means the reflected Light would be tinged in that Focus with the Colour of the predominant Rays, provided those Rays severally retained their Colours, or colorific Qualities in the Composition of White made by them in that Focus. But if they did not retain them in that White, but became all of them severally endued there with a Disposition to strike the Sense with the Perception of White, then they could never lose their Whiteness by such Reflexions. I inclined therefore the Paper to the Rays very obliquely, as in the second Experiment of this second Part of the first Book, that the most refrangible Rays, might be more copiously reflected than the rest, and the Whiteness at Length changed successively into blue, indigo, and violet. Then I inclined it the contrary Way, that the least refrangible Rays might be more copious in the reflected Light than the rest, and the Whiteness turned successively to yellow, orange, and red."
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Lastly, I made an Instrument XY in fashion of a Comb, whose Teeth being in number sixteen, were about an Inch and a half broad, and the Intervals of the Teeth about two Inches wide. Then by interposing successively the Teeth of this Instrument near the Lens, I intercepted Part of the Colours by the interposed Tooth, whilst the rest of them went on through the Interval of the Teeth to the Paper DE, and there painted a round Solar Image. But the Paper I had first placed so, that the Image might appear white as often as the Comb was taken away; and then the Comb being as was said interposed, that Whiteness by reason of the intercepted Part of the Colours at the Lens did always change into the Colour compounded of those Colours which were not intercepted, and that Colour was by the Motion of the Comb perpetually varied so, that in the passing of every Tooth over the Lens all these Colours, red, yellow, green, blue, and purple, did always succeed one another. I caused therefore all the Teeth to pass successively over the Lens, and when the Motion was slow, there appeared a perpetual Succession of the Colours upon the Paper: But if I so much accelerated the Motion, that the Colours by reason of their quick Succession could not be distinguished from one another, the Appearance of the single Colours ceased. There was no red, no yellow, no green, no blue, nor purple to be seen any longer, but from a Confusion of them all there arose one uniform white Colour. Of the Light which now by the Mixture of all the Colours appeared white, there was no Part really white. One Part was red, another yellow, a third green, a fourth blue, a fifth purple, and every Part retains its proper Colour till it strike the Sensorium. If the Impressions follow one another slowly, so that they may be severally perceived, there is made a distinct Sensation of all the Colours one after another in a continual Succession. But if the Impressions follow one another so quickly, that they cannot be severally perceived, there ariseth out of them all one common Sensation, which is neither of this Colour alone nor of that alone, but hath it self indifferently to 'em all, and this is a Sensation of Whiteness. By the Quickness of the Successions, the Impressions of the several Colours are confounded in the Sensorium, and out of that Confusion ariseth a mix'd Sensation. If a burning Coal be nimbly moved round in a Circle with Gyrations continually repeated, the whole Circle will appear like Fire; the reason of which is, that the Sensation of the Coal in the several Places of that Circle remains impress'd on the Sensorium, until the Coal return again to the same Place. And so in a quick Consecution of the Colours the Impression of every Colour remains in the Sensorium, until a Revolution of all the Colours be compleated, and that first Colour return again. The Impressions therefore of all the successive Colours are at once in the Sensorium, and jointly stir up a Sensation of them all; and so it is manifest by this Experiment, that the commix'd Impressions of all the Colours do stir up and beget a Sensation of white, that is, that Whiteness is compounded of all the Colours."
+    }
+   ]
+  },
+  {
+   "id": "p17",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And if the Comb be now taken away, that all the Colours may at once pass from the Lens to the Paper, and be there intermixed, and together reflected thence to the Spectator's Eyes; their Impressions on the Sensorium being now more subtilly and perfectly commixed there, ought much more to stir up a Sensation of Whiteness."
+    }
+   ]
+  },
+  {
+   "id": "p18",
+   "type": "p",
+   "runs": [
+    {
+     "text": "You may instead of the Lens use two Prisms HIK and LMN, which by refracting the coloured Light the contrary Way to that of the first Refraction, may make the diverging Rays converge and meet again in G, as you see represented in the seventh Figure. For where they meet and mix, they will compose a white Light, as when a Lens is used."
+    }
+   ]
+  },
+  {
+   "id": "p19",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 11. Let the Sun's coloured Image PT [in "
+    },
+    {
+     "text": "Fig.",
+     "em": true
+    },
+    {
+     "text": " 8.] fall upon the Wall of a dark Chamber, as in the third Experiment of the first Book, and let the same be viewed through a Prism "
+    },
+    {
+     "text": "abc",
+     "em": true
+    },
+    {
+     "text": ", held parallel to the Prism ABC, by whose Refraction that Image was made, and let it now appear lower than before, suppose in the Place S over-against the red Colour T. And if you go near to the Image PT, the Spectrum S will appear oblong and coloured like the Image PT; but if you recede from it, the Colours of the spectrum S will be contracted more and more, and at length vanish, that Spectrum S becoming perfectly round and white; and if you recede yet farther, the Colours will emerge again, but in a contrary Order. Now that Spectrum S appears white in that Case, when the Rays of several sorts which converge from the several Parts of the Image PT, to the Prism "
+    },
+    {
+     "text": "abc",
+     "em": true
+    },
+    {
+     "text": ", are so refracted unequally by it, that in their Passage from the Prism to the Eye they may diverge from one and the same Point of the Spectrum S, and so fall afterwards upon one and the same Point in the bottom of the Eye, and there be mingled."
+    }
+   ]
+  },
+  {
+   "id": "p20",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And farther, if the Comb be here made use of, by whose Teeth the Colours at the Image PT may be successively intercepted; the Spectrum S, when the Comb is moved slowly, will be perpetually tinged with successive Colours: But when by accelerating the Motion of the Comb, the Succession of the Colours is so quick that they cannot be severally seen, that Spectrum S, by a confused and mix'd Sensation of them all, will appear white."
+    }
+   ]
+  },
+  {
+   "id": "p21",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 12. The Sun shining through a large Prism ABC [in "
+    },
+    {
+     "text": "Fig.",
+     "em": true
+    },
+    {
+     "text": " 9.] upon a Comb XY, placed immediately behind the Prism, his Light which passed through the Interstices of the Teeth fell upon a white Paper DE. The Breadths of the Teeth were equal to their Interstices, and seven Teeth together with their Interstices took up an Inch in Breadth. Now, when the Paper was about two or three Inches distant from the Comb, the Light which passed through its several Interstices painted so many Ranges of Colours, "
+    },
+    {
+     "text": "kl",
+     "em": true
+    },
+    {
+     "text": ", "
+    },
+    {
+     "text": "mn",
+     "em": true
+    },
+    {
+     "text": ", "
+    },
+    {
+     "text": "op",
+     "em": true
+    },
+    {
+     "text": ", "
+    },
+    {
+     "text": "qr",
+     "em": true
+    },
+    {
+     "text": ", &c. which were parallel to one another, and contiguous, and without any Mixture of white. And these Ranges of Colours, if the Comb was moved continually up and down with a reciprocal Motion, ascended and descended in the Paper, and when the Motion of the Comb was so quick, that the Colours could not be distinguished from one another, the whole Paper by their Confusion and Mixture in the Sensorium appeared white."
+    }
+   ]
+  },
+  {
+   "id": "p22",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let the Comb now rest, and let the Paper be removed farther from the Prism, and the several Ranges of Colours will be dilated and expanded into one another more and more, and by mixing their Colours will dilute one another, and at length, when the distance of the Paper from the Comb is about a Foot, or a little more (suppose in the Place 2D 2E) they will so far dilute one another, as to become white."
+    }
+   ]
+  },
+  {
+   "id": "p23",
+   "type": "p",
+   "runs": [
+    {
+     "text": "With any Obstacle, let all the Light be now stopp'd which passes through any one Interval of the Teeth, so that the Range of Colours which comes from thence may be taken away, and you will see the Light of the rest of the Ranges to be expanded into the Place of the Range taken away, and there to be coloured. Let the intercepted Range pass on as before, and its Colours falling upon the Colours of the other Ranges, and mixing with them, will restore the Whiteness."
+    }
+   ]
+  },
+  {
+   "id": "p24",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Let the Paper 2D 2E be now very much inclined to the Rays, so that the most refrangible Rays may be more copiously reflected than the rest, and the white Colour of the Paper through the Excess of those Rays will be changed into blue and violet. Let the Paper be as much inclined the contrary way, that the least refrangible Rays may be now more copiously reflected than the rest, and by their Excess the Whiteness will be changed into yellow and red. The several Rays therefore in that white Light do retain their colorific Qualities, by which those of any sort, whenever they become more copious than the rest, do by their Excess and Predominance cause their proper Colour to appear."
+    }
+   ]
+  },
+  {
+   "id": "p25",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And by the same way of arguing, applied to the third Experiment of this second Part of the first Book, it may be concluded, that the white Colour of all refracted Light at its very first Emergence, where it appears as white as before its Incidence, is compounded of various Colours."
+    }
+   ]
+  },
+  {
+   "id": "p26",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 13. In the foregoing Experiment the several Intervals of the Teeth of the Comb do the Office of so many Prisms, every Interval producing the Phænomenon of one Prism. Whence instead of those Intervals using several Prisms, I try'd to compound Whiteness by mixing their Colours, and did it by using only three Prisms, as also by using only two as follows. Let two Prisms ABC and "
+    },
+    {
+     "text": "abc",
+     "em": true
+    },
+    {
+     "text": ", [in "
+    },
+    {
+     "text": "Fig.",
+     "em": true
+    },
+    {
+     "text": " 10.] whose refracting Angles B and "
+    },
+    {
+     "text": "b",
+     "em": true
+    },
+    {
+     "text": " are equal, be so placed parallel to one another, that the refracting Angle B of the one may touch the Angle "
+    },
+    {
+     "text": "c",
+     "em": true
+    },
+    {
+     "text": " at the Base of the other, and their Planes CB and "
+    },
+    {
+     "text": "cb",
+     "em": true
+    },
+    {
+     "text": ", at which the Rays emerge, may lie in Directum. Then let the Light trajected through them fall upon the Paper MN, distant about 8 or 12 Inches from the Prisms. And the Colours generated by the interior Limits B and "
+    },
+    {
+     "text": "c",
+     "em": true
+    },
+    {
+     "text": " of the two Prisms, will be mingled at PT, and there compound white. For if either Prism be taken away, the Colours made by the other will appear in that Place PT, and when the Prism is restored to its Place again, so that its Colours may there fall upon the Colours of the other, the Mixture of them both will restore the Whiteness."
+    }
+   ]
+  },
+  {
+   "id": "p27",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This Experiment succeeds also, as I have tried, when the Angle "
+    },
+    {
+     "text": "b",
+     "em": true
+    },
+    {
+     "text": " of the lower Prism, is a little greater than the Angle B of the upper, and between the interior Angles B and "
+    },
+    {
+     "text": "c",
+     "em": true
+    },
+    {
+     "text": ", there intercedes some Space B"
+    },
+    {
+     "text": "c",
+     "em": true
+    },
+    {
+     "text": ", as is represented in the Figure, and the refracting Planes BC and "
+    },
+    {
+     "text": "bc",
+     "em": true
+    },
+    {
+     "text": ", are neither in Directum, nor parallel to one another. For there is nothing more requisite to the Success of this Experiment, than that the Rays of all sorts may be uniformly mixed upon the Paper in the Place PT. If the most refrangible Rays coming from the superior Prism take up all the Space from M to P, the Rays of the same sort which come from the inferior Prism ought to begin at P, and take up all the rest of the Space from thence towards N. If the least refrangible Rays coming from the superior Prism take up the Space MT, the Rays of the same kind which come from the other Prism ought to begin at T, and take up the remaining Space TN. If one sort of the Rays which have intermediate Degrees of Refrangibility, and come from the superior Prism be extended through the Space MQ, and another sort of those Rays through the Space MR, and a third sort of them through the Space MS, the same sorts of Rays coming from the lower Prism, ought to illuminate the remaining Spaces QN, RN, SN, respectively. And the same is to be understood of all the other sorts of Rays. For thus the Rays of every sort will be scattered uniformly and evenly through the whole Space MN, and so being every where mix'd in the same Proportion, they must every where produce the same Colour. And therefore, since by this Mixture they produce white in the Exterior Spaces MP and TN, they must also produce white in the Interior Space PT. This is the reason of the Composition by which Whiteness was produced in this Experiment, and by what other way soever I made the like Composition, the Result was Whiteness."
+    }
+   ]
+  },
+  {
+   "id": "p28",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Lastly, If with the Teeth of a Comb of a due Size, the coloured Lights of the two Prisms which fall upon the Space PT be alternately intercepted, that Space PT, when the Motion of the Comb is slow, will always appear coloured, but by accelerating the Motion of the Comb so much that the successive Colours cannot be distinguished from one another, it will appear white."
+    }
+   ]
+  },
+  {
+   "id": "p29",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 14. Hitherto I have produced Whiteness by mixing the Colours of Prisms. If now the Colours of natural Bodies are to be mingled, let Water a little thicken'd with Soap be agitated to raise a Froth, and after that Froth has stood a little, there will appear to one that shall view it intently various Colours every where in the Surfaces of the several Bubbles; but to one that shall go so far off, that he cannot distinguish the Colours from one another, the whole Froth will grow white with a perfect Whiteness."
+    }
+   ]
+  },
+  {
+   "id": "p30",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Exper.",
+     "em": true
+    },
+    {
+     "text": " 15. Lastly, In attempting to compound a white, by mixing the coloured Powders which Painters use, I consider'd that all colour'd Powders do suppress and stop in them a very considerable Part of the Light by which they are illuminated. For they become colour'd by reflecting the Light of their own Colours more copiously, and that of all other Colours more sparingly, and yet they do not reflect the Light of their own Colours so copiously as white Bodies do. If red Lead, for instance, and a white Paper, be placed in the red Light of the colour'd Spectrum made in a dark Chamber by the Refraction of a Prism, as is described in the third Experiment of the first Part of this Book; the Paper will appear more lucid than the red Lead, and therefore reflects the red-making Rays more copiously than red Lead doth. And if they be held in the Light of any other Colour, the Light reflected by the Paper will exceed the Light reflected by the red Lead in a much greater Proportion. And the like happens in Powders of other Colours. And therefore by mixing such Powders, we are not to expect a strong and full White, such as is that of Paper, but some dusky obscure one, such as might arise from a Mixture of Light and Darkness, or from white and black, that is, a grey, or dun, or russet brown, such as are the Colours of a Man's Nail, of a Mouse, of Ashes, of ordinary Stones, of Mortar, of Dust and Dirt in High-ways, and the like. And such a dark white I have often produced by mixing colour'd Powders. For thus one Part of red Lead, and five Parts of "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ", composed a dun Colour like that of a Mouse. For these two Colours were severally so compounded of others, that in both together were a Mixture of all Colours; and there was less red Lead used than "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ", because of the Fulness of its Colour. Again, one Part of red Lead, and four Parts of blue Bise, composed a dun Colour verging a little to purple, and by adding to this a certain Mixture of Orpiment and "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": " in a due Proportion, the Mixture lost its purple Tincture, and became perfectly dun. But the Experiment succeeded best without Minium thus. To Orpiment I added by little and little a certain full bright purple, which Painters use, until the Orpiment ceased to be yellow, and became of a pale red. Then I diluted that red by adding a little "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ", and a little more blue Bise than "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ", until it became of such a grey or pale white, as verged to no one of the Colours more than to another. For thus it became of a Colour equal in Whiteness to that of Ashes, or of Wood newly cut, or of a Man's Skin. The Orpiment reflected more Light than did any other of the Powders, and therefore conduced more to the Whiteness of the compounded Colour than they. To assign the Proportions accurately may be difficult, by reason of the different Goodness of Powders of the same kind. Accordingly, as the Colour of any Powder is more or less full and luminous, it ought to be used in a less or greater Proportion."
+    }
+   ]
+  },
+  {
+   "id": "p31",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Now, considering that these grey and dun Colours may be also produced by mixing Whites and Blacks, and by consequence differ from perfect Whites, not in Species of Colours, but only in degree of Luminousness, it is manifest that there is nothing more requisite to make them perfectly white than to increase their Light sufficiently; and, on the contrary, if by increasing their Light they can be brought to perfect Whiteness, it will thence also follow, that they are of the same Species of Colour with the best Whites, and differ from them only in the Quantity of Light. And this I tried as follows. I took the third of the above-mention'd grey Mixtures, (that which was compounded of Orpiment, Purple, Bise, and "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ") and rubbed it thickly upon the Floor of my Chamber, where the Sun shone upon it through the opened Casement; and by it, in the shadow, I laid a Piece of white Paper of the same Bigness. Then going from them to the distance of 12 or 18 Feet, so that I could not discern the Unevenness of the Surface of the Powder, nor the little Shadows let fall from the gritty Particles thereof; the Powder appeared intensely white, so as to transcend even the Paper it self in Whiteness, especially if the Paper were a little shaded from the Light of the Clouds, and then the Paper compared with the Powder appeared of such a grey Colour as the Powder had done before. But by laying the Paper where the Sun shines through the Glass of the Window, or by shutting the Window that the Sun might shine through the Glass upon the Powder, and by such other fit Means of increasing or decreasing the Lights wherewith the Powder and Paper were illuminated, the Light wherewith the Powder is illuminated may be made stronger in such a due Proportion than the Light wherewith the Paper is illuminated, that they shall both appear exactly alike in Whiteness. For when I was trying this, a Friend coming to visit me, I stopp'd him at the Door, and before I told him what the Colours were, or what I was doing; I asked him, Which of the two Whites were the best, and wherein they differed? And after he had at that distance viewed them well, he answer'd, that they were both good Whites, and that he could not say which was best, nor wherein their Colours differed. Now, if you consider, that this White of the Powder in the Sun-shine was compounded of the Colours which the component Powders (Orpiment, Purple, Bise, and "
+    },
+    {
+     "text": "Viride Æris",
+     "em": true
+    },
+    {
+     "text": ") have in the same Sun-shine, you must acknowledge by this Experiment, as well as by the former, that perfect Whiteness may be compounded of Colours."
+    }
+   ]
+  },
+  {
+   "id": "p32",
+   "type": "p",
+   "runs": [
+    {
+     "text": "From what has been said it is also evident, that the Whiteness of the Sun's Light is compounded of all the Colours wherewith the several sorts of Rays whereof that Light consists, when by their several Refrangibilities they are separated from one another, do tinge Paper or any other white Body whereon they fall. For those Colours (by "
+    },
+    {
+     "text": "Prop.",
+     "em": true
+    },
+    {
+     "text": " II. "
+    },
+    {
+     "text": "Part",
+     "em": true
+    },
+    {
+     "text": " 2.) are unchangeable, and whenever all those Rays with those their Colours are mix'd again, they reproduce the same white Light as before."
+    }
+   ]
+  }
+ ]
+}

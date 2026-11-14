@@ -5,7 +5,7 @@ import { useMemo, type ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
 import { tidyTitle } from "@/lib/article";
 import { DAILY, keepInRotation, retire, todaysReview } from "@/lib/review";
-import { SAMPLES } from "@/lib/samples";
+import { SAMPLE_TITLES } from "@/lib/samples";
 import { useStore } from "@/lib/store";
 import { Desk, DeskLink } from "./Desk";
 
@@ -23,7 +23,7 @@ export function DailyHighlight({ foot }: { foot?: ReactNode }) {
 
   const titleOf = useMemo(() => {
     const m = new Map<string, { title: string; author?: string }>();
-    for (const a of SAMPLES) m.set(a.id, { title: a.title, author: a.author });
+    for (const a of SAMPLE_TITLES) m.set(a.id, { title: a.title, author: a.author });
     for (const x of library) m.set(x.id, { title: x.title, author: x.author });
     return m;
   }, [library]);

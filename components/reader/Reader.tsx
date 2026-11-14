@@ -8,11 +8,12 @@ import { readerMarkdownBlocks } from "@/lib/reader-markdown";
 import { blockEl, selectBlock, spanIn } from "@/lib/anchor";
 import { contentTypeOf, displayArticle, isHeading, readingMinutes, titleClass, type Article } from "@/lib/article";
 import { ARTICLE_QUESTIONS } from "@/lib/actions";
-import { SAMPLE_QUESTIONS } from "@/lib/samples";
+import { isFeaturedSample } from "@/lib/samples";
+import { useSampleBrief } from "@/lib/sample-brief-client";
 import { fetchBrief } from "@/lib/ask";
 import { indexArticle } from "@/lib/doc";
 import { fetchText } from "@/lib/sync";
-import { loadDoc, useGlosses, useHighlights, useStore, type Anchor } from "@/lib/store";
+import { loadDoc, useGlosses, useHighlights, useStore, type Anchor, type Gloss } from "@/lib/store";
 import { applySettings } from "@/lib/settings";
 import { motion } from "motion/react";
 import { Scribble } from "@/components/motion/Ink";
@@ -28,7 +29,7 @@ import { Lens, type OpenHighlight } from "./Lens";
 import { ListenBar } from "./Listen";
 import { SignInNudge } from "@/components/account/SignInNudge";
 import { Margin } from "./Margin";
-import { Notebook } from "./Notebook";
+import { Notebook, type NotebookFilter } from "./Notebook";
 import { Peek, Shortcuts, Toast } from "./Overlays";
 import { Rail } from "./Rail";
 import { LinkedDocuments } from "./LinkedDocuments";
@@ -37,7 +38,7 @@ import { TopBar } from "./TopBar";
 import { ThreadReading } from "./ThreadReading";
 import { SourceText } from "./SourceText";
 
-export function Reader({ id, initial }: { id: string; initial: Article | null }) {
+export function Reader({ id, initial, exampleGlosses }: { id: string; initial: Article | null; exampleGlosses: Gloss[] }) {
   const [article, setArticle] = useState<Article | null>(initial);
   const [missing, setMissing] = useState(false);
   const hydrate = useStore((s) => s.hydrate);
@@ -132,13 +133,13 @@ export function Reader({ id, initial }: { id: string; initial: Article | null })
         </div>
       </main>
     );
-  return <ReaderInner article={shown} />;
+  return <ReaderInner article={shown} exampleGlosses={exampleGlosses} />;
 }
 
 const GUTTER_WIDE = 64;
 const GUTTER_MID = 52;
 
-function ReaderInner({ article }: { article: Article }) {
+function ReaderInner({ article, exampleGlosses }: { article: Article; exampleGlosses: Gloss[] }) {
   const ix = useMemo(() => indexArticle(article), [article]);
   const articleId = article.id;
   const markdown = useMemo(() => readerMarkdownBlocks(article.blocks), [article.blocks]);
@@ -148,10 +149,12 @@ function ReaderInner({ article }: { article: Article }) {
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [pastTitle, setPastTitle] = useState(false);
+  const [notebookFilter, setNotebookFilter] = useState<NotebookFilter>("all");
   const [openHl, setOpenHl] = useState<OpenHighlight | null>(null);
   const [toast, setToast] = useState<null | { kind: "resume"; n: number } | { kind: "hint" }>(null);
 
-  const allGlosses = useGlosses(articleId);
+  const personalGlosses = useGlosses(articleId);
+  const allGlosses = useMemo(() => [...exampleGlosses, ...personalGlosses], [exampleGlosses, personalGlosses]);
   const allHighlights = useHighlights(articleId);
   const glosses = useMemo(() => allGlosses.filter((x) => annotationMatchesSource(x, article)), [allGlosses, article]);
   const highlights = useMemo(() => allHighlights.filter((x) => annotationMatchesSource(x, article)), [allHighlights, article]);
@@ -179,6 +182,15 @@ function ReaderInner({ article }: { article: Article }) {
     setUI({ activeGloss: null, hoverGloss: null, activeHighlight: null, pending: null, cursor: null, notebookOpen: false });
   }, [articleId, setUI]);
 
+  const isExample = article.origin === "sample" && isFeaturedSample(articleId);
+  const { brief: exampleBrief, load: loadExampleBrief } = useSampleBrief(articleId);
+  const savedBrief = useStore((s) => s.briefs[articleId]);
+  const brief = isExample ? exampleBrief : savedBrief && sameSourceRevision(savedBrief, article) ? savedBrief : undefined;
+  const summarize = useCallback(() => {
+    setUI({ briefOpen: true });
+    void (isExample ? loadExampleBrief() : fetchBrief(ix));
+  }, [isExample, ix, loadExampleBrief, setUI]);
+
   /* ---------------- navigation ---------------- */
 
   const jumpToBlock = useCallback((blockId: string, opts?: { flash?: boolean }) => {
@@ -197,6 +209,10 @@ function ReaderInner({ article }: { article: Article }) {
   const api = useMemo<ReaderApi>(
     () => ({
       ix,
+      brief,
+      summarize,
+      glosses: allGlosses,
+      exampleGlosses,
       jumpToBlock,
       jumpTo: (n, opts) => {
         const id = ix.byNumber.get(n);
@@ -211,7 +227,7 @@ function ReaderInner({ article }: { article: Article }) {
         peekTimer.current = setTimeout(() => setPeekState({ n, rect }), 220);
       },
     }),
-    [ix, jumpToBlock],
+    [ix, brief, summarize, allGlosses, exampleGlosses, jumpToBlock],
   );
 
   /* ---------------- marks per block ---------------- */
@@ -420,7 +436,7 @@ function ReaderInner({ article }: { article: Article }) {
   useEffect(() => {
     const paraIds = article.blocks.filter((b) => ix.numbers.has(b.id)).map((b) => b.id);
     const orderedGlosses = () =>
-      [...(useStore.getState().glosses[articleId] ?? [])].sort((a, b) => {
+      [...glosses].sort((a, b) => {
         const pa = ix.order.get(a.anchor?.start.b ?? a.at ?? "") ?? 0;
         const pb = ix.order.get(b.anchor?.start.b ?? b.at ?? "") ?? 0;
         return pa - pb || (a.anchor?.start.o ?? 0) - (b.anchor?.start.o ?? 0);
@@ -474,9 +490,8 @@ function ReaderInner({ article }: { article: Article }) {
           break;
         case "b":
         case "B": {
-          const b = st.briefs[articleId];
-          if (!b || b.status === "error") fetchBrief(ix);
-          else setUI({ briefOpen: !st.briefOpen });
+          if (!brief || brief.status === "error") summarize();
+          else if (brief.status === "ready") setUI({ briefOpen: !st.briefOpen });
           if (window.scrollY > 400) window.scrollTo({ top: 0, behavior: "smooth" });
           break;
         }
@@ -511,7 +526,7 @@ function ReaderInner({ article }: { article: Article }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [article.blocks, articleId, ix, jumpToBlock, setUI]);
+  }, [article.blocks, brief, glosses, ix, jumpToBlock, setUI, summarize]);
 
   /* ---------------- layout ---------------- */
 
@@ -577,6 +592,11 @@ function ReaderInner({ article }: { article: Article }) {
                 </div>
                 <div className="focus-hide rise" style={{ animationDelay: "420ms" }}>
                   <Brief compact />
+                  {exampleGlosses.length > 0 && (
+                    <button type="button" className="reader-utility-pill ml-2 mt-4" onClick={() => { setNotebookFilter("q"); setUI({ notebookOpen: true }); }}>
+                      View {exampleGlosses.length} example questions
+                    </button>
+                  )}
                 </div>
               </header>
 
@@ -623,7 +643,7 @@ function ReaderInner({ article }: { article: Article }) {
                 </div>
               </footer>
 
-              <Composer ref={composerRef} currentBlock={askAnchor} suggestions={SAMPLE_QUESTIONS[article.id] ?? ARTICLE_QUESTIONS} />
+              <Composer ref={composerRef} currentBlock={askAnchor} suggestions={ARTICLE_QUESTIONS} />
             </div>
 
             <div className="rg-gutter" aria-hidden />
@@ -643,7 +663,7 @@ function ReaderInner({ article }: { article: Article }) {
         <Lens rootEl={articleEl} openHighlight={openHl} />
         <ListenBar />
         <SignInNudge />
-        <Notebook />
+        <Notebook filter={notebookFilter} setFilter={setNotebookFilter} />
         <Peek peek={peek} />
         <Shortcuts />
         {!wide && <GlossSheet />}
@@ -683,8 +703,7 @@ const EMPTY: Mark[] = [];
 
 /** Under 1080px there is no margin, so the active gloss rises as a sheet. */
 function GlossSheet() {
-  const { ix } = useReader();
-  const glosses = useGlosses(ix.article.id);
+  const { ix, glosses } = useReader();
   const active = useStore((s) => s.activeGloss);
   const notebookOpen = useStore((s) => s.notebookOpen);
   const setUI = useStore((s) => s.setUI);

@@ -1,7 +1,7 @@
 /** Shared library presentation, classification and filtering rules. No external I/O. */
 
 import type { LibraryThreadIndex } from "./library-threads";
-import { contentTypeOf, readingMinutes, tidyTitle, wordCount, type ContentType } from "./article";
+import { contentTypeOf, readingMinutes, tidyTitle, type ContentType } from "./article";
 import { SAMPLE_SHELF } from "./classics";
 import { SAMPLES } from "./samples";
 import type { Highlight, LibraryItem, Progress } from "./store";
@@ -345,8 +345,8 @@ export function toLibraryBooks({ library, progress, highlights, hydrated, hidden
   const savedIds = new Set(library.map((item) => item.id));
   const samples: Book[] = SAMPLES.filter((article) => !savedIds.has(article.id) && !hiddenSamples.includes(article.id) && (ownCount < SAMPLES_UNTIL || read(article.id) > 0)).map((article) => ({
     id: article.id, title: article.title, author: article.author ?? "", year: yearOf(article.published),
-    topic: SAMPLE_SHELF[article.id]?.topic ?? "unsorted", contentType: contentTypeOf(article),
-    minutes: readingMinutes(wordCount(article)), dek: article.dek, tags: [], favorite: false,
+    topic: article.topic, contentType: "article",
+    minutes: readingMinutes(article.words), dek: article.dek, tags: [], favorite: false,
     pct: read(article.id), highlights: marks(article.id), added: 0, cover: SAMPLE_SHELF[article.id]?.cover,
     agent: false, sample: true,
   }));

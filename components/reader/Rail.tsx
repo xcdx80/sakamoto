@@ -1,8 +1,8 @@
 "use client";
 
-import { annotationMatchesSource, sameSourceRevision } from "@/lib/source-revision";
+import { annotationMatchesSource } from "@/lib/source-revision";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useGlosses, useHighlights, useStore } from "@/lib/store";
+import { useHighlights, useStore } from "@/lib/store";
 import { useReader } from "./context";
 
 type Geo = { docTop: number; docH: number; blocks: { id: string; top: number; h: number; heading: boolean; fill: number }[] };
@@ -13,11 +13,9 @@ type Geo = { docTop: number; docH: number; blocks: { id: string; top: number; h:
  * Click or drag anywhere to travel.
  */
 export function Rail({ articleEl }: { articleEl: HTMLElement | null }) {
-  const { ix } = useReader();
-  const glosses = useGlosses(ix.article.id).filter((x) => annotationMatchesSource(x, ix.article));
+  const { ix, brief, glosses: allGlosses } = useReader();
+  const glosses = allGlosses.filter((x) => annotationMatchesSource(x, ix.article));
   const highlights = useHighlights(ix.article.id).filter((x) => annotationMatchesSource(x, ix.article));
-  const savedBrief = useStore((s) => s.briefs[ix.article.id]);
-  const brief = savedBrief && sameSourceRevision(savedBrief, ix.article) ? savedBrief : undefined;
   const size = useStore((s) => s.settings.size);
   const railRef = useRef<HTMLDivElement>(null);
   const [geo, setGeo] = useState<Geo | null>(null);

@@ -105,7 +105,8 @@ function TurnBody({ t }: { t: Turn }) {
 }
 
 export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ gloss, active, hover, entering, mini = false, variant, top, fresh = false, onActivate }, ref) {
-  const { ix, jumpToBlock } = useReader();
+  const { ix, jumpToBlock, exampleGlosses } = useReader();
+  const isExample = exampleGlosses.some((example) => example.id === gloss.id);
   const removeGloss = useStore((s) => s.removeGloss);
   const setUI = useStore((s) => s.setUI);
   const [draft, setDraft] = useState("");
@@ -268,7 +269,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
         <>
           <footer className="mt-3 flex items-center gap-0.5 text-ink-3">
             <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink-4">
-              <Receipt t={last.role === "assistant" ? last : first} />
+              {isExample ? "Example answer" : <Receipt t={last.role === "assistant" ? last : first} />}
             </span>
             {busy ? (
               <IconBtn label="Stop" onClick={() => stopGloss(gloss.id)}>
@@ -276,13 +277,13 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
               </IconBtn>
             ) : (
               <>
-                <IconBtn label="Try again" onClick={() => retry(ix, gloss.id)}>
+                {!isExample && <IconBtn label="Try again" onClick={() => retry(ix, gloss.id)}>
                   <RotateCcw size={14} />
-                </IconBtn>
+                </IconBtn>}
                 <IconBtn label={copied ? "Copied" : "Copy"} onClick={copy}>
                   {copied ? <Check size={14} className="text-good" /> : <Copy size={14} />}
                 </IconBtn>
-                <IconBtn
+                {!isExample && <IconBtn
                   label="Delete"
                   onClick={() => {
                     stopGloss(gloss.id);
@@ -290,11 +291,11 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
                   }}
                 >
                   <Trash2 size={14} />
-                </IconBtn>
+                </IconBtn>}
               </>
             )}
           </footer>
-          <form
+          {!isExample && <form
             className="mt-2.5 flex items-center gap-1.5 rounded-full border border-rule bg-bg pl-3.5 pr-1.5 transition-colors focus-within:border-rule-strong"
             onSubmit={(e) => {
               e.preventDefault();
@@ -326,7 +327,7 @@ export const GlossCard = forwardRef<HTMLElement, Props>(function GlossCard({ glo
             >
               <ArrowUp size={14} strokeWidth={2.4} />
             </button>
-          </form>
+          </form>}
         </>
       )}
     </article>

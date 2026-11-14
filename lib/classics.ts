@@ -1,4 +1,5 @@
 import type { TopicKey } from "./library";
+import { SAMPLES } from "./samples";
 
 /**
  * A first shelf for an empty library: essays people keep coming back to, each
@@ -24,9 +25,7 @@ export const CLASSICS: Classic[] = [
 
 export const classicCover = (c: Classic) => `/library/covers/${c.key}.webp`;
 
-/** The bundled samples, shelved: where each goes, and its cover. */
-export const SAMPLE_SHELF: Record<string, { topic: TopicKey; cover: string }> = {
-  "on-a-piece-of-chalk": { topic: "science", cover: "/library/covers/on-a-piece-of-chalk.webp" },
-  "on-thinking-for-oneself": { topic: "philosophy", cover: "/library/covers/on-thinking-for-oneself.webp" },
-  "walden-reading": { topic: "learning", cover: "/library/covers/walden-reading.webp" },
-};
+/** A cover for each featured reading. Older artwork remains in the landing story. */
+export const SAMPLE_SHELF = Object.fromEntries(SAMPLES.map(({ id, topic }) => [
+  id, { topic, cover: `/library/covers/${id}.webp` },
+])) as Record<string, { topic: TopicKey; cover: string }>;

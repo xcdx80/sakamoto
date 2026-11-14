@@ -1,12 +1,11 @@
 "use client";
 
-import { sameSourceRevision } from "@/lib/source-revision";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ease } from "@/components/motion/tokens";
 import { ArrowRight, ChevronDown, RotateCcw } from "lucide-react";
-import { fetchBrief, openKeyMenu } from "@/lib/ask";
+import { openKeyMenu } from "@/lib/ask";
 import type { DocIndex } from "@/lib/doc";
 import { MODELS, modelOf } from "@/lib/models";
 import { useStore } from "@/lib/store";
@@ -18,9 +17,7 @@ import { fmtCost, useReader } from "./context";
  * what to keep in mind before relying on them, and a map of the text's movements. The map also labels the rail and the top bar.
  */
 export function Brief({ compact = false }: { compact?: boolean }) {
-  const { ix, jumpTo } = useReader();
-  const savedBrief = useStore((s) => s.briefs[ix.article.id]);
-  const brief = savedBrief && sameSourceRevision(savedBrief, ix.article) ? savedBrief : undefined;
+  const { ix, jumpTo, brief, summarize } = useReader();
   const open = useStore((s) => s.briefOpen);
   const setUI = useStore((s) => s.setUI);
   const hydrated = useStore((s) => s.hydrated);
@@ -31,7 +28,7 @@ export function Brief({ compact = false }: { compact?: boolean }) {
     return (
       <button
         type="button"
-        onClick={() => fetchBrief(ix)}
+        onClick={summarize}
         className={compact ? "reader-utility-pill mt-4" : "group mt-6 flex w-full items-center gap-5 rounded-[16px] border border-rule bg-raised/60 py-4 pl-5 pr-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:border-rule-strong hover:bg-raised hover:shadow-card active:scale-[0.995]"}
       >
         <span className="min-w-0 flex-1">
@@ -69,7 +66,7 @@ export function Brief({ compact = false }: { compact?: boolean }) {
             </Show>
           </>
         )}
-        <button type="button" onClick={() => fetchBrief(ix)} className="font-medium text-ink underline decoration-rule-strong underline-offset-4">
+        <button type="button" onClick={summarize} className="font-medium text-ink underline decoration-rule-strong underline-offset-4">
           Try again
         </button>
       </div>
@@ -179,7 +176,7 @@ export function Brief({ compact = false }: { compact?: boolean }) {
               {modelKey ? MODELS[modelOf(modelKey)].label : ""}
               {usage ? ` / ${usage.promptTokens.toLocaleString()} in, ${usage.completionTokens} out / ${fmtCost(usage.costUsd)}` : ""}
             </span>
-            <button type="button" onClick={() => fetchBrief(ix)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 hover:bg-sunk hover:text-ink">
+            <button type="button" onClick={summarize} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 hover:bg-sunk hover:text-ink">
               <RotateCcw size={11} /> Redo
             </button>
           </div>

@@ -1,0 +1,301 @@
+{
+ "id": "feature-visualization",
+ "title": "Feature Visualization",
+ "published": "2017",
+ "dek": "What does a neural network look for when it decides what is in an image?",
+ "source": "Distill (CC BY 4.0; text excerpt, interactive figures omitted)",
+ "sourceUrl": "https://distill.pub/2017/feature-visualization/",
+ "author": "Chris Olah, Alexander Mordvintsev, and Ludwig Schubert",
+ "blocks": [
+  {
+   "id": "h1",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Feature Visualization by Optimization"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Neural networks are, generally speaking, differentiable with respect to their inputs. If we want to find out what kind of input would cause a certain behavior — whether that’s an internal neuron firing or the final output behavior — we can use derivatives to iteratively tweak the input towards that goal."
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "p",
+   "runs": [
+    {
+     "text": "While conceptually simple, there are subtle challenges in getting the optimization to work. We will explore them, as well as common approaches to tackle them in the section ”The Enemy of Feature Visualization″."
+    }
+   ]
+  },
+  {
+   "id": "h2",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Optimization Objectives"
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "type": "p",
+   "runs": [
+    {
+     "text": "What do we want examples of? This is the core question in working with examples, regardless of whether we’re searching through a dataset to find the examples, or optimizing images to create them from scratch. We have a wide variety of options in what we search for:"
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "type": "p",
+   "runs": [
+    {
+     "text": "If we want to understand individual features, we can search for examples where they have high values — either for a neuron at an individual position, or for an entire channel. We used the channel objective to create most of the images in this article."
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "type": "p",
+   "runs": [
+    {
+     "text": "If we want to understand a layer as a whole, we can use the DeepDream objective, searching for images the layer finds “interesting.”"
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "type": "p",
+   "runs": [
+    {
+     "text": "And if we want to create examples of output classes from a classifier, we have two options — optimizing class logits before the softmax or optimizing class probabilities after the softmax. One can see the logits as the evidence for each class, and the probabilities as the likelihood of each class given the evidence. Unfortunately, the easiest way to increase the probability softmax gives to a class is often to make the alternatives unlikely rather than to make the class of interest likely. From our experience, optimizing pre-softmax logits produces images of better visual quality."
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The objectives we’ve mentioned only scratch the surface of possible objectives — there are a lot more that one could try. Of particular note are the objectives used in style transfer, which can teach us about the kinds of style and content a network understands, and objectives used in optimization-based model inversion, which help us understand what information a model keeps and what it throws away. We are only at the beginning of understanding which objectives are interesting, and there is a lot of room for more work in this area."
+    }
+   ]
+  },
+  {
+   "id": "h3",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Why visualize by optimization?"
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Optimization can give us an example input that causes the desired behavior — but why bother with that? Couldn’t we just look through the dataset for examples that cause the desired behavior?"
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "type": "p",
+   "runs": [
+    {
+     "text": "It turns out that optimization approach can be a powerful way to understand what a model is really looking for, because it separates the things causing behavior from things that merely correlate with the causes. For example, consider the following neurons visualized with dataset examples and optimization:"
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Optimization also has the advantage of flexibility. For example, if we want to study how neurons jointly represent information, we can easily ask how a particular example would need to be different for an additional neuron to activate. This flexibility can also be helpful in visualizing how features evolve as the network trains. If we were limited to understanding the model on the fixed examples in our dataset, topics like these ones would be much harder to explore."
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "type": "p",
+   "runs": [
+    {
+     "text": "On the other hand, there are also significant challenges to visualizing features with optimization. In the following sections we’ll examine techniques to get diverse visualizations, understand how neurons interact, and avoid high frequency artifacts."
+    }
+   ]
+  },
+  {
+   "id": "feature-examples",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "See the optimized images and dataset examples in the original article.",
+     "href": "https://distill.pub/2017/feature-visualization/#optimization"
+    }
+   ]
+  },
+  {
+   "id": "h4",
+   "type": "h2",
+   "runs": [
+    {
+     "text": "Diversity"
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Do our examples show us the full picture? When we create examples by optimization, this is something we need to be very careful of. It’s entirely possible for genuine examples to still mislead us by only showing us one “facet” of what a feature represents."
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Dataset examples have a big advantage here. By looking through our dataset, we can find diverse examples. It doesn’t just give us ones activating a neuron intensely: we can look across a whole spectrum of activations to see what activates the neuron to different extents."
+    }
+   ]
+  },
+  {
+   "id": "p14",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In contrast, optimization generally gives us just one extremely positive example — and if we’re creative, a very negative example as well. Is there some way that optimization could also give us this diversity?"
+    }
+   ]
+  },
+  {
+   "id": "h5",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "Achieving Diversity with Optimization"
+    }
+   ]
+  },
+  {
+   "id": "p15",
+   "type": "p",
+   "runs": [
+    {
+     "text": "A given feature of a network may respond to a wide range of inputs. On the class level, for example, a classifier that has been trained to recognize dogs should recognize both closeups of their faces as well as wider profile images — even though those have quite different visual appearances. Early work by Wei et al. attempts to demonstrate this “intra-class” diversity by recording activations over the entire training set, clustering them and optimizing for the cluster centroids, revealing the different facets of a class that were learned."
+    }
+   ]
+  },
+  {
+   "id": "p16",
+   "type": "p",
+   "runs": [
+    {
+     "text": "A different approach by Nguyen, Yosinski, and collaborators was to search through the dataset for diverse examples and use those as starting points for the optimization process. The idea is that this initiates optimization in different facets of the feature so that the resulting example from optimization will demonstrate that facet. In more recent work, they combine visualizing classes with a generative model, which they can sample for diverse examples. Their first approach had limited success, and while the generative model approach works very well — we’ll discuss it more in the section on regularization under learned priors — it can be a bit tricky."
+    }
+   ]
+  },
+  {
+   "id": "p17",
+   "type": "p",
+   "runs": [
+    {
+     "text": "We find there’s a very simple way to achieve diversity: adding a “diversity term” to one’s objective that pushes multiple examples to be different from each other. The diversity term can take a variety of forms, and we don’t have much understanding of their benefits yet. One possibility is to penalize the cosine similarity of different examples. Another is to use ideas from style transfer to force the feature to be displayed in different styles."
+    }
+   ]
+  },
+  {
+   "id": "feature-diversity",
+   "type": "h3",
+   "runs": [
+    {
+     "text": "See the diversity experiments and interactive figures in the original article.",
+     "href": "https://distill.pub/2017/feature-visualization/#diversity"
+    }
+   ]
+  },
+  {
+   "id": "p18",
+   "type": "p",
+   "runs": [
+    {
+     "text": "In lower level neurons, a diversity term can reveal the different facets a feature represents:"
+    }
+   ]
+  },
+  {
+   "id": "p19",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Diverse feature visualizations allow us to more closely pinpoint what activates a neuron, to the degree that we can make, and — by looking at dataset examples — check predictions about what inputs will activate the neuron."
+    }
+   ]
+  },
+  {
+   "id": "p20",
+   "type": "p",
+   "runs": [
+    {
+     "text": "For example, let’s examine this simple optimization result."
+    }
+   ]
+  },
+  {
+   "id": "p21",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Looking at it in isolation one might infer that this neuron activates on the top of dog heads, as the optimization shows both eyes and only downward curved edges. Looking at the optimization with diversity however, we see optimization results which don’t include eyes, and also one which includes upward curved edges. We thus have to broaden our expectation of what this neuron activates on to be mostly about the fur texture. Checking this hypothesis against dataset examples shows that is broadly correct. Note the spoon with a texture and color similar enough to dog fur for the neuron to activate."
+    }
+   ]
+  },
+  {
+   "id": "p22",
+   "type": "p",
+   "runs": [
+    {
+     "text": "The effect of diversity can be even more striking in higher level neurons, where it can show us different types of objects that stimulate a neuron. For example, one neuron responds to different kinds of balls, even though they have a variety of appearances."
+    }
+   ]
+  },
+  {
+   "id": "p23",
+   "type": "p",
+   "runs": [
+    {
+     "text": "This simpler approach has a number of shortcomings: For one, the pressure to make examples different can cause unrelated artifacts (such as eyes) to appear. Additionally, the optimization may make examples be different in an unnatural way. For example, in the above example one might want to see examples of soccer balls clearly separated from other types of balls like golf or tennis balls. Dataset based approaches such as Wei et al. can split features apart more naturally — however they may not be as helpful in understanding how the model will behave on different data."
+    }
+   ]
+  },
+  {
+   "id": "p24",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Diversity also starts to brush on a more fundamental issue: while the examples above represent a mostly coherent idea, there are also neurons that represent strange mixtures of ideas. Below, a neuron responds to two types of animal faces, and also to car bodies."
+    }
+   ]
+  },
+  {
+   "id": "p25",
+   "type": "p",
+   "runs": [
+    {
+     "text": "Examples like these suggest that neurons are not necessarily the right semantic units for understanding neural nets."
+    }
+   ]
+  }
+ ]
+}
